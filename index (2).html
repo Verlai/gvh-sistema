@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GVH · Sistema de Pedidos</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --verde:#00a986; --verde-2:#58cada4; --grafite:#1d262d; --claro:#f6f6f6; --branco:#fff;
+  --linha:#e2e6e8; --linha-2:#eef1f2; --texto-2:#5a6770; --texto-3:#8a959c;
+  --ambar:#c9861a; --ambar-bg:#fdf3e1; --vermelho:#c0453b; --vermelho-bg:#fbeceb;
+  --verde-bg:#e6f6f2; --azul:#2f6f9f; --azul-bg:#e8f1f8;
+  --raio:10px; --raio-s:6px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:'Sora',system-ui,sans-serif;font-size:14px;line-height:1.5;color:var(--grafite);background:var(--claro)}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--verde)}
+h1,h2,h3{margin:0;line-height:1.2}
+h1{font-size:22px;font-weight:700}
+h2{font-size:16px;font-weight:700}
+h3{font-size:14px;font-weight:500}
+.muted{color:var(--texto-2)} .small{font-size:12px} .num{font-variant-numeric:tabular-nums}
+.hidden{display:none!important}
+
+/* ===== Login ===== */
+#tela-login{display:grid;grid-template-columns:1.1fr 1fr;min-height:100vh}
+.login-marca{background:var(--verde);color:#fff;padding:56px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+.login-marca img{height:64px;filter:brightness(0) invert(1);align-self:flex-start}
+.login-marca .faixa{position:absolute;right:-80px;bottom:-80px;width:360px;height:360px;border-radius:50%;
+  background:repeating-linear-gradient(45deg,rgba(255,255,255,.10) 0 10px,rgba(255,255,255,0) 10px 20px)}
+.login-marca h1{font-size:34px;font-weight:300;max-width:420px;color:#fff}
+.login-form{display:flex;align-items:center;justify-content:center;padding:32px;background:#fff}
+.login-form form{width:100%;max-width:340px;display:grid;gap:16px}
+.login-form h2{font-size:22px}
+
+/* ===== Layout ===== */
+#app{display:grid;grid-template-columns:256px 1fr;min-height:100vh}
+.lateral{background:var(--grafite);color:#cfd6da;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.lateral .logo{padding:28px 24px 22px}
+.lateral .logo img{height:40px;filter:brightness(0) invert(1)}
+.menu{flex:1;overflow:auto;padding:6px 10px}
+.menu .grupo{font-size:11px;color:#7f8b92;padding:14px 12px 6px}
+.menu a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:var(--raio-s);color:#dde3e6;text-decoration:none;font-weight:400}
+.menu a:hover{background:rgba(255,255,255,.06)}
+.menu a.ativo{background:var(--verde);color:#fff;font-weight:500}
+.menu a .cont{font-size:11px;background:rgba(255,255,255,.14);border-radius:20px;padding:1px 8px}
+.lateral .usuario{padding:16px 22px;border-top:1px solid rgba(255,255,255,.08);font-size:13px}
+.lateral .usuario b{display:block;color:#fff;font-weight:500}
+.lateral .usuario button{background:none;border:0;color:var(--verde-2);padding:0;margin-top:6px;cursor:pointer}
+.principal{min-width:0;display:flex;flex-direction:column}
+.topo{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:22px 32px 6px;flex-wrap:wrap}
+.topo .acoes{display:flex;gap:8px;flex-wrap:wrap}
+#conteudo{padding:16px 32px 48px}
+.btn.btn-menu{display:none}
+
+/* ===== Componentes ===== */
+.painel{background:#fff;border:1px solid var(--linha);border-radius:var(--raio);padding:20px}
+.painel + .painel{margin-top:16px}
+.painel-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.grade{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))} .g3{grid-template-columns:repeat(3,minmax(0,1fr))} .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--linha);background:#fff;border-radius:var(--raio-s);padding:8px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:#c9d0d4}
+.btn.prim{background:var(--verde);border-color:var(--verde);color:#fff}
+.btn.prim:hover{background:#009675}
+.btn.escuro{background:var(--grafite);border-color:var(--grafite);color:#fff}
+.btn.perigo{color:var(--vermelho);border-color:#ecc9c6}
+.btn.link{border:0;background:none;color:var(--verde);padding:4px 6px}
+.btn.peq{padding:5px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--verde);outline-offset:2px}
+label.campo{display:grid;gap:5px;font-size:12px;color:var(--texto-2);font-weight:500}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=month],input[type=search],select,textarea{
+  width:100%;border:1px solid var(--linha);border-radius:var(--raio-s);padding:8px 10px;background:#fff;font-size:14px;color:var(--grafite)}
+textarea{min-height:70px;resize:vertical}
+input:focus,select:focus,textarea:focus{border-color:var(--verde);outline:none}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;white-space:nowrap}
+.linha-form{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+.linha-form > *{flex:1;min-width:150px}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;font-weight:500;color:var(--texto-2);text-align:left;padding:8px 10px;border-bottom:1px solid var(--linha);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--linha-2);vertical-align:top}
+tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
+.tabela-wrap{overflow-x:auto}
+.dir{text-align:right}
+
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;border-radius:20px;padding:3px 10px;white-space:nowrap;background:var(--linha-2);color:var(--grafite)}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.7}
+.b-cinza{background:#eef1f2;color:#56626a}
+.b-azul{background:var(--azul-bg);color:var(--azul)}
+.b-ambar{background:var(--ambar-bg);color:#9a6410}
+.b-verde{background:var(--verde-bg);color:#007a61}
+.b-escuro{background:var(--grafite);color:#fff}
+.b-vermelho{background:var(--vermelho-bg);color:var(--vermelho)}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--linha);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}
+.chip.ativo{background:var(--grafite);color:#fff;border-color:var(--grafite)}
+
+.vazio{text-align:center;padding:40px 16px;color:var(--texto-2)}
+.alerta{border-radius:var(--raio-s);padding:10px 14px;font-size:13px;background:var(--ambar-bg);color:#7d520d}
+.alerta.erro{background:var(--vermelho-bg);color:var(--vermelho)}
+
+/* ===== Trilho de produção (elemento central) ===== */
+.trilho{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;min-width:180px}
+.trilho span{height:8px;border-radius:2px;background:#e3e8ea;position:relative}
+.trilho span.feito{background:var(--verde)}
+.trilho span.atual{background:var(--grafite)}
+.trilho span i{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-style:normal;font-size:10px;color:var(--texto-2);font-weight:500}
+.trilho.cancelado span{background:#f1d4d1}
+.trilho-grande{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.trilho-grande div{border-top:5px solid #e3e8ea;padding-top:8px;font-size:12px;color:var(--texto-3)}
+.trilho-grande div.feito{border-color:var(--verde);color:var(--grafite)}
+.trilho-grande div.atual{border-color:var(--grafite);color:var(--grafite);font-weight:700}
+.trilho-grande small{display:block;color:var(--texto-2);font-weight:400}
+
+/* ===== Início ===== */
+.etapas{display:grid;grid-template-columns:repeat(7,1fr);gap:0;border:1px solid var(--linha);border-radius:var(--raio);background:#fff;overflow:hidden}
+.etapas button{border:0;border-right:1px solid var(--linha);background:#fff;padding:18px 14px;text-align:left;cursor:pointer}
+.etapas button:last-child{border-right:0}
+.etapas button:hover{background:#fafbfb}
+.etapas .n{font-size:32px;font-weight:300;display:block;line-height:1.1}
+.etapas .t{font-size:12px;color:var(--texto-2)}
+.etapas button.tem .n{color:var(--verde);font-weight:500}
+.cartao-num{border:1px solid var(--linha);border-radius:var(--raio);background:#fff;padding:16px}
+.cartao-num .n{font-size:24px;font-weight:500;display:block}
+.cartao-num.alerta-num .n{color:var(--vermelho)}
+
+/* ===== Modal / toast ===== */
+.fundo-modal{position:fixed;inset:0;background:rgba(29,38,45,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto}
+.modal{background:#fff;border-radius:var(--raio);width:100%;max-width:640px;box-shadow:0 20px 60px rgba(29,38,45,.25)}
+.modal.largo{max-width:920px}
+.modal-cab{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--linha)}
+.modal-corpo{padding:20px 22px;display:grid;gap:14px}
+.modal-rodape{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid var(--linha)}
+.fechar{border:0;background:none;font-size:22px;cursor:pointer;color:var(--texto-2);line-height:1}
+#toasts{position:fixed;right:20px;bottom:20px;display:grid;gap:8px;z-index:60}
+.toast{background:var(--grafite);color:#fff;padding:10px 16px;border-radius:var(--raio-s);font-size:13px;max-width:360px}
+.toast.erro{background:var(--vermelho)}
+.carregando{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--verde),var(--verde-2));z-index:70;animation:carr 1s linear infinite;background-size:200% 100%}
+@keyframes carr{from{background-position:0 0}to{background-position:200% 0}}
+
+/* ===== Busca de cliente ===== */
+.busca-box{position:relative}
+.busca-res{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--linha);border-radius:var(--raio-s);margin-top:4px;z-index:20;max-height:260px;overflow:auto;box-shadow:0 8px 24px rgba(29,38,45,.12)}
+.busca-res div{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--linha-2)}
+.busca-res div:hover{background:var(--verde-bg)}
+
+/* ===== Linha do tempo ===== */
+.tempo{display:grid;gap:12px}
+.tempo div{border-left:2px solid var(--linha);padding-left:12px;font-size:13px}
+.tempo div.obs{border-color:var(--verde-2)}
+.tempo small{display:block;color:var(--texto-3);font-size:11px}
+
+.barra-acao{position:sticky;bottom:0;background:var(--grafite);color:#fff;border-radius:var(--raio);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.barra-acao select{width:auto;min-width:220px}
+.grupo-forn{margin-top:18px}
+.grupo-forn:first-child{margin-top:0}
+.grupo-forn h3{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.itens-editor td{padding:6px}
+.itens-editor input,.itens-editor select{padding:6px 8px;font-size:13px}
+.totais{display:grid;gap:4px;justify-content:end;text-align:right;margin-top:10px}
+.totais b{font-size:18px}
+
+#aviso-novidades{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--grafite);color:#fff;border-radius:30px;padding:8px 8px 8px 18px;display:flex;gap:12px;align-items:center;z-index:45;box-shadow:0 8px 24px rgba(29,38,45,.25);font-size:13px}
+#aviso-novidades[hidden]{display:none}
+@media (max-width:960px){
+  #app{grid-template-columns:1fr}
+  .lateral{position:fixed;left:0;top:0;bottom:0;width:250px;z-index:40;transform:translateX(-100%);transition:transform .2s}
+  .lateral.aberta{transform:none}
+  .btn.btn-menu{display:inline-flex}
+  .topo,#conteudo{padding-left:16px;padding-right:16px}
+  .g2,.g3,.g4{grid-template-columns:1fr 1fr}
+  .etapas{grid-template-columns:repeat(4,1fr)}
+  .etapas button{border-bottom:1px solid var(--linha)}
+  #tela-login{grid-template-columns:1fr}
+  .login-marca{padding:32px;min-height:200px}
+  .login-marca h1{font-size:24px}
+}
+@media (max-width:560px){ .g2,.g3,.g4{grid-template-columns:1fr} .trilho-grande small{display:none} }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+@media print{ .lateral,.topo .acoes,.btn,.barra-acao{display:none!important} #app{display:block} body{background:#fff} .painel{border:0;padding:0} }
+</style>
+</head>
+<body>
+<div id="tela-login" class="hidden">
+  <div class="login-marca">
+    <img src="data:image/png;base64,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" alt="GVH">
+    <div class="faixa" aria-hidden="true"></div>
+  </div>
+  <div class="login-form">
+    <form id="form-login">
+      <h2>Entrar</h2>
+      <label class="campo">E-mail<input type="email" name="email" autocomplete="username" required></label>
+      <label class="campo">Senha<input type="password" name="senha" autocomplete="current-password" required></label>
+      <div id="login-erro" class="alerta erro hidden"></div>
+      <button class="btn prim" type="submit">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <aside class="lateral" id="lateral">
+    <div class="logo"><img src="data:image/png;base64,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" alt="GVH"></div>
+    <nav class="menu" id="menu"></nav>
+    <div class="usuario"><b id="u-nome"></b><span id="u-perfil"></span><br><button id="btn-sair">Sair</button></div>
+  </aside>
+  <main class="principal">
+    <div class="topo">
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-menu" id="btn-menu" aria-label="Abrir menu">☰</button>
+        <h1 id="titulo"></h1>
+      </div>
+      <div class="acoes" id="topo-acoes"></div>
+    </div>
+    <div id="conteudo"></div>
+  </main>
+</div>
+<div id="modais"></div>
+<div id="toasts"></div>
+<div id="carregando" class="carregando hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* ============================================================
+   GVH · Sistema de Pedidos  —  frontend
+   Comunicação: POST {token, acao, dados} → n8n → Supabase (função api)
+   ============================================================ */
+const API_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-sistema';
+// Chave pública (feita para ficar no navegador). Ela só consegue OUVIR o canal de avisos
+// "gvh-mudancas" — não lê nenhuma tabela. Os dados sempre vêm pelo n8n.
+const SUPABASE_URL = 'https://zvcvdfkumjlvwqjdbiiw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_B8Rn0FkmxWafKLo4pog7qA_s3evDks4';
+const INTERVALO_SEGURANCA_MS = 300000; // 5 min: só cobre queda do Realtime
+const S = { token: null, usuario: null, perm: {}, base: null, cache: {}, parcelas: {}, feriados: {} };
+
+/* ---------- utilitários ---------- */
+// Sem "el", procura primeiro dentro da tela aberta (as telas ficam guardadas lado a lado)
+const $ = (s, el) => el ? el.querySelector(s) : ((S.vistaAtual && S.vistaAtual.el.querySelector(s)) || document.querySelector(s));
+const $$ = (s, el) => { if (el) return [...el.querySelectorAll(s)]; const r = S.vistaAtual ? [...S.vistaAtual.el.querySelectorAll(s)] : []; return r.length ? r : [...document.querySelectorAll(s)]; };
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl = v => (v === null || v === undefined || v === '') ? '—' : Number(v).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+const num = v => Number(v || 0).toLocaleString('pt-BR', {maximumFractionDigits: 3});
+const data = v => { if (!v) return '—'; const [a,m,d] = String(v).slice(0,10).split('-'); return `${d}/${m}/${a}`; };
+const dataHora = v => v ? new Date(v).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+const hoje = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
+const somaMeses = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0,10); };
+const pode = chave => !!S.perm[chave];
+const podeStatus = st => (S.perm.status_item_permitidos || []).includes(st);
+const formDados = form => Object.fromEntries(new FormData(form).entries());
+
+function toast(msg, erro = false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (erro ? ' erro' : ''); t.textContent = msg;
+  $('#toasts').appendChild(t); setTimeout(() => t.remove(), erro ? 6000 : 3000);
+}
+
+let carregando = 0;
+function setCarregando(d) { carregando += d; $('#carregando').classList.toggle('hidden', carregando <= 0); }
+
+async function api(acao, dados = {}, silencioso = false) {
+  setCarregando(1);
+  try {
+    const r = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
+                                     body: JSON.stringify({ token: S.token, acao, dados }) });
+    let j; try { j = await r.json(); } catch { throw new Error('Resposta inválida do servidor.'); }
+    if (Array.isArray(j)) j = j[0];
+    if (!j || j.ok !== true) {
+      if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
+      throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
+    }
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    return j;
+  } catch (e) {
+    if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
+    throw e;
+  } finally { setCarregando(-1); }
+}
+
+/* ---------- modal ---------- */
+function abrirModal({ titulo, corpo, rodape = '', largo = false, aoAbrir }) {
+  const f = document.createElement('div');
+  f.className = 'fundo-modal';
+  f.innerHTML = `<div class="modal ${largo ? 'largo' : ''}" role="dialog" aria-modal="true">
+      <div class="modal-cab"><h2>${esc(titulo)}</h2><button class="fechar" aria-label="Fechar">×</button></div>
+      <div class="modal-corpo">${corpo}</div>
+      ${rodape ? `<div class="modal-rodape">${rodape}</div>` : ''}</div>`;
+  const fechar = () => f.remove();
+  f.querySelector('.fechar').onclick = fechar;
+  f.addEventListener('mousedown', e => { if (e.target === f) fechar(); });
+  f.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
+  $('#modais').appendChild(f);
+  const primeiro = f.querySelector('input,select,textarea'); if (primeiro) primeiro.focus();
+  if (aoAbrir) aoAbrir(f, fechar);
+  return { el: f, fechar };
+}
+function confirmar(texto, rotulo = 'Confirmar', perigo = false) {
+  return new Promise(res => {
+    const m = abrirModal({ titulo: 'Confirmação', corpo: `<p style="margin:0">${texto}</p>`,
+      rodape: `<button class="btn" data-n>Voltar</button><button class="btn ${perigo ? 'perigo' : 'prim'}" data-s>${esc(rotulo)}</button>` });
+    m.el.querySelector('[data-n]').onclick = () => { m.fechar(); res(false); };
+    m.el.querySelector('[data-s]').onclick = () => { m.fechar(); res(true); };
+  });
+}
+
+/* ---------- status ---------- */
+const ETAPAS = [
+  ['recebido','Recebido'], ['criacao_arte','Criação de Arte'], ['pre_impressao','Pré-Impressão'],
+  ['em_producao','Em produção'], ['expedicao','Expedição'], ['saida','Transporte / Retirada'], ['entregue','Entregue']
+];
+const ORDEM_PED = { recebido:0, criacao_arte:1, pre_impressao:2, em_producao:3, expedicao:4, em_transporte:5, aguardando_retirada:5, entregue:6, concluido:7, cancelado:-1 };
+const ORDEM_ITEM = { recebido:0, arte_a_fazer:1, arte_em_alteracao:1, arte_em_aprovacao:1, pre_impressao:2, em_producao:3, expedicao:4, em_transporte:5, aguardando_retirada:5, entregue:6, cancelado:-1 };
+const COR_STATUS = {
+  recebido:'b-cinza', criacao_arte:'b-azul', arte_a_fazer:'b-azul', arte_em_alteracao:'b-ambar', arte_em_aprovacao:'b-azul',
+  pre_impressao:'b-ambar', em_producao:'b-ambar', expedicao:'b-verde', em_transporte:'b-verde', aguardando_retirada:'b-verde',
+  entregue:'b-verde', concluido:'b-escuro', cancelado:'b-vermelho'
+};
+const COR_FIN = { pago:'b-verde', atrasado:'b-vermelho', boleto:'b-azul', sinal_pago:'b-ambar', aguardando_pagamento:'b-cinza' };
+const nomeStatusItem = c => (S.base?.status_item || []).find(s => s.codigo === c)?.nome || c;
+const nomeStatusPed = c => (S.base?.status_pedido || []).find(s => s.codigo === c)?.nome || c;
+const badge = (txt, cls) => `<span class="badge ${cls || 'b-cinza'}">${esc(txt)}</span>`;
+const badgeItem = c => badge(nomeStatusItem(c), COR_STATUS[c]);
+const badgePed = (c, nome) => badge(nome || nomeStatusPed(c), COR_STATUS[c]);
+const badgeFin = (c, nome) => c ? badge(nome, COR_FIN[c]) : '';
+
+function trilho(pedido) {
+  const at = ORDEM_PED[pedido.status];
+  if (at === -1) return `<div class="trilho cancelado">${'<span></span>'.repeat(7)}</div>`;
+  const cont = [0,0,0,0,0,0,0];
+  (pedido.itens || []).forEach(i => { const o = ORDEM_ITEM[i.status]; if (o >= 0) cont[o]++; });
+  return `<div class="trilho" title="${esc(pedido.status_nome || '')}">` + ETAPAS.map((e, k) => {
+    const cls = at === 7 || k < at ? 'feito' : (k === at ? 'atual' : '');
+    return `<span class="${cls}">${cont[k] && at !== 7 ? `<i>${cont[k]}</i>` : ''}</span>`;
+  }).join('') + '</div>';
+}
+function trilhoGrande(pedido) {
+  const at = ORDEM_PED[pedido.status];
+  const cont = [0,0,0,0,0,0,0];
+  (pedido.itens || []).forEach(i => { const o = ORDEM_ITEM[i.status]; if (o >= 0) cont[o]++; });
+  return `<div class="trilho-grande">` + ETAPAS.map((e, k) => {
+    const cls = at === 7 || (at >= 0 && k < at) ? 'feito' : (k === at ? 'atual' : '');
+    return `<div class="${cls}">${esc(e[1])}<small>${cont[k] ? cont[k] + (cont[k] > 1 ? ' itens' : ' item') : ''}</small></div>`;
+  }).join('') + '</div>';
+}
+
+/* ---------- sessão ---------- */
+function salvarSessao(j) {
+  S.token = j.token; S.usuario = j.usuario; S.perm = j.permissoes || {};
+  try { localStorage.setItem('gvh_token', S.token); } catch {}
+}
+function sairLocal() {
+  S.token = null; S.usuario = null; S.perm = {}; S.base = null;
+  try { localStorage.removeItem('gvh_token'); } catch {}
+  $('#app').classList.add('hidden'); $('#tela-login').classList.remove('hidden');
+  $('#modais', document).innerHTML = '';
+  VISTAS.forEach(v => v.el.remove()); VISTAS.clear(); S.vistaAtual = null;
+}
+async function carregarBase() { S.base = (await api('base')); }
+
+$('#form-login').addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = formDados(e.target); const err = $('#login-erro'); err.classList.add('hidden');
+  const btn = e.target.querySelector('button'); btn.disabled = true;
+  try {
+    const r = await api('login', d, true);
+    salvarSessao(r); await iniciarApp();
+  } catch (ex) { err.textContent = ex.message; err.classList.remove('hidden'); }
+  finally { btn.disabled = false; }
+});
+$('#btn-sair').onclick = async () => { try { await api('logout', {}, true); } catch {} sairLocal(); };
+$('#btn-menu').onclick = () => $('#lateral').classList.toggle('aberta');
+
+async function iniciarApp() {
+  await carregarBase();
+  $('#tela-login').classList.add('hidden'); $('#app').classList.remove('hidden');
+  $('#u-nome').textContent = S.usuario.nome;
+  $('#u-perfil').textContent = S.perm.nome || S.usuario.perfil;
+  montarMenu();
+  iniciarAtualizacaoAutomatica();
+  if (!location.hash) location.hash = '#/inicio'; else rotear();
+}
+
+/* ---------- menu e rotas ---------- */
+function itensMenu() {
+  const m = [];
+  m.push(['Operação']);
+  m.push(['#/inicio', 'Início']);
+  m.push(['#/pedidos', 'Pedidos']);
+  if (pode('cria_pedidos')) m.push(['#/orcamentos', 'Orçamentos']);
+  if (podeStatus('arte_em_aprovacao')) m.push(['#/arte', 'Arte']);
+  if (podeStatus('em_producao')) m.push(['#/producao', 'Pré-impressão e produção']);
+  if (podeStatus('expedicao')) m.push(['#/expedicao', 'Expedição e entrega']);
+  if (pode('ve_financeiro') || pode('cria_pedidos')) m.push(['Financeiro']);
+  if (pode('ve_financeiro')) m.push(['#/financeiro', 'Contas a receber']);
+  if (pode('ve_todas_comissoes') || pode('cria_pedidos')) m.push(['#/comissoes', 'Comissões']);
+  m.push(['Cadastros']);
+  m.push(['#/clientes', 'Clientes']);
+  if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/produtos', 'Produtos']); m.push(['#/feriados', 'Feriados']); }
+  if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
+  return m;
+}
+function montarMenu() {
+  $('#menu').innerHTML = itensMenu().map(i => i.length === 1
+    ? `<div class="grupo">${esc(i[0])}</div>`
+    : `<a href="${i[0]}" data-rota="${i[0]}">${esc(i[1])}</a>`).join('');
+}
+const ROTAS = {};
+function rota(nome, fn) { ROTAS[nome] = fn; }
+// Telas de formulário nunca se atualizam sozinhas: o que foi digitado fica guardado até salvar ou descartar.
+const ROTAS_FORM = new Set(['novo', 'orcamento']);
+const VISTAS = new Map();   // chave da rota -> { el, nome, param, form, sujo, editando, topo, dados }
+const MAX_VISTAS = 12;
+
+function chaveRota() { return (location.hash || '#/inicio').replace(/^#\/?/, '') || 'inicio'; }
+function definirTopo(titulo, acoes = '') {
+  const v = S.vistaEmRender || S.vistaAtual;
+  if (v) v.topo = { titulo, acoes };
+  if (!v || v === S.vistaAtual) aplicarTopo({ titulo, acoes });
+}
+function aplicarTopo(t) { $('#titulo', document).textContent = t.titulo; $('#topo-acoes', document).innerHTML = t.acoes; document.title = (t.titulo || 'Sistema') + ' · GVH'; }
+
+async function renderVista(v) {
+  S.vistaEmRender = v;
+  v.sujo = false; v.editando = false; v.el.innerHTML = '';
+  esconderAvisoNovidades();
+  const fn = ROTAS[v.nome] || ROTAS.inicio;
+  try { await fn(v.param, v.el); }
+  catch (e) { v.el.innerHTML = `<div class="alerta erro">${esc(e.message)}</div>`; }
+  finally { if (S.vistaEmRender === v) S.vistaEmRender = null; }
+}
+function limparVistasAntigas() {
+  if (VISTAS.size <= MAX_VISTAS) return;
+  for (const [k, v] of VISTAS) {
+    if (VISTAS.size <= MAX_VISTAS) break;
+    if (v !== S.vistaAtual && !v.form) { v.el.remove(); VISTAS.delete(k); }
+  }
+}
+function descartarVista(chave) { const v = VISTAS.get(chave); if (v) { v.el.remove(); VISTAS.delete(chave); } }
+
+async function rotear() {
+  if (!S.token) return;
+  $('#lateral', document).classList.remove('aberta');
+  const chave = chaveRota();
+  const [nome, ...resto] = chave.split('/');
+  const param = resto.length ? decodeURIComponent(resto.join('/')) : null;
+  const nomeMenu = nome === 'novo' || nome === 'pedido' ? 'pedidos' : nome === 'orcamento' ? 'orcamentos' : nome;
+  $$('#menu a', document).forEach(a => a.classList.toggle('ativo', a.dataset.rota === '#/' + nomeMenu));
+  VISTAS.forEach(v => v.el.hidden = true);
+  let v = VISTAS.get(chave);
+  if (!v) {
+    const el = document.createElement('div'); el.className = 'vista';
+    $('#conteudo', document).appendChild(el);
+    v = { el, nome, param, form: ROTAS_FORM.has(nome), sujo: true };
+    // qualquer digitação dentro da tela trava a atualização automática dela
+    el.addEventListener('input', e => { if (!e.target.closest('.filtros')) v.editando = true; });
+    el.addEventListener('change', e => { if (e.target.matches('input,select,textarea') && !e.target.closest('.filtros')) v.editando = true; });
+    VISTAS.set(chave, v);
+  } else {
+    // devolve para o fim da fila (mais recente)
+    VISTAS.delete(chave); VISTAS.set(chave, v);
+  }
+  S.vistaAtual = v; v.el.hidden = false;
+  if (v.topo) aplicarTopo(v.topo); else aplicarTopo({ titulo: '', acoes: '' });
+  if (v.sujo && !v.form) await renderVista(v);
+  else if (v.sujo && v.form && !v.el.innerHTML) await renderVista(v);
+  else if (v.sujo) mostrarAvisoNovidades();
+  limparVistasAntigas();
+}
+window.addEventListener('hashchange', rotear);
+// "Atualizar": refaz a tela atual na hora
+function recarregar() { const v = S.vistaAtual; if (v) renderVista(v); }
+
+/* ---------- atualização automática (Realtime + rede de segurança) ---------- */
+function marcarTelasDesatualizadas() {
+  VISTAS.forEach(v => { if (!v.form) v.sujo = true; });
+}
+function podeAtualizarSozinha(v) {
+  if (!v || v.form) return false;
+  if ($('.fundo-modal', document)) return false;
+  if (v.editando) return false;
+  const ativo = document.activeElement;
+  if (ativo && v.el.contains(ativo) && ativo.matches('input,select,textarea')) return false;
+  if (v.el.querySelector('.sel-item:checked')) return false;
+  return true;
+}
+function tentarAtualizarTelaAtual() {
+  const v = S.vistaAtual; if (!v || !v.sujo) return;
+  if (podeAtualizarSozinha(v)) renderVista(v);
+  else if (!v.form || v.nome !== 'novo') mostrarAvisoNovidades();
+}
+function mostrarAvisoNovidades() {
+  let a = $('#aviso-novidades', document);
+  if (!a) {
+    a = document.createElement('div'); a.id = 'aviso-novidades';
+    a.innerHTML = `<span>Há alterações novas nesta tela.</span><button class="btn peq prim" type="button">Atualizar agora</button>`;
+    a.querySelector('button').onclick = () => { esconderAvisoNovidades(); recarregar(); };
+    document.body.appendChild(a);
+  }
+  a.hidden = false;
+}
+function esconderAvisoNovidades() { const a = $('#aviso-novidades', document); if (a) a.hidden = true; }
+
+let canalRealtime = null, timerRealtime = null, timerSeguranca = null;
+function iniciarAtualizacaoAutomatica() {
+  if (!canalRealtime && window.supabase) {
+    try {
+      const cli = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      const aviso = () => { clearTimeout(timerRealtime); timerRealtime = setTimeout(() => { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); }, 800); };
+      canalRealtime = cli.channel('gvh-mudancas', { config: { private: true } })
+        .on('broadcast', { event: 'INSERT' }, aviso)
+        .on('broadcast', { event: 'UPDATE' }, aviso)
+        .on('broadcast', { event: 'DELETE' }, aviso)
+        .subscribe();
+    } catch (e) { console.warn('Realtime indisponível', e); }
+  }
+  clearInterval(timerSeguranca);
+  timerSeguranca = setInterval(() => { if (document.visibilityState === 'visible') { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); } }, INTERVALO_SEGURANCA_MS);
+}
+
+/* ---------- INÍCIO ---------- */
+rota('inicio', async (_p, el) => {
+  definirTopo(`Olá, ${S.usuario.nome.split(' ')[0]}`, `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const r = await api('resumo');
+  const ps = r.por_status || {};
+  const qtd = k => k === 'saida' ? (ps.em_transporte || 0) + (ps.aguardando_retirada || 0) : (ps[k] || 0);
+  const fin = r.financeiro;
+  el.innerHTML = `
+    <div class="painel-cab"><h2>Pedidos em andamento, por etapa</h2><a href="#/pedidos">Ver todos</a></div>
+    <div class="etapas">${ETAPAS.map(([k, n]) => `
+      <button class="${qtd(k) ? 'tem' : ''}" onclick="irPedidos('${k}')"><span class="n num">${qtd(k)}</span><span class="t">${esc(n)}</span></button>`).join('')}
+    </div>
+    <div class="grade g4" style="margin-top:16px">
+      <div class="cartao-num ${r.producao_atrasada ? 'alerta-num' : ''}"><span class="n num">${r.producao_atrasada}</span><span class="muted small">Itens com prazo de produção vencido</span></div>
+      <div class="cartao-num"><span class="n num">${r.itens_em_pre_impressao}</span><span class="muted small">Itens aguardando pré-impressão</span></div>
+      <div class="cartao-num ${r.parados_3_dias ? 'alerta-num' : ''}"><span class="n num">${r.parados_3_dias}</span><span class="muted small">Pedidos parados há 3 dias ou mais</span></div>
+      ${fin ? `<div class="cartao-num"><span class="n num">${brl(fin.recebido_hoje)}</span><span class="muted small">Recebido hoje</span></div>` : ''}
+    </div>
+    ${fin ? `<div class="grade g2" style="margin-top:16px">
+      <a class="cartao-num" href="#/financeiro/hoje" style="text-decoration:none;color:inherit"><span class="n num">${fin.vence_hoje}</span><span class="muted small">Parcelas vencendo hoje</span></a>
+      <a class="cartao-num ${fin.atrasados ? 'alerta-num' : ''}" href="#/financeiro/atrasados" style="text-decoration:none;color:inherit"><span class="n num">${fin.atrasados} · ${brl(fin.valor_atrasado)}</span><span class="muted small">Parcelas em atraso</span></a>
+    </div>` : ''}`;
+});
+function irPedidos(etapa) { S.cache.filtroPedidos = { ...(S.cache.filtroPedidos || {}), etapa }; const v = VISTAS.get('pedidos'); if (v) v.sujo = true; location.hash = '#/pedidos'; }
+
+/* ---------- LISTA DE PEDIDOS ---------- */
+rota('pedidos', async (_p, el) => {
+  definirTopo('Pedidos', `${pode('cria_pedidos') ? '<a class="btn prim" href="#/novo">Novo pedido</a>' : ''}<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const f = S.cache.filtroPedidos || (S.cache.filtroPedidos = { etapa: '', busca: '', fin: '', vendedor: '', finalizados: false });
+  el.innerHTML = `
+    <div class="painel filtros">
+      <div class="linha-form">
+        <label class="campo" style="flex:2">Buscar<input type="search" id="f-busca" placeholder="Número do pedido ou cliente" value="${esc(f.busca)}"></label>
+        ${pode('ve_financeiro') ? `<label class="campo">Financeiro<select id="f-fin"><option value="">Todos</option>
+          ${[['aguardando_pagamento','Aguardando pagamento'],['sinal_pago','Sinal pago'],['boleto','Boleto'],['atrasado','Pagamento atrasado'],['pago','Pago']]
+            .map(([v,n]) => `<option value="${v}" ${f.fin === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
+        <label class="campo">Vendedor<select id="f-vend"><option value="">Todos</option>
+          ${S.base.vendedores.map(v => `<option value="${v.id}" ${f.vendedor === v.id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>
+        <label class="check" style="flex:0;min-width:auto;padding-bottom:9px"><input type="checkbox" id="f-final" ${f.finalizados ? 'checked' : ''}> Mostrar concluídos e cancelados</label>
+      </div>
+      <div class="chips" style="margin-top:14px" id="f-etapas">
+        <button class="chip ${!f.etapa ? 'ativo' : ''}" data-e="">Todas as etapas</button>
+        ${ETAPAS.map(([k, n]) => `<button class="chip ${f.etapa === k ? 'ativo' : ''}" data-e="${k}">${esc(n)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="painel"><div id="lista-pedidos"><div class="vazio">Carregando…</div></div></div>`;
+
+  let t;
+  const buscar = async () => {
+    const dados = { busca: f.busca, incluir_finalizados: f.finalizados };
+    if (f.etapa) dados.status = f.etapa === 'saida' ? ['em_transporte','aguardando_retirada'] : [f.etapa];
+    if (f.fin) dados.status_financeiro = f.fin;
+    if (f.vendedor) dados.vendedor_id = f.vendedor;
+    const r = await api('listar_pedidos', dados);
+    desenharListaPedidos(r.pedidos);
+  };
+  $('#f-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(buscar, 350); };
+  if ($('#f-fin')) $('#f-fin').onchange = e => { f.fin = e.target.value; buscar(); };
+  $('#f-vend').onchange = e => { f.vendedor = e.target.value; buscar(); };
+  $('#f-final').onchange = e => { f.finalizados = e.target.checked; buscar(); };
+  $$('#f-etapas .chip').forEach(b => b.onclick = () => {
+    f.etapa = b.dataset.e; $$('#f-etapas .chip').forEach(x => x.classList.toggle('ativo', x === b)); buscar();
+  });
+  await buscar();
+});
+
+function desenharListaPedidos(lista) {
+  const el = $('#lista-pedidos');
+  if (!lista.length) { el.innerHTML = `<div class="vazio">Nenhum pedido encontrado com esses filtros.${pode('cria_pedidos') ? ' <a href="#/novo">Lançar um pedido</a>' : ''}</div>`; return; }
+  el.innerHTML = `<div class="tabela-wrap"><table>
+    <thead><tr><th>Pedido</th><th>Cliente</th><th style="min-width:200px">Andamento</th><th>Status</th>
+      ${pode('ve_financeiro') ? '<th>Financeiro</th>' : ''}${pode('ve_valores') ? '<th class="dir">Total</th>' : ''}<th>Parado há</th></tr></thead>
+    <tbody>${lista.map(p => `
+      <tr class="clicavel" onclick="location.hash='#/pedido/${p.id}'">
+        <td><b>${esc(p.numero)}</b><div class="small muted">${data(p.created_at)} · ${esc(p.vendedor_nome)}</div></td>
+        <td>${esc(p.cliente_fantasia || p.cliente_nome)}<div class="small muted">${p.itens_ativos} ${p.itens_ativos == 1 ? 'item' : 'itens'} · ${p.forma_entrega === 'entrega' ? 'Entrega' : 'Retirada'}</div></td>
+        <td style="padding-top:22px">${trilho(p)}</td>
+        <td>${badgePed(p.status, p.status_nome)}${p.itens_adiantados > 0 && !['concluido','cancelado','entregue'].includes(p.status) ? `<div class="small muted" style="margin-top:4px">${p.itens_adiantados} de ${p.itens_ativos} já adiante</div>` : ''}</td>
+        ${pode('ve_financeiro') ? `<td>${badgeFin(p.status_financeiro, p.status_financeiro_nome)}</td>` : ''}
+        ${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}
+        <td class="num ${p.dias_no_status >= 3 && !['concluido','cancelado'].includes(p.status) ? '' : 'muted'}" style="${p.dias_no_status >= 3 && !['concluido','cancelado'].includes(p.status) ? 'color:var(--vermelho);font-weight:500' : ''}">${p.dias_no_status} ${p.dias_no_status == 1 ? 'dia' : 'dias'}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <p class="small muted" style="margin:10px 0 0">${lista.length} pedido${lista.length > 1 ? 's' : ''}. Os números acima do trilho mostram quantos itens estão em cada etapa.</p>`;
+}
+
+/* ---------- DETALHE DO PEDIDO ---------- */
+rota('pedido', async (id, el) => {
+  const r = await api('obter_pedido', { id });
+  const p = r.pedido; S.vistaEmRender.dados = p;
+  const cancelado = p.status === 'cancelado';
+  definirTopo(`Pedido ${p.numero}`, `
+    <a class="btn" href="#/pedidos">Voltar</a>
+    ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
+    ${podeStatus('cancelado') ? (cancelado
+        ? `<button class="btn" onclick="reativarPedido()">Reativar pedido</button>`
+        : `<button class="btn perigo" onclick="cancelarPedido()">Cancelar pedido</button>`) : ''}
+    <button class="btn" onclick="recarregar()">Atualizar</button>`);
+
+  const cli = p.cliente || {};
+  const podeMover = S.perm.status_item_permitidos || [];
+  el.innerHTML = `
+    <div class="painel">
+      <div class="painel-cab" style="margin-bottom:18px">
+        <div>
+          <h2 style="font-size:20px">${esc(cli.nome_fantasia || cli.nome)}</h2>
+          <div class="muted small">${esc(cli.nome_fantasia ? cli.nome : '')} ${cli.cpf_cnpj ? '· ' + esc(cli.cpf_cnpj) : ''} ${cli.whatsapp ? '· WhatsApp ' + esc(cli.whatsapp) : cli.telefone ? '· ' + esc(cli.telefone) : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${badgePed(p.status, p.status_nome)} ${badgeFin(p.status_financeiro, p.status_financeiro_nome)}</div>
+      </div>
+      ${cancelado ? `<div class="alerta erro" style="margin-bottom:14px">Cancelado em ${dataHora(p.cancelado_em)}. Motivo: ${esc(p.motivo_cancelamento || '—')}</div>` : trilhoGrande(p)}
+      <div class="grade g4" style="margin-top:18px">
+        <div><div class="small muted">Vendedor</div>${esc(p.vendedor_nome)}</div>
+        <div><div class="small muted">Entrega</div>${p.forma_entrega === 'entrega' ? 'Entregar no cliente' : 'Cliente retira no balcão'}${p.endereco_entrega ? `<div class="small muted">${esc(p.endereco_entrega)}</div>` : ''}</div>
+        <div><div class="small muted">Previsão para o cliente</div>${data(p.data_prevista_entrega)}</div>
+        <div><div class="small muted">Criado em</div>${dataHora(p.created_at)}</div>
+      </div>
+      ${p.condicoes_pagamento ? `<div style="margin-top:12px"><span class="small muted">Condições de pagamento:</span> ${esc(p.condicoes_pagamento)}</div>` : ''}
+      ${p.observacoes ? `<div style="margin-top:6px"><span class="small muted">Observações:</span> ${esc(p.observacoes)}</div>` : ''}
+    </div>
+
+    <div class="painel">
+      <div class="painel-cab"><h2>Itens</h2>
+        ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalItem(null)">Adicionar item</button>` : ''}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th style="width:28px"><input type="checkbox" id="sel-todos" aria-label="Selecionar todos"></th>
+          <th>Item</th><th>Status</th><th>Produção</th><th>Arte</th>
+          ${pode('ve_valores') ? '<th class="dir">Valor</th>' : ''}${pode('ve_custo') ? '<th class="dir">Custo</th>' : ''}<th></th></tr></thead>
+        <tbody>${p.itens.map(i => `
+          <tr>
+            <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
+            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
+                ${i.observacao ? `<div class="small" style="margin-top:4px">${esc(i.observacao)}</div>` : ''}</td>
+            <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
+            <td class="small">${i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>'}
+                ${i.codigo_producao ? `<div>Cód. ${esc(i.codigo_producao)}</div>` : ''}
+                ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prazo ${data(i.prazo_producao)}</div>` : ''}</td>
+            <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a><br>` : ''}
+                ${i.arte_drive_url ? `<a href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Drive</a><br>` : ''}
+                ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arquivo</button>` : ''}
+                ${!i.arte_url && !i.arte_drive_url && !i.arte_storage_path ? '<span class="muted">—</span>' : ''}</td>
+            ${pode('ve_valores') ? `<td class="dir num">${brl(i.valor_total)}<div class="small muted">${brl(i.valor_unitario)} un</div></td>` : ''}
+            ${pode('ve_custo') ? `<td class="dir num">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
+            <td class="dir"><button class="btn peq" onclick="modalItem('${i.id}')">Editar</button></td>
+          </tr>`).join('')}</tbody></table></div>
+      ${!cancelado && podeMover.length ? `
+      <div class="barra-acao">
+        <span id="sel-cont">Nenhum item selecionado</span>
+        <select id="novo-status" aria-label="Novo status"><option value="">Mover para…</option>
+          ${podeMover.map(s => `<option value="${s}">${esc(nomeStatusItem(s))}</option>`).join('')}
+        </select>
+        <button class="btn prim" onclick="moverSelecionados()">Mover itens</button>
+      </div>` : ''}
+      ${pode('ve_valores') ? `<div class="totais">
+        <span class="muted">Itens ${brl(p.valor_itens)}${Number(p.desconto) ? ` · Desconto ${brl(p.desconto)}` : ''}${Number(p.frete) ? ` · Frete ${brl(p.frete)}` : ''}</span>
+        <b class="num">${brl(p.valor_total)}</b>
+        ${pode('ve_custo') && p.custo_total != null ? `<span class="small muted">Custo ${brl(p.custo_total)} · Margem ${brl(p.valor_total - p.custo_total)}${p.valor_total > 0 ? ` (${Math.round((p.valor_total - p.custo_total) / p.valor_total * 100)}%)` : ''}</span>` : ''}
+      </div>` : ''}
+    </div>
+
+    ${pode('ve_financeiro') ? `
+    <div class="painel">
+      <div class="painel-cab"><h2>Financeiro</h2>
+        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado ? `<button class="btn" onclick="modalParcelas()">Lançar parcelas</button>` : ''}</div>
+      <div class="grade g3" style="margin-bottom:14px">
+        <div><div class="small muted">Total do pedido</div><b class="num">${brl(p.valor_total)}</b></div>
+        <div><div class="small muted">Recebido</div><b class="num" style="color:var(--verde)">${brl(p.valor_pago)}</b></div>
+        <div><div class="small muted">Em aberto</div><b class="num">${brl(p.valor_em_aberto)}</b></div>
+      </div>
+      ${tabelaParcelas(p.recebimentos || [], false)}
+    </div>` : ''}
+
+    <div class="grade g2" style="margin-top:16px">
+      <div class="painel" style="margin:0">
+        <div class="painel-cab"><h2>Observações</h2></div>
+        <form id="form-obs" class="linha-form" style="margin-bottom:14px">
+          <input type="text" name="texto" placeholder="Escreva uma observação para a equipe" required style="flex:3">
+          <button class="btn" style="flex:0">Adicionar</button>
+        </form>
+        <div class="tempo">${(p.observacoes_lista || []).map(o => `<div class="obs">${esc(o.texto)}<small>${esc(o.usuario_nome || '')} · ${dataHora(o.created_at)}</small></div>`).join('') || '<span class="muted small">Nenhuma observação.</span>'}</div>
+      </div>
+      <div class="painel" style="margin:0">
+        <div class="painel-cab"><h2>Histórico</h2></div>
+        <div class="tempo" style="max-height:380px;overflow:auto">${(p.historico || []).map(h => `<div>${descHistorico(h)}<small>${esc(h.usuario_nome || 'Automático')} · ${dataHora(h.created_at)}</small></div>`).join('')}</div>
+      </div>
+    </div>`;
+
+  const atualizarSel = () => { const n = $$('.sel-item:checked').length; if ($('#sel-cont')) $('#sel-cont').textContent = n ? `${n} ${n > 1 ? 'itens selecionados' : 'item selecionado'}` : 'Nenhum item selecionado'; };
+  $$('.sel-item').forEach(c => c.onchange = atualizarSel);
+  $('#sel-todos').onchange = e => { $$('.sel-item:not(:disabled)').forEach(c => c.checked = e.target.checked); atualizarSel(); };
+  $('#form-obs').onsubmit = async e => { e.preventDefault(); await api('adicionar_observacao', { pedido_id: p.id, texto: e.target.texto.value }); toast('Observação adicionada.'); recarregar(); };
+});
+
+function descHistorico(h) {
+  if (h.tipo === 'status_item') return h.de ? `${esc(h.descricao)}: ${esc(nomeStatusItem(h.de))} → <b>${esc(nomeStatusItem(h.para))}</b>` : `${esc(h.descricao)} (${esc(nomeStatusItem(h.para))})`;
+  if (h.tipo === 'status_pedido') return `Pedido passou para <b>${esc(nomeStatusPed(h.para))}</b>`;
+  return esc(h.descricao);
+}
+
+async function moverSelecionados() {
+  const itens = $$('.sel-item:checked').map(c => c.value);
+  if (!itens.length) return toast('Selecione os itens que deseja mover.', true);
+  const status = $('#novo-status').value;
+  if (!status) return toast('Escolha para qual status mover.', true);
+  if (status === 'cancelado' && !await confirmar(`Cancelar ${itens.length > 1 ? 'os itens selecionados' : 'o item selecionado'}?`, 'Cancelar itens', true)) return;
+  await api('mudar_status_itens', { itens, status });
+  toast('Itens atualizados.'); recarregar();
+}
+
+async function cancelarPedido() {
+  const m = abrirModal({ titulo: 'Cancelar pedido', corpo: `<label class="campo">Motivo do cancelamento<textarea id="motivo" required></textarea></label>
+    <p class="small muted" style="margin:0">Parcelas em aberto serão canceladas. Parcelas já pagas continuam registradas.</p>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Cancelar pedido</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-c]').onclick = async () => {
+    await api('cancelar_pedido', { id: S.vistaAtual.dados.id, motivo: $('#motivo', m.el).value }); m.fechar(); toast('Pedido cancelado.'); recarregar();
+  };
+}
+async function reativarPedido() {
+  if (!await confirmar('Reativar este pedido? Ele volta a seguir o status dos itens.', 'Reativar')) return;
+  await api('cancelar_pedido', { id: S.vistaAtual.dados.id, reativar: true }); toast('Pedido reativado.'); recarregar();
+}
+
+function modalEditarPedido() {
+  const p = S.vistaAtual.dados; const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
+  const m = abrirModal({ titulo: `Editar pedido ${p.numero}`, corpo: `
+    <form id="f-ped" class="grade g2">
+      <label class="campo">Número do pedido<input type="text" name="numero" value="${esc(p.numero)}"></label>
+      ${gestor ? `<label class="campo">Vendedor<select name="vendedor_id">${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === p.vendedor_id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : '<span></span>'}
+      <label class="campo">Forma de entrega<select name="forma_entrega"><option value="retirada">Cliente retira no balcão</option><option value="entrega" ${p.forma_entrega === 'entrega' ? 'selected' : ''}>Entregar no cliente</option></select></label>
+      <label class="campo">Previsão de entrega *<input type="date" name="data_prevista_entrega" value="${esc(p.data_prevista_entrega || '')}" required></label>
+      <label class="campo" style="grid-column:1/-1">Endereço de entrega<input type="text" name="endereco_entrega" value="${esc(p.endereco_entrega || '')}"></label>
+      <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" name="desconto" value="${esc(p.desconto)}"></label>
+      <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" name="frete" value="${esc(p.frete)}"></label>
+      <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(p.condicoes_pagamento || '')}"></label>
+      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    await api('editar_pedido', { id: p.id, ...formDados($('#f-ped', m.el)) }); m.fechar(); toast('Pedido atualizado.'); recarregar();
+  };
+}
+
+/* item: novo ou edição (campos conforme perfil) */
+function modalItem(itemId) {
+  const p = S.vistaAtual.dados; const i = itemId ? p.itens.find(x => x.id === itemId) : {};
+  const cria = pode('cria_pedidos'); const prod = podeStatus('em_producao') || cria; const arte = podeStatus('arte_em_aprovacao') || cria;
+  const opcoesForn = `<option value="">Selecione</option>` + S.base.fornecedores.filter(f => f.ativo || f.id === i.fornecedor_id)
+     .map(f => `<option value="${f.id}" ${f.id === i.fornecedor_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+  const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
+    <form id="f-item" class="grade g3">
+      ${cria ? `
+        <label class="campo" style="grid-column:span 2">Descrição<input type="text" name="descricao" value="${esc(i.descricao || '')}" required></label>
+        <label class="campo">Produto do catálogo<select name="produto_id"><option value="">Nenhum</option>${S.base.produtos.filter(x => x.ativo || x.id === i.produto_id).map(x => `<option value="${x.id}" ${x.id === i.produto_id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>
+        <label class="campo" style="grid-column:1/-1">Especificação<input type="text" name="especificacao" value="${esc(i.especificacao || '')}" placeholder="Formato, papel, cores, acabamento"></label>
+        <label class="campo">Quantidade<input type="number" step="any" min="0" name="quantidade" value="${esc(i.quantidade ?? 1)}"></label>
+        <label class="campo">Valor unitário (R$)<input type="number" step="0.0001" min="0" name="valor_unitario" value="${esc(i.valor_unitario ?? 0)}"></label>
+        <label class="campo">Valor total (R$)<input type="number" step="0.01" min="0" name="valor_total" value="${esc(i.valor_total ?? 0)}"></label>
+        ${!itemId ? `<label class="campo">Status inicial<select name="status">${opcoesStatusInicial()}</select></label>` : ''}
+      ` : `<div style="grid-column:1/-1"><b>${esc(i.descricao)}</b> <span class="muted">· ${num(i.quantidade)} un</span></div>`}
+      ${prod ? `
+        <label class="campo">Fornecedor<select name="fornecedor_id">${opcoesForn}</select></label>
+        <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
+        <label class="campo">Código de produção<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>` : ''}
+      ${pode('ve_custo') ? `<label class="campo">Custo de produção (R$)<input type="number" step="0.01" min="0" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
+      ${arte ? `
+        <label class="campo" style="grid-column:span 2">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
+        <label class="campo" style="grid-column:1/-1">Link da arte no Drive<input type="text" name="arte_drive_url" value="${esc(i.arte_drive_url || '')}"></label>` : ''}
+      <label class="campo" style="grid-column:1/-1">Observação do item<input type="text" name="observacao" value="${esc(i.observacao || '')}"></label>
+      ${arte && itemId ? `<div style="grid-column:1/-1" class="linha-form"><label class="campo">Enviar arquivo de arte<input type="file" id="arq-arte"></label>
+        <span class="small muted" style="flex:2">${i.arte_storage_path ? 'Já existe um arquivo enviado. Um novo envio substitui o link.' : 'PDF, imagem ou arquivo compactado, até 100 MB.'}</span></div>` : ''}
+    </form>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>${itemId ? 'Salvar item' : 'Adicionar item'}</button>`,
+    aoAbrir: el => {
+      const f = $('#f-item', el); if (!f.quantidade) return;
+      const recalc = () => { f.valor_total.value = (Number(f.quantidade.value || 0) * Number(f.valor_unitario.value || 0)).toFixed(2); };
+      f.quantidade.oninput = () => { aplicarFaixa(f); recalc(); };
+      f.valor_unitario.oninput = recalc;
+      f.produto_id.onchange = () => {
+        const pr = S.base.produtos.find(x => x.id === f.produto_id.value); if (!pr) return;
+        if (!f.descricao.value) f.descricao.value = pr.nome;
+        if (f.fornecedor_id && pr.fornecedor_padrao_id && !f.fornecedor_id.value) f.fornecedor_id.value = pr.fornecedor_padrao_id;
+        aplicarFaixa(f); recalc();
+      };
+    } });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = formDados($('#f-item', m.el));
+    if (!pode('ve_custo')) delete d.custo; else if (d.custo === '' && i.custo == null) delete d.custo;
+    const arq = $('#arq-arte', m.el)?.files?.[0];
+    if (itemId) d.id = itemId; else d.pedido_id = p.id;
+    await api('salvar_item', d);
+    if (arq) await enviarArte(itemId, arq);
+    m.fechar(); toast(itemId ? 'Item atualizado.' : 'Item adicionado.'); recarregar();
+  };
+}
+function opcoesStatusInicial(sel = 'recebido') {
+  const lista = ['recebido', ...(S.perm.status_item_permitidos || []).filter(s => ['arte_a_fazer','arte_em_aprovacao','pre_impressao'].includes(s))];
+  return [...new Set(lista)].map(s => `<option value="${s}" ${s === sel ? 'selected' : ''}>${esc(nomeStatusItem(s))}</option>`).join('');
+}
+function aplicarFaixa(f) {
+  const pr = S.base.produtos.find(x => x.id === f.produto_id?.value); if (!pr) return;
+  const q = Number(f.quantidade.value || 0);
+  const fx = (pr.faixas || []).find(x => q >= Number(x.qtd_min) && (x.qtd_max == null || q <= Number(x.qtd_max)));
+  if (fx) f.valor_unitario.value = Number(fx.preco_unitario);
+  else if (pr.preco_base != null && !Number(f.valor_unitario.value)) f.valor_unitario.value = Number(pr.preco_base);
+}
+
+/* arte no Storage */
+async function enviarArte(itemId, arquivo) {
+  const r = await api('arte_arquivo', { item_id: itemId, op: 'upload', nome_arquivo: arquivo.name });
+  const fd = new FormData(); fd.append('cacheControl', '3600'); fd.append('', arquivo);
+  const up = await fetch(r.url, { method: 'PUT', body: fd, headers: { 'x-upsert': 'true' } });
+  if (!up.ok) { toast('Falha ao enviar o arquivo de arte.', true); throw new Error('upload'); }
+  await api('salvar_item', { id: itemId, arte_storage_path: r.path });
+  toast('Arquivo de arte enviado.');
+}
+async function baixarArte(itemId) {
+  const r = await api('arte_arquivo', { item_id: itemId, op: 'download' });
+  window.open(r.url, '_blank', 'noopener');
+}
+
+/* ---------- PARCELAS ---------- */
+const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vista:'À vista', parcela:'Parcela' };
+const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro' };
+const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+function badgeParcela(r) {
+  if (r.situacao === 'pago') return badge('Pago em ' + data(r.pago_em), 'b-verde');
+  if (r.situacao === 'cancelado') return badge('Cancelada', 'b-cinza');
+  if (r.atrasado) return badge('Atrasada', 'b-vermelho');
+  if (r.dias_para_vencer === 0) return badge('Vence hoje', 'b-ambar');
+  return badge('Em aberto', 'b-cinza');
+}
+function tabelaParcelas(lista, comPedido) {
+  lista.forEach(r => S.parcelas[r.id] = r);
+  if (!lista.length) return `<div class="vazio">Nenhuma parcela lançada.</div>`;
+  const edita = pode('edita_financeiro');
+  return `<div class="tabela-wrap"><table>
+    <thead><tr>${comPedido ? '<th>Pedido</th><th>Cliente</th>' : ''}<th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th>Situação</th>${edita ? '<th></th>' : ''}</tr></thead>
+    <tbody>${lista.map(r => `<tr>
+      ${comPedido ? `<td><a href="#/pedido/${r.pedido_id}"><b>${esc(r.pedido_numero)}</b></a></td><td>${esc(r.cliente_nome)}</td>` : ''}
+      <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
+      <td class="num">${data(r.vencimento)}</td>
+      <td class="dir num">${brl(r.valor)}</td>
+      <td>${esc(FORMAS[r.forma_pagamento] || '—')}</td>
+      <td>${badgeParcela(r)}</td>
+      ${edita ? `<td class="dir" style="white-space:nowrap">
+        ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}')">Dar baixa</button>
+             <button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}
+        ${r.situacao === 'pago' ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer baixa</button>` : ''}
+      </td>` : ''}
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function modalBaixa(id) {
+  const p0 = S.parcelas[id]; const r = { id, valor: p0.valor, forma: p0.forma_pagamento || '' };
+  const m = abrirModal({ titulo: 'Registrar pagamento', corpo: `
+    <form id="f-baixa" class="grade g3">
+      <label class="campo">Data do pagamento<input type="date" name="pago_em" value="${hoje()}" required></label>
+      <label class="campo">Forma<select name="forma_pagamento">${opcoesForma(r.forma)}</select></label>
+      <label class="campo">Valor recebido (R$)<input type="number" step="0.01" min="0.01" name="valor" value="${r.valor}"></label>
+    </form><p class="small muted" style="margin:0">A comissão do vendedor é calculada automaticamente sobre o valor recebido, no mês do pagamento.</p>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Confirmar pagamento</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    await api('baixar_recebimento', { id: r.id, ...formDados($('#f-baixa', m.el)) }); m.fechar(); toast('Pagamento registrado.'); recarregar();
+  };
+}
+async function desfazerBaixa(id) {
+  if (!await confirmar('Desfazer a baixa desta parcela? A comissão ligada a ela também será estornada.', 'Desfazer baixa', true)) return;
+  await api('baixar_recebimento', { id, desfazer: true }); toast('Baixa desfeita.'); recarregar();
+}
+async function excluirParcela(id) {
+  if (!await confirmar('Excluir esta parcela em aberto?', 'Excluir', true)) return;
+  await api('excluir_recebimento', { id }); toast('Parcela excluída.'); recarregar();
+}
+
+/* gerador de parcelas (usado no pedido e no novo pedido) */
+function htmlGeradorParcelas(total, venc1) {
+  return `<div class="grade g4" id="gerador">
+    <label class="campo">Sinal (R$)<input type="number" step="0.01" min="0" data-g="sinal" value="0"></label>
+    <label class="campo">Vencimento do sinal<input type="date" data-g="venc_sinal" value="${hoje()}"></label>
+    <label class="campo">Restante em<select data-g="modo"><option value="restante">1 pagamento (na entrega)</option><option value="boleto">Boletos</option><option value="parcela">Parcelas</option></select></label>
+    <label class="campo">Quantidade<input type="number" min="1" max="24" data-g="qtd" value="1"></label>
+    <label class="campo">1º vencimento<input type="date" data-g="venc1" value="${venc1 || somaDias(hoje(), 30)}"></label>
+    <label class="campo">Forma<select data-g="forma">${opcoesForma('boleto')}</select></label>
+    <label class="campo">Valor a parcelar (R$)<input type="number" step="0.01" min="0" data-g="total" value="${Number(total || 0).toFixed(2)}"></label>
+    <div style="align-self:end"><button type="button" class="btn" data-g-gerar>Gerar parcelas</button></div>
+  </div>
+  <div id="preview-parcelas" style="margin-top:12px"></div>`;
+}
+function ligarGerador(el, onChange) {
+  let parcelas = [];
+  const g = k => el.querySelector(`[data-g="${k}"]`).value;
+  const desenhar = () => {
+    const alvo = el.querySelector('#preview-parcelas');
+    alvo.innerHTML = parcelas.length ? `<table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th></th></tr></thead><tbody>
+      ${parcelas.map((p, k) => `<tr><td>${esc(TIPOS_PARC[p.tipo])}${p.parcela_num ? ' ' + p.parcela_num + '/' + p.parcelas_total : ''}</td>
+        <td><input type="date" value="${p.vencimento}" data-k="${k}" data-c="vencimento"></td>
+        <td class="dir"><input type="number" step="0.01" value="${p.valor}" data-k="${k}" data-c="valor" style="max-width:130px;text-align:right"></td>
+        <td>${esc(FORMAS[p.forma_pagamento] || '—')}</td>
+        <td><button type="button" class="btn link peq" data-rm="${k}">Remover</button></td></tr>`).join('')}</tbody></table>
+      <p class="small muted">Soma: <b>${brl(parcelas.reduce((s, p) => s + Number(p.valor), 0))}</b></p>` : '<p class="small muted">Nenhuma parcela gerada. Preencha acima e clique em "Gerar parcelas".</p>';
+    alvo.querySelectorAll('[data-c]').forEach(inp => inp.onchange = () => { parcelas[inp.dataset.k][inp.dataset.c] = inp.value; desenhar(); });
+    alvo.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { parcelas.splice(b.dataset.rm, 1); desenhar(); });
+    onChange && onChange(parcelas);
+  };
+  el.querySelector('[data-g-gerar]').onclick = () => {
+    parcelas = [];
+    const sinal = Number(g('sinal') || 0), total = Number(g('total') || 0), qtd = Math.max(1, Number(g('qtd') || 1)), modo = g('modo');
+    if (sinal > 0) parcelas.push({ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: g('venc_sinal'), forma_pagamento: 'pix' });
+    const resto = Math.round((total - sinal) * 100);
+    if (resto > 0) {
+      const n = modo === 'restante' ? 1 : qtd; const base = Math.floor(resto / n);
+      for (let k = 0; k < n; k++) {
+        const cent = k === n - 1 ? resto - base * (n - 1) : base;
+        parcelas.push({ tipo: modo === 'restante' ? 'restante' : modo, parcela_num: n > 1 ? k + 1 : null, parcelas_total: n > 1 ? n : null,
+          valor: (cent / 100).toFixed(2), vencimento: somaMeses(g('venc1'), k), forma_pagamento: g('forma') || null });
+      }
+    }
+    desenhar();
+  };
+  desenhar();
+  return () => parcelas;
+}
+function modalParcelas() {
+  const p = S.vistaAtual.dados;
+  let pegar;
+  const m = abrirModal({ titulo: 'Lançar parcelas', largo: true, corpo: htmlGeradorParcelas(p.valor_em_aberto ?? p.valor_total, p.data_prevista_entrega),
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar parcelas</button>`,
+    aoAbrir: el => { pegar = ligarGerador(el); } });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const parcelas = pegar(); if (!parcelas.length) return toast('Gere as parcelas antes de salvar.', true);
+    await api('salvar_recebimentos', { pedido_id: p.id, parcelas }); m.fechar(); toast('Parcelas lançadas.'); recarregar();
+  };
+}
+
+/* ---------- CLIENTE (seletor + cadastro rápido) ---------- */
+function ligarBuscaCliente(input, aoEscolher) {
+  const box = input.parentElement; let t;
+  const res = document.createElement('div'); res.className = 'busca-res hidden'; box.appendChild(res);
+  input.addEventListener('input', () => {
+    clearTimeout(t); const q = input.value.trim();
+    if (q.length < 2) { res.classList.add('hidden'); return; }
+    t = setTimeout(async () => {
+      const r = await api('buscar_clientes', { busca: q, limite: 12 }, true).catch(() => ({ clientes: [] }));
+      res.innerHTML = r.clientes.map(c => `<div data-id="${c.id}"><b>${esc(c.nome_fantasia || c.nome)}</b><div class="small muted">${esc(c.nome_fantasia ? c.nome : '')} ${esc(c.cpf_cnpj || '')} ${esc(c.whatsapp || c.telefone || '')}</div></div>`).join('')
+        + (pode('cadastra_clientes') ? `<div data-novo><b style="color:var(--verde)">Cadastrar novo cliente</b></div>` : '');
+      res.classList.remove('hidden');
+      res.querySelectorAll('[data-id]').forEach(d => d.onclick = () => { const c = r.clientes.find(x => x.id === d.dataset.id); res.classList.add('hidden'); aoEscolher(c); });
+      const nv = res.querySelector('[data-novo]'); if (nv) nv.onclick = () => { res.classList.add('hidden'); modalCliente(null, c => aoEscolher(c), q); };
+    }, 300);
+  });
+  document.addEventListener('click', e => { if (!box.contains(e.target)) res.classList.add('hidden'); });
+}
+function enderecoCliente(c) {
+  return [c.logradouro && `${c.logradouro}${c.numero ? ', ' + c.numero : ''}`, c.complemento, c.bairro, c.cidade && `${c.cidade}${c.uf ? '/' + c.uf : ''}`, c.cep].filter(Boolean).join(' · ');
+}
+async function modalCliente(id, aoSalvar, nomeInicial = '') {
+  let c = { tipo_pessoa: 'PJ', contatos: [], nome: nomeInicial };
+  if (id) c = (await api('obter_cliente', { id })).cliente;
+  const podeEditar = pode('cadastra_clientes');
+  const campo = (n, rot, extra = '', span = '') => `<label class="campo" ${span ? `style="grid-column:${span}"` : ''}>${rot}<input type="text" name="${n}" value="${esc(c[n] || '')}" ${extra} ${podeEditar ? '' : 'disabled'}></label>`;
+  const m = abrirModal({ titulo: id ? (c.nome_fantasia || c.nome) : 'Novo cliente', largo: true, corpo: `
+    <form id="f-cli" class="grade g3">
+      <label class="campo">Tipo<select name="tipo_pessoa" ${podeEditar ? '' : 'disabled'}><option value="PJ">Pessoa jurídica</option><option value="PF" ${c.tipo_pessoa === 'PF' ? 'selected' : ''}>Pessoa física</option></select></label>
+      ${campo('nome', 'Nome / Razão social', 'required', 'span 2')}
+      ${campo('nome_fantasia', 'Nome fantasia')}${campo('cpf_cnpj', 'CPF / CNPJ')}${campo('inscricao_estadual', 'Inscrição estadual')}
+      ${campo('whatsapp', 'WhatsApp')}${campo('telefone', 'Telefone')}${campo('email', 'E-mail')}
+      ${campo('email_nf', 'E-mail para nota fiscal')}${campo('cep', 'CEP')}${campo('logradouro', 'Endereço')}
+      ${campo('numero', 'Número')}${campo('complemento', 'Complemento')}${campo('bairro', 'Bairro')}
+      ${campo('cidade', 'Cidade')}${campo('uf', 'UF', 'maxlength="2"')}
+      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes" ${podeEditar ? '' : 'disabled'}>${esc(c.observacoes || '')}</textarea></label>
+    </form>
+    <div><div class="painel-cab" style="margin-bottom:6px"><h3>Contatos</h3>${podeEditar ? '<button type="button" class="btn peq" id="add-contato">Adicionar contato</button>' : ''}</div>
+      <div id="contatos"></div></div>
+    ${c.pedidos && c.pedidos.length ? `<div><h3 style="margin-bottom:6px">Últimos pedidos</h3><table><tbody>${c.pedidos.map(p => `<tr class="clicavel" onclick="location.hash='#/pedido/${p.id}';document.querySelector('.fundo-modal')?.remove()"><td><b>${esc(p.numero)}</b></td><td>${data(p.created_at)}</td><td>${esc(p.status_nome)}</td>${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}`,
+    rodape: podeEditar ? `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar cliente</button>` : `<button class="btn" data-v>Fechar</button>` });
+  let contatos = (c.contatos || []).map(x => ({ ...x }));
+  const desenharCont = () => {
+    $('#contatos', m.el).innerHTML = contatos.length ? contatos.map((ct, k) => `<div class="linha-form" style="margin-bottom:8px">
+      ${['nome','cargo','whatsapp','email'].map(f => `<input type="text" placeholder="${{ nome:'Nome', cargo:'Cargo', whatsapp:'WhatsApp', email:'E-mail' }[f]}" value="${esc(ct[f] || '')}" data-k="${k}" data-f="${f}" ${podeEditar ? '' : 'disabled'}>`).join('')}
+      ${podeEditar ? `<button type="button" class="btn link peq" data-rm="${k}" style="flex:0">Remover</button>` : ''}</div>`).join('') : '<p class="small muted" style="margin:0">Nenhum contato adicional.</p>';
+    $$('#contatos [data-f]', m.el).forEach(i => i.oninput = () => contatos[i.dataset.k][i.dataset.f] = i.value);
+    $$('#contatos [data-rm]', m.el).forEach(b => b.onclick = () => { contatos.splice(b.dataset.rm, 1); desenharCont(); });
+  };
+  desenharCont();
+  if ($('#add-contato', m.el)) $('#add-contato', m.el).onclick = () => { contatos.push({}); desenharCont(); };
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const s = m.el.querySelector('[data-s]');
+  if (s) s.onclick = async () => {
+    const d = formDados($('#f-cli', m.el)); d.contatos = contatos; if (id) d.id = id;
+    const r = await api('salvar_cliente', d); m.fechar(); toast('Cliente salvo.');
+    if (aoSalvar) aoSalvar({ ...d, id: r.id });
+  };
+}
+
+/* ---------- EDITOR DE ITENS (novo pedido / orçamento) ---------- */
+function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
+  let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x })) : [{ quantidade: 1, valor_unitario: 0, valor_total: 0, status: 'recebido' }];
+  const produtos = S.base.produtos.filter(p => p.ativo);
+  const desenhar = () => {
+    alvo.innerHTML = `<div class="tabela-wrap"><table class="itens-editor"><thead><tr>
+        <th style="min-width:160px">Produto</th><th style="min-width:200px">Descrição e especificação</th><th style="width:90px">Qtd.</th>
+        <th style="width:120px">Unitário</th><th style="width:120px">Total</th>${comStatus ? '<th style="min-width:160px">Status inicial</th>' : ''}<th></th></tr></thead>
+      <tbody>${itens.map((it, k) => `<tr>
+        <td><select data-k="${k}" data-f="produto_id"><option value="">Avulso</option>${produtos.map(p => `<option value="${p.id}" ${p.id === it.produto_id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></td>
+        <td><input type="text" placeholder="Descrição" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao">
+            <input type="text" placeholder="Especificação (formato, papel, acabamento)" value="${esc(it.especificacao || '')}" data-k="${k}" data-f="especificacao" style="margin-top:4px"></td>
+        <td><input type="number" step="any" min="0" value="${it.quantidade}" data-k="${k}" data-f="quantidade"></td>
+        <td><input type="number" step="0.0001" min="0" value="${it.valor_unitario}" data-k="${k}" data-f="valor_unitario"></td>
+        <td><input type="number" step="0.01" min="0" value="${it.valor_total}" data-k="${k}" data-f="valor_total"></td>
+        ${comStatus ? `<td><select data-k="${k}" data-f="status">${opcoesStatusInicial(it.status)}</select></td>` : ''}
+        <td>${itens.length > 1 ? `<button type="button" class="btn link peq" data-rm="${k}">Remover</button>` : ''}</td></tr>`).join('')}
+      </tbody></table></div>
+      <button type="button" class="btn peq" id="add-item" style="margin-top:8px">Adicionar outro item</button>`;
+    $$('[data-f]', alvo).forEach(el => el.onchange = el.oninput = () => {
+      const it = itens[el.dataset.k]; const f = el.dataset.f; it[f] = el.value;
+      if (f === 'produto_id') {
+        const p = produtos.find(x => x.id === el.value);
+        if (p) { if (!it.descricao) it.descricao = p.nome; precoFaixa(p, it); }
+        it.valor_total = (Number(it.quantidade || 0) * Number(it.valor_unitario || 0)).toFixed(2); desenhar(); return;
+      }
+      if (f === 'quantidade') { const p = produtos.find(x => x.id === it.produto_id); if (p) precoFaixa(p, it); }
+      if (f === 'quantidade' || f === 'valor_unitario') {
+        it.valor_total = (Number(it.quantidade || 0) * Number(it.valor_unitario || 0)).toFixed(2);
+        const linha = el.closest('tr'); linha.querySelector('[data-f=valor_total]').value = it.valor_total;
+        if (f === 'quantidade') linha.querySelector('[data-f=valor_unitario]').value = it.valor_unitario;
+      }
+      aoMudar && aoMudar(itens);
+    });
+    $$('[data-rm]', alvo).forEach(b => b.onclick = () => { itens.splice(b.dataset.rm, 1); desenhar(); });
+    $('#add-item', alvo).onclick = () => { itens.push({ quantidade: 1, valor_unitario: 0, valor_total: 0, status: itens[itens.length - 1]?.status || 'recebido' }); desenhar(); };
+    aoMudar && aoMudar(itens);
+  };
+  const precoFaixa = (p, it) => {
+    const q = Number(it.quantidade || 0);
+    const fx = (p.faixas || []).find(x => q >= Number(x.qtd_min) && (x.qtd_max == null || q <= Number(x.qtd_max)));
+    if (fx) it.valor_unitario = Number(fx.preco_unitario); else if (p.preco_base != null) it.valor_unitario = Number(p.preco_base);
+  };
+  desenhar();
+  return () => itens.filter(i => (i.descricao || '').trim());
+}
+
+/* ---------- NOVO PEDIDO ---------- */
+rota('novo', async (_p, el) => {
+  if (!pode('cria_pedidos')) throw new Error('Seu perfil não cria pedidos.');
+  definirTopo('Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
+  const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
+  let cliente = null, pegarItens, pegarParcelas = () => [];
+  el.innerHTML = `
+    <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
+      <div class="linha-form">
+        <label class="campo busca-box" style="flex:3">Buscar cliente<input type="search" id="busca-cli" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp" autocomplete="off"></label>
+        ${pode('cadastra_clientes') ? '<button type="button" class="btn" id="novo-cli" style="flex:0">Novo cliente</button>' : ''}
+      </div>
+      <div id="cli-escolhido" style="margin-top:10px"></div>
+    </div>
+    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">O fornecedor padrão do produto é aplicado automaticamente.</span></div>
+      <div id="editor-itens"></div>
+      <div class="grade g4" style="margin-top:14px">
+        <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" id="np-desc" value="0"></label>
+        <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" id="np-frete" value="0"></label>
+        <div></div><div class="totais" style="margin:0"><span class="muted small">Total do pedido</span><b class="num" id="np-total">R$ 0,00</b></div>
+      </div>
+    </div>
+    <div class="painel"><div class="painel-cab"><h2>Entrega e condições</h2></div>
+      <form id="f-np" class="grade g3">
+        ${gestor ? `<label class="campo">Vendedor<select name="vendedor_id">${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === S.usuario.id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : ''}
+        <label class="campo">Número do pedido<input type="text" name="numero" placeholder="Automático"></label>
+        <label class="campo">Forma de entrega<select name="forma_entrega" id="np-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label>
+        <label class="campo">Previsão de entrega *<input type="date" name="data_prevista_entrega" id="np-prev" required></label>
+        <label class="campo" style="grid-column:1/-1" id="np-end-box">Endereço de entrega<input type="text" name="endereco_entrega" id="np-end"></label>
+        <label class="campo" style="grid-column:1/-1">Condições de pagamento combinadas<input type="text" name="condicoes_pagamento" placeholder="Ex.: 50% de sinal e restante na entrega"></label>
+        <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes"></textarea></label>
+      </form>
+    </div>
+    <div class="painel"><div class="painel-cab"><h2>Parcelas (opcional)</h2><span class="small muted">Pode ser lançado depois pelo financeiro.</span></div>
+      <label class="check"><input type="checkbox" id="np-com-parc"> Lançar parcelas agora</label>
+      <div id="np-parc" class="hidden" style="margin-top:12px"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" type="button" id="np-descartar">Descartar pedido</button><button class="btn prim" id="np-salvar">Criar pedido</button>
+    </div>`;
+
+  const total = () => {
+    const itens = pegarItens ? pegarItens() : [];
+    return itens.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#np-desc').value || 0) + Number($('#np-frete').value || 0);
+  };
+  const atualizarTotal = () => { $('#np-total').textContent = brl(total()); const g = $('#gerador [data-g=total]'); if (g) g.value = total().toFixed(2); };
+  pegarItens = editorItens($('#editor-itens'), [], { comStatus: true, aoMudar: atualizarTotal });
+  $('#np-desc').oninput = $('#np-frete').oninput = atualizarTotal;
+
+  const escolher = c => {
+    cliente = c;
+    $('#cli-escolhido').innerHTML = `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite)"><b>${esc(c.nome_fantasia || c.nome)}</b>
+      <span class="muted">${esc(c.cpf_cnpj || '')} ${esc(c.whatsapp || c.telefone || '')}</span></div>`;
+    $('#busca-cli').value = '';
+    const end = enderecoCliente(c); if (end && !$('#np-end').value) $('#np-end').value = end;
+  };
+  ligarBuscaCliente($('#busca-cli'), escolher);
+  if ($('#novo-cli')) $('#novo-cli').onclick = () => modalCliente(null, escolher);
+  $('#np-com-parc').onchange = e => {
+    const box = $('#np-parc'); box.classList.toggle('hidden', !e.target.checked);
+    if (e.target.checked && !box.innerHTML) { box.innerHTML = htmlGeradorParcelas(total(), $('#np-prev').value); pegarParcelas = ligarGerador(box); }
+  };
+  // 1º vencimento acompanha a previsão de entrega (até a pessoa mudar à mão)
+  $('#np-prev').onchange = e => { const v1 = $('#gerador [data-g=venc1]'); if (v1 && (!v1.dataset.manual)) v1.value = e.target.value; };
+  el.addEventListener('input', e => { if (e.target.matches('#gerador [data-g=venc1]')) e.target.dataset.manual = '1'; });
+
+  $('#np-descartar').onclick = async () => {
+    if (!await confirmar('Descartar este pedido? Tudo o que foi preenchido será apagado.', 'Descartar', true)) return;
+    descartarVista('novo'); location.hash = '#/pedidos';
+  };
+  $('#np-salvar').onclick = async () => {
+    if (!cliente) return toast('Escolha o cliente do pedido.', true);
+    if (!$('#np-prev').value) { $('#np-prev').focus(); return toast('Informe a previsão de entrega.', true); }
+    const itens = pegarItens(); if (!itens.length) return toast('Inclua ao menos um item com descrição.', true);
+    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value };
+    if ($('#np-com-parc').checked) d.recebimentos = pegarParcelas();
+    $('#np-salvar').disabled = true;
+    try { const r = await api('criar_pedido', d); toast(`Pedido ${r.numero} criado.`); descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
+    finally { $('#np-salvar').disabled = false; }
+  };
+});
+
+/* ---------- ORÇAMENTOS ---------- */
+rota('orcamentos', async (_p, el) => {
+  definirTopo('Orçamentos', `<a class="btn prim" href="#/orcamento/novo">Novo orçamento</a>`);
+  el.innerHTML = `<div class="painel filtros"><div class="linha-form">
+      <label class="campo" style="flex:2">Buscar<input type="search" id="o-busca" placeholder="Número ou cliente"></label>
+      <label class="campo">Situação<select id="o-status"><option value="">Todas</option><option value="aberto">Em elaboração</option><option value="enviado">Enviado</option><option value="aprovado">Aprovado</option><option value="recusado">Recusado</option><option value="expirado">Expirado</option></select></label>
+    </div></div><div class="painel" id="o-lista"></div>`;
+  const NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aprovado:['Aprovado','b-verde'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
+  const buscar = async () => {
+    const r = await api('listar_orcamentos', { busca: $('#o-busca').value, status: $('#o-status').value });
+    $('#o-lista').innerHTML = r.orcamentos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Vendedor</th><th>Validade</th><th>Situação</th><th class="dir">Total</th></tr></thead><tbody>
+      ${r.orcamentos.map(o => `<tr class="clicavel" onclick="location.hash='#/orcamento/${o.id}'"><td><b>${esc(o.numero)}</b><div class="small muted">${data(o.created_at)}</div></td>
+        <td>${esc(o.cliente_nome || '—')}</td><td>${esc(o.vendedor_nome || '')}</td><td>${data(o.validade)}</td>
+        <td>${badge(...NOMES[o.status])}</td><td class="dir num">${brl(o.valor_total)}</td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="vazio">Nenhum orçamento encontrado.</div>';
+  };
+  let t; $('#o-busca').oninput = () => { clearTimeout(t); t = setTimeout(buscar, 350); }; $('#o-status').onchange = buscar;
+  await buscar();
+});
+
+rota('orcamento', async (id, el) => {
+  const novo = id === 'novo';
+  const o = novo ? { itens: [], desconto: 0, frete: 0, status: 'aberto', validade: somaDias(hoje(), 7) } : (await api('obter_orcamento', { id })).orcamento;
+  if (!o) throw new Error('Orçamento não encontrado.');
+  const travado = o.status === 'aprovado';
+  definirTopo(novo ? 'Novo orçamento' : `Orçamento ${o.numero}`, `<a class="btn" href="#/orcamentos">Voltar</a>
+    ${!novo ? `<button class="btn" onclick="window.print()">Imprimir</button>` : ''}
+    ${!novo && !travado ? `<button class="btn escuro" id="o-converter">Transformar em pedido</button>` : ''}
+    ${o.pedido_id ? `<a class="btn" href="#/pedido/${o.pedido_id}">Ver pedido</a>` : ''}`);
+  let cliente = o.cliente || null, pegarItens;
+  el.innerHTML = `
+    ${travado ? '<div class="alerta" style="margin-bottom:16px">Este orçamento já virou pedido e não pode mais ser alterado.</div>' : ''}
+    <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
+      <label class="campo busca-box">Buscar cliente<input type="search" id="o-cli" placeholder="Nome, fantasia, CPF/CNPJ" autocomplete="off" ${travado ? 'disabled' : ''}></label>
+      <div id="o-cli-esc" style="margin-top:10px"></div></div>
+    <div class="painel"><div class="painel-cab"><h2>Itens</h2></div><div id="o-itens"></div>
+      <div class="grade g4" style="margin-top:14px">
+        <label class="campo">Desconto (R$)<input type="number" step="0.01" id="o-desc" value="${esc(o.desconto)}"></label>
+        <label class="campo">Frete (R$)<input type="number" step="0.01" id="o-frete" value="${esc(o.frete)}"></label>
+        <div></div><div class="totais" style="margin:0"><span class="muted small">Total</span><b class="num" id="o-total"></b></div></div></div>
+    <div class="painel"><form id="f-orc" class="grade g3">
+      <label class="campo">Validade<input type="date" name="validade" value="${esc(o.validade || '')}"></label>
+      <label class="campo">Situação<select name="status">${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${travado ? '<option value="aprovado" selected>Aprovado</option>' : ''}</select></label>
+      <div></div>
+      <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(o.condicoes_pagamento || '')}"></label>
+      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
+    </form></div>
+    ${!travado ? `<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn prim" id="o-salvar">Salvar orçamento</button></div>` : ''}`;
+  const mostrarCli = c => { cliente = c; $('#o-cli-esc').innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(c.cpf_cnpj || '')}</span>` : '<span class="muted small">Nenhum cliente escolhido.</span>'; $('#o-cli').value = ''; };
+  mostrarCli(cliente); ligarBuscaCliente($('#o-cli'), mostrarCli);
+  const tot = () => { const its = pegarItens ? pegarItens() : o.itens; $('#o-total').textContent = brl(its.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0)); };
+  pegarItens = editorItens($('#o-itens'), o.itens, { aoMudar: tot });
+  $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
+  const salvar = async () => {
+    const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value };
+    if (!novo) d.id = o.id;
+    const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); return r;
+  };
+  if ($('#o-salvar')) $('#o-salvar').onclick = async () => { const r = await salvar(); if (novo) { descartarVista('orcamento/novo'); location.hash = '#/orcamento/' + r.id; } else renderVista(S.vistaAtual); };
+  if ($('#o-converter')) $('#o-converter').onclick = async () => {
+    const m = abrirModal({ titulo: 'Transformar em pedido', corpo: `<p style="margin:0">Os itens entram no pedido como "Recebido".</p>
+      <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required></label>
+      <label class="campo">Forma de entrega<select id="conv-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label>`,
+      rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>` });
+    m.el.querySelector('[data-v]').onclick = m.fechar;
+    m.el.querySelector('[data-s]').onclick = async () => {
+      const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
+      await salvar();
+      const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: $('#conv-forma', m.el).value,
+        endereco_entrega: cliente ? enderecoCliente(cliente) : '' });
+      m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
+    };
+  };
+});
+
+/* ---------- ARTE ---------- */
+rota('arte', async (_p, el) => {
+  definirTopo('Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const f = S.cache.filtroArte || (S.cache.filtroArte = 'arte_a_fazer');
+  const abas = [['arte_a_fazer','À fazer'],['arte_em_alteracao','Em alteração'],['arte_em_aprovacao','Com o cliente para aprovação']];
+  const r = await api('listar_itens', { status: ['recebido','arte_a_fazer','arte_em_alteracao','arte_em_aprovacao'] });
+  const cont = k => r.itens.filter(i => i.status === k).length;
+  const lista = r.itens.filter(i => i.status === f || (f === 'arte_a_fazer' && i.status === 'recebido'));
+  el.innerHTML = `
+    <div class="chips" style="margin-bottom:14px">${abas.map(([k, n]) => `<button class="chip ${f === k ? 'ativo' : ''}" onclick="S.cache.filtroArte='${k}';recarregar()">${n} (${cont(k) + (k === 'arte_a_fazer' ? cont('recebido') : 0)})</button>`).join('')}</div>
+    <div class="painel">${lista.length ? `<div class="tabela-wrap"><table>
+      <thead><tr><th>Pedido</th><th>Item</th><th>Status</th><th>Arte</th><th>Parado há</th><th></th></tr></thead>
+      <tbody>${lista.map(i => `<tr>
+        <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
+        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
+        <td>${badgeItem(i.status)}</td>
+        <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Arquivo</button>` : ''}</td>
+        <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
+        <td class="dir" style="white-space:nowrap">
+          <button class="btn peq" onclick="modalArte('${i.id}')">Arte</button>
+          ${i.status !== 'arte_em_aprovacao' && podeStatus('arte_em_aprovacao') ? `<button class="btn peq" onclick="moverItem('${i.id}','arte_em_aprovacao')">Enviei ao cliente</button>` : ''}
+          ${i.status === 'arte_em_aprovacao' && podeStatus('arte_em_alteracao') ? `<button class="btn peq" onclick="moverItem('${i.id}','arte_em_alteracao')">Pediu alteração</button>` : ''}
+          ${podeStatus('pre_impressao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','pre_impressao')">Arte aprovada</button>` : ''}
+        </td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item nesta etapa.</div>'}</div>`;
+  S.vistaEmRender.dados = r.itens;
+});
+async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
+function modalArte(id) {
+  const i = S.vistaAtual.dados.find(x => x.id === id);
+  const m = abrirModal({ titulo: `Arte · ${i.descricao}`, corpo: `
+    <form id="f-arte" class="grade">
+      <label class="campo">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
+      <label class="campo">Link da arte no Drive<input type="text" name="arte_drive_url" value="${esc(i.arte_drive_url || '')}"></label>
+      <label class="campo">Enviar arquivo<input type="file" id="arq"></label>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    await api('salvar_item', { id, ...formDados($('#f-arte', m.el)) });
+    const arq = $('#arq', m.el).files[0]; if (arq) await enviarArte(id, arq);
+    m.fechar(); toast('Arte atualizada.'); recarregar();
+  };
+}
+
+/* ---------- PRÉ-IMPRESSÃO E PRODUÇÃO ---------- */
+rota('producao', async (_p, el) => {
+  definirTopo('Pré-impressão e produção', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const aba = S.cache.abaProd || (S.cache.abaProd = 'pre_impressao');
+  const fForn = S.cache.fornProd || '';
+  const r = await api('listar_itens', { status: ['pre_impressao','em_producao'] });
+  S.vistaEmRender.dados = r.itens;
+  const pre = r.itens.filter(i => i.status === 'pre_impressao');
+  let prod = r.itens.filter(i => i.status === 'em_producao');
+  const atrasados = prod.filter(i => i.producao_atrasada).length;
+  if (fForn) prod = prod.filter(i => i.fornecedor_id === fForn);
+  const opForn = sel => `<option value="">Selecione</option>` + S.base.fornecedores.filter(f => f.ativo).map(f => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+
+  let corpo;
+  if (aba === 'pre_impressao') {
+    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, prazo e código de produção. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção.</p>
+      <div class="tabela-wrap"><table>
+      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:170px">Fornecedor</th><th>Prazo</th><th>Código</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
+      <tbody>${pre.map(i => `<tr data-item="${i.id}">
+        <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
+        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
+            ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}</td>
+        <td><select data-c="fornecedor_id">${opForn(i.fornecedor_id)}</select></td>
+        <td><input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}"></td>
+        <td><input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}" style="min-width:110px"></td>
+        ${pode('ve_custo') ? `<td><input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}" style="max-width:110px"></td>` : ''}
+        <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="salvarLinhaProd('${i.id}',false)">Salvar</button>
+          <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button></td>
+      </tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item aguardando pré-impressão.</div>';
+  } else {
+    const grupos = {};
+    prod.forEach(i => (grupos[i.fornecedor_nome || 'Sem fornecedor'] ||= []).push(i));
+    corpo = `<div class="linha-form filtros" style="margin-bottom:12px">
+        <label class="campo" style="max-width:280px">Fornecedor<select id="f-forn"><option value="">Todos</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === fForn ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
+        <span class="small muted" style="padding-bottom:9px">Confira diariamente com cada fornecedor os itens abaixo. Atrasados aparecem primeiro.</span></div>`
+      + (prod.length ? Object.entries(grupos).map(([nome, lista]) => `<div class="grupo-forn">
+        <h3>${esc(nome)} <span class="badge b-cinza">${lista.length}</span></h3>
+        <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Item</th><th>Código</th><th>Prazo</th><th>Em produção há</th><th></th></tr></thead><tbody>
+        ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
+          <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
+          <td>${esc(i.descricao)}<div class="small muted">${num(i.quantidade)} un</div></td>
+          <td>${esc(i.codigo_producao)}</td>
+          <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
+          <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
+          <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="modalItemProd('${i.id}')">Ajustar</button>
+            ${podeStatus('expedicao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','expedicao')">Chegou no balcão</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="vazio">Nenhum item em produção.</div>');
+  }
+  el.innerHTML = `
+    <div class="chips" style="margin-bottom:14px">
+      <button class="chip ${aba === 'pre_impressao' ? 'ativo' : ''}" onclick="S.cache.abaProd='pre_impressao';recarregar()">Pré-impressão (${pre.length})</button>
+      <button class="chip ${aba === 'em_producao' ? 'ativo' : ''}" onclick="S.cache.abaProd='em_producao';recarregar()">Em produção (${r.itens.filter(i => i.status === 'em_producao').length}${atrasados ? ` · ${atrasados} atrasado${atrasados > 1 ? 's' : ''}` : ''})</button>
+    </div>
+    <div class="painel">${corpo}</div>`;
+  if ($('#f-forn')) $('#f-forn').onchange = e => { S.cache.fornProd = e.target.value; recarregar(); };
+});
+async function salvarLinhaProd(id, enviar) {
+  const tr = $(`tr[data-item="${id}"]`); const d = { id };
+  $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
+  if (d.custo === '') delete d.custo;
+  if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, prazo e código de produção.', true);
+  await api('salvar_item', d);
+  if (enviar) await api('mudar_status_itens', { itens: [id], status: 'em_producao' });
+  toast(enviar ? 'Item enviado para produção.' : 'Dados salvos.'); recarregar();
+}
+function modalItemProd(id) {
+  const i = S.vistaAtual.dados.find(x => x.id === id);
+  const m = abrirModal({ titulo: `${i.pedido_numero} · ${i.descricao}`, corpo: `<form id="f-ip" class="grade g2">
+    <label class="campo">Fornecedor<select name="fornecedor_id">${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === i.fornecedor_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
+    <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
+    <label class="campo">Código de produção<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
+    ${pode('ve_custo') ? `<label class="campo">Custo (R$)<input type="number" step="0.01" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
+    <label class="campo" style="grid-column:1/-1">Observação<input type="text" name="observacao" value="${esc(i.observacao || '')}"></label></form>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => { const d = formDados($('#f-ip', m.el)); if (d.custo === '') delete d.custo; await api('salvar_item', { id, ...d }); m.fechar(); toast('Item atualizado.'); recarregar(); };
+}
+
+/* ---------- EXPEDIÇÃO E ENTREGA ---------- */
+rota('expedicao', async (_p, el) => {
+  definirTopo('Expedição e entrega', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const r = await api('listar_itens', { status: ['expedicao','em_transporte','aguardando_retirada'] });
+  const peds = {};
+  r.itens.forEach(i => (peds[i.pedido_id] ||= { id: i.pedido_id, numero: i.pedido_numero, cliente: i.cliente_nome, forma: i.forma_entrega, itens: [] }).itens.push(i));
+  const colunas = [
+    ['expedicao', 'No balcão', 'Material chegou da produção.'],
+    ['em_transporte', 'Em transporte', 'Saiu para o endereço do cliente.'],
+    ['aguardando_retirada', 'Aguardando retirada', 'Cliente vem buscar no balcão.']
+  ];
+  const cartao = (p, etapa) => {
+    const its = p.itens.filter(i => i.status === etapa);
+    const prox = etapa === 'expedicao' ? (p.forma === 'entrega' ? ['em_transporte', 'Saiu para entrega'] : ['aguardando_retirada', 'Avisar retirada']) : ['entregue', 'Marcar como entregue'];
+    return `<div class="painel" style="padding:14px;margin:0 0 10px">
+      <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
+      <div>${esc(p.cliente)}</div>
+      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li>${esc(i.descricao)} · ${num(i.quantidade)} un</li>`).join('')}</ul>
+      ${podeStatus(prox[0]) ? `<button class="btn ${prox[0] === 'entregue' ? 'prim' : ''} peq" onclick="moverItensPedido('${its.map(i => i.id).join(',')}','${prox[0]}')">${prox[1]}</button>` : ''}
+    </div>`;
+  };
+  el.innerHTML = `<div class="grade g3">${colunas.map(([k, t, d]) => {
+    const lista = Object.values(peds).filter(p => p.itens.some(i => i.status === k));
+    return `<div><h2 style="margin-bottom:2px">${t} <span class="badge b-cinza">${lista.length}</span></h2><p class="small muted" style="margin:0 0 10px">${d}</p>
+      ${lista.map(p => cartao(p, k)).join('') || '<div class="vazio painel">Nada aqui.</div>'}</div>`;
+  }).join('')}</div>`;
+});
+async function moverItensPedido(ids, status) { await api('mudar_status_itens', { itens: ids.split(','), status }); toast(`${nomeStatusItem(status)}.`); recarregar(); }
+
+/* ---------- CONTAS A RECEBER ---------- */
+rota('financeiro', async (filtroInicial, el) => {
+  if (!pode('ve_financeiro')) throw new Error('Seu perfil não acessa o financeiro.');
+  definirTopo('Contas a receber', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const f = S.cache.filtroFin || (S.cache.filtroFin = { filtro: 'abertos', busca: '', de: '', ate: '' });
+  if (filtroInicial && !S.vistaEmRender.filtroAplicado) { f.filtro = filtroInicial; S.vistaEmRender.filtroAplicado = true; }
+  const abas = [['hoje','Vencem hoje'],['atrasados','Atrasadas'],['abertos','Em aberto'],['pagos','Pagas'],['todos','Todas']];
+  const r = await api('listar_recebimentos', f);
+  const rs = r.resumo;
+  el.innerHTML = `
+    <div class="grade g4">
+      <div class="cartao-num"><span class="n num">${brl(rs.vence_hoje)}</span><span class="muted small">Vence hoje</span></div>
+      <div class="cartao-num ${Number(rs.atrasado) ? 'alerta-num' : ''}"><span class="n num">${brl(rs.atrasado)}</span><span class="muted small">Em atraso</span></div>
+      <div class="cartao-num"><span class="n num">${brl(rs.a_vencer_7d)}</span><span class="muted small">Vence nos próximos 7 dias</span></div>
+      <div class="cartao-num"><span class="n num" style="color:var(--verde)">${brl(rs.recebido_mes)}</span><span class="muted small">Recebido no mês</span></div>
+    </div>
+    <div class="painel filtros" style="margin-top:16px">
+      <div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
+      <div class="linha-form" style="margin-bottom:12px">
+        <label class="campo" style="flex:2">Buscar<input type="search" id="fin-busca" value="${esc(f.busca)}" placeholder="Pedido ou cliente"></label>
+        <label class="campo">De<input type="date" id="fin-de" value="${esc(f.de)}"></label>
+        <label class="campo">Até<input type="date" id="fin-ate" value="${esc(f.ate)}"></label>
+      </div>
+      <p class="small muted" style="margin:0 0 10px">Parcelas pagas são filtradas pela data do pagamento; as demais, pelo vencimento.</p>
+      ${tabelaParcelas(r.recebimentos, true)}
+      ${r.recebimentos.length ? `<p class="small muted">${r.recebimentos.length} parcela(s) · Total ${brl(r.recebimentos.reduce((s, x) => s + Number(x.valor), 0))}</p>` : ''}
+    </div>`;
+  $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; recarregar(); });
+  let t; $('#fin-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(recarregar, 450); };
+  $('#fin-de').onchange = e => { f.de = e.target.value; recarregar(); };
+  $('#fin-ate').onchange = e => { f.ate = e.target.value; recarregar(); };
+});
+
+/* ---------- COMISSÕES ---------- */
+rota('comissoes', async (_p, el) => {
+  definirTopo('Comissões', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const comp = S.cache.compComissao || hoje().slice(0, 7);
+  const r = await api('listar_comissoes', { competencia: comp + '-01' });
+  const nomeMes = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const doMes = r.fechamentos.filter(x => x.competencia === r.competencia);
+  const devidos = doMes.filter(x => x.recebe_comissao);
+  const economizado = doMes.reduce((s, x) => s + Number(x.valor_economizado || 0), 0);
+  const SIT = { aberto: ['Mês em andamento', 'b-cinza'], fechado: ['Aguardando repasse', 'b-ambar'], pago: ['Repassado', 'b-verde'] };
+  el.innerHTML = `
+    <div class="painel filtros"><div class="linha-form">
+      <label class="campo" style="max-width:220px">Mês dos pagamentos<input type="month" id="c-mes" value="${comp}"></label>
+      <p class="small muted" style="flex:3;margin:0 0 9px">A comissão é de 5% sobre cada valor pago pelo cliente, contada no mês em que o pagamento entrou. O repasse acontece no 5º dia útil do mês seguinte.</p>
+    </div></div>
+    <div class="grade g3" style="margin-top:16px">
+      ${devidos.map(x => `<div class="cartao-num"><span class="n num">${brl(x.valor_devido)}</span><span class="muted small">${esc(x.vendedor_nome)} · repasse ${data(x.data_repasse_prevista)}</span>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${badge(...SIT[x.situacao])}
+        ${pode('gerencia_comissoes') && x.situacao === 'fechado' ? `<button class="btn prim peq" onclick="pagarComissao('${x.id}')">Marcar repasse feito</button>` : ''}
+        ${pode('gerencia_comissoes') && x.situacao === 'pago' ? `<button class="btn link peq" onclick="pagarComissao('${x.id}',true)">Desfazer</button>` : ''}</div></div>`).join('')}
+      ${economizado > 0 ? `<div class="cartao-num" style="border-color:var(--verde)"><span class="n num" style="color:var(--verde)">${brl(economizado)}</span><span class="muted small">Comissão economizada em vendas da diretoria</span></div>` : ''}
+      ${!doMes.length ? `<div class="vazio painel" style="grid-column:1/-1">Nenhum pagamento de cliente gerou comissão em ${nomeMes(r.competencia)}.</div>` : ''}
+    </div>
+    ${r.lancamentos.length ? `<div class="painel" style="margin-top:16px"><div class="painel-cab"><h2>Pagamentos que geraram comissão em ${nomeMes(r.competencia)}</h2></div>
+      <div class="tabela-wrap"><table><thead><tr><th>Data</th><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th class="dir">Valor pago</th><th class="dir">Comissão</th><th></th></tr></thead><tbody>
+      ${r.lancamentos.map(l => `<tr><td class="num">${data(l.pago_em || l.created_at)}</td><td>${l.pedido_id ? `<a href="#/pedido/${l.pedido_id}">${esc(l.pedido_numero)}</a>` : '—'}</td>
+        <td>${esc(l.cliente_nome || '')}</td><td>${esc(l.vendedor_nome)}</td><td class="dir num">${brl(l.valor_base)}</td>
+        <td class="dir num" style="${l.valor_comissao < 0 ? 'color:var(--vermelho)' : ''}">${brl(l.valor_comissao)}</td>
+        <td>${l.tipo === 'estorno' ? badge('Estorno', 'b-vermelho') : !l.devida ? badge('Economizada', 'b-verde') : l.estornado ? badge('Estornada', 'b-cinza') : ''}</td></tr>`).join('')}
+      </tbody></table></div></div>` : ''}
+    ${r.fechamentos.length ? `<div class="painel" style="margin-top:16px"><div class="painel-cab"><h2>Últimos 12 meses</h2></div>
+      <div class="tabela-wrap"><table><thead><tr><th>Mês</th><th>Vendedor</th><th class="dir">Devido</th><th class="dir">Economizado</th><th>Repasse</th><th>Situação</th></tr></thead><tbody>
+      ${r.fechamentos.map(x => `<tr><td>${nomeMes(x.competencia)}</td><td>${esc(x.vendedor_nome)}</td><td class="dir num">${brl(x.valor_devido)}</td>
+        <td class="dir num">${Number(x.valor_economizado) ? brl(x.valor_economizado) : '—'}</td><td class="num">${x.pago_em ? 'Feito em ' + data(x.pago_em) : data(x.data_repasse_prevista)}</td><td>${badge(...SIT[x.situacao])}</td></tr>`).join('')}
+      </tbody></table></div></div>` : ''}`;
+  $('#c-mes').onchange = e => { S.cache.compComissao = e.target.value; recarregar(); };
+});
+async function pagarComissao(id, desfazer = false) {
+  if (!await confirmar(desfazer ? 'Desfazer o registro deste repasse?' : 'Confirmar que o repasse desta comissão foi feito hoje?', desfazer ? 'Desfazer' : 'Confirmar repasse')) return;
+  await api('pagar_comissao', { id, desfazer }); toast(desfazer ? 'Registro desfeito.' : 'Repasse registrado.'); recarregar();
+}
+
+/* ---------- CLIENTES ---------- */
+rota('clientes', async (_p, el) => {
+  definirTopo('Clientes', pode('cadastra_clientes') ? `<button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
+  el.innerHTML = `<div class="painel filtros"><label class="campo">Buscar<input type="search" id="cl-busca" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp"></label></div><div class="painel" id="cl-lista"></div>`;
+  const buscar = async () => {
+    const r = await api('buscar_clientes', { busca: $('#cl-busca').value, limite: 200, incluir_inativos: true });
+    $('#cl-lista').innerHTML = r.clientes.length ? `<div class="tabela-wrap"><table><thead><tr><th>Cliente</th><th>CPF / CNPJ</th><th>Contato</th><th>Cidade</th><th></th></tr></thead><tbody>
+      ${r.clientes.map(c => `<tr class="clicavel" onclick="modalCliente('${c.id}', recarregar)"><td><b>${esc(c.nome_fantasia || c.nome)}</b>${c.nome_fantasia ? `<div class="small muted">${esc(c.nome)}</div>` : ''}</td>
+        <td class="num">${esc(c.cpf_cnpj || '—')}</td><td>${esc(c.whatsapp || c.telefone || '')}<div class="small muted">${esc(c.email || '')}</div></td><td>${esc(c.cidade || '')}</td>
+        <td>${c.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum cliente encontrado.</div>';
+  };
+  let t; $('#cl-busca').oninput = () => { clearTimeout(t); t = setTimeout(buscar, 350); };
+  await buscar();
+});
+
+/* ---------- FORNECEDORES ---------- */
+rota('fornecedores', async (_p, el) => {
+  definirTopo('Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null)">Novo fornecedor</button>`);
+  await carregarBase();
+  const l = S.base.fornecedores;
+  el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Especialidades</th><th>Contato</th><th>Prazo padrão</th><th></th></tr></thead><tbody>
+    ${l.map(f => `<tr class="clicavel" onclick="modalFornecedor('${f.id}')"><td><b>${esc(f.nome)}</b><div class="small muted">${esc(f.cnpj || '')}</div></td><td>${esc(f.especialidades || '')}</td>
+      <td>${esc(f.contato_nome || '')}<div class="small muted">${esc(f.whatsapp || f.telefone || '')}</div></td><td>${f.prazo_padrao_dias ? f.prazo_padrao_dias + ' dias' : '—'}</td><td>${f.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vazio">Cadastre as gráficas parceiras para usar na pré-impressão.</div>'}</div>`;
+});
+function modalFornecedor(id) {
+  const f = id ? S.base.fornecedores.find(x => x.id === id) : { ativo: true };
+  const c = (n, r, t = 'text') => `<label class="campo">${r}<input type="${t}" name="${n}" value="${esc(f[n] ?? '')}"></label>`;
+  const m = abrirModal({ titulo: id ? f.nome : 'Novo fornecedor', largo: true, corpo: `<form id="f-forn" class="grade g3">
+    ${c('nome', 'Nome')}${c('razao_social', 'Razão social')}${c('cnpj', 'CNPJ')}${c('contato_nome', 'Contato')}${c('whatsapp', 'WhatsApp')}${c('telefone', 'Telefone')}
+    ${c('email', 'E-mail')}${c('site', 'Site / portal')}${c('prazo_padrao_dias', 'Prazo padrão (dias)', 'number')}
+    <label class="campo" style="grid-column:1/-1">Especialidades<input type="text" name="especialidades" value="${esc(f.especialidades || '')}" placeholder="Ex.: cartões, banners, adesivos"></label>
+    <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(f.observacoes || '')}</textarea></label>
+    <label class="check"><input type="checkbox" name="ativo" value="true" ${f.ativo ? 'checked' : ''}> Ativo</label></form>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar fornecedor</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = formDados($('#f-forn', m.el)); d.ativo = !!d.ativo; if (id) d.id = id;
+    await api('salvar_fornecedor', d); m.fechar(); toast('Fornecedor salvo.'); recarregar();
+  };
+}
+
+/* ---------- PRODUTOS ---------- */
+rota('produtos', async (_p, el) => {
+  definirTopo('Produtos', `<button class="btn prim" onclick="modalProduto(null)">Novo produto</button>`);
+  await carregarBase();
+  const l = S.base.produtos; const forn = id => S.base.fornecedores.find(f => f.id === id)?.nome || '—';
+  el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Fornecedor padrão</th><th>Faixas de preço</th><th></th></tr></thead><tbody>
+    ${l.map(p => `<tr class="clicavel" onclick="modalProduto('${p.id}')"><td><b>${esc(p.nome)}</b><div class="small muted">${esc(p.descricao || '')}</div></td><td>${esc(p.categoria || '')}</td>
+      <td>${esc(forn(p.fornecedor_padrao_id))}</td><td class="small">${(p.faixas || []).map(f => `${num(f.qtd_min)}${f.qtd_max ? '–' + num(f.qtd_max) : '+'}: ${brl(f.preco_unitario)}`).join('<br>') || (p.preco_base ? brl(p.preco_base) : '—')}</td>
+      <td>${p.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum produto no catálogo ainda. Itens também podem ser lançados como avulsos.</div>'}</div>`;
+});
+function modalProduto(id) {
+  const p = id ? S.base.produtos.find(x => x.id === id) : { ativo: true, unidade: 'un', faixas: [] };
+  let faixas = (p.faixas || []).map(f => ({ ...f }));
+  const m = abrirModal({ titulo: id ? p.nome : 'Novo produto', largo: true, corpo: `<form id="f-prod" class="grade g3">
+    <label class="campo" style="grid-column:span 2">Nome<input type="text" name="nome" value="${esc(p.nome || '')}"></label>
+    <label class="campo">Categoria<input type="text" name="categoria" value="${esc(p.categoria || '')}"></label>
+    <label class="campo" style="grid-column:1/-1">Descrição<input type="text" name="descricao" value="${esc(p.descricao || '')}"></label>
+    <label class="campo">Fornecedor padrão<select name="fornecedor_padrao_id"><option value="">Nenhum</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === p.fornecedor_padrao_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
+    <label class="campo">Prazo padrão (dias)<input type="number" name="prazo_padrao_dias" value="${esc(p.prazo_padrao_dias ?? '')}"></label>
+    <label class="campo">Preço base (R$/un)<input type="number" step="0.0001" name="preco_base" value="${esc(p.preco_base ?? '')}"></label>
+    <label class="campo">Unidade<input type="text" name="unidade" value="${esc(p.unidade || 'un')}"></label>
+    <label class="campo" style="grid-column:span 2">Link do gabarito<input type="text" name="gabarito_url" value="${esc(p.gabarito_url || '')}"></label>
+    <label class="check"><input type="checkbox" name="ativo" value="true" ${p.ativo ? 'checked' : ''}> Ativo</label></form>
+    <div><div class="painel-cab" style="margin-bottom:6px"><h3>Faixas de preço por quantidade</h3><button type="button" class="btn peq" id="add-fx">Adicionar faixa</button></div><div id="fx"></div></div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar produto</button>` });
+  const desenhar = () => {
+    $('#fx', m.el).innerHTML = faixas.length ? faixas.map((f, k) => `<div class="linha-form" style="margin-bottom:6px">
+      <input type="number" placeholder="De (qtd)" value="${esc(f.qtd_min ?? '')}" data-k="${k}" data-f="qtd_min">
+      <input type="number" placeholder="Até (vazio = sem limite)" value="${esc(f.qtd_max ?? '')}" data-k="${k}" data-f="qtd_max">
+      <input type="number" step="0.0001" placeholder="Preço unitário" value="${esc(f.preco_unitario ?? '')}" data-k="${k}" data-f="preco_unitario">
+      <button type="button" class="btn link peq" data-rm="${k}" style="flex:0">Remover</button></div>`).join('') : '<p class="small muted" style="margin:0">Sem faixas: vale o preço base.</p>';
+    $$('#fx [data-f]', m.el).forEach(i => i.oninput = () => faixas[i.dataset.k][i.dataset.f] = i.value);
+    $$('#fx [data-rm]', m.el).forEach(b => b.onclick = () => { faixas.splice(b.dataset.rm, 1); desenhar(); });
+  };
+  desenhar();
+  $('#add-fx', m.el).onclick = () => { faixas.push({}); desenhar(); };
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = formDados($('#f-prod', m.el)); d.ativo = !!d.ativo; d.faixas = faixas.filter(f => f.qtd_min !== '' && f.qtd_min != null && f.preco_unitario !== '' && f.preco_unitario != null); if (id) d.id = id;
+    await api('salvar_produto', d); m.fechar(); toast('Produto salvo.'); recarregar();
+  };
+}
+
+/* ---------- FERIADOS ---------- */
+rota('feriados', async (_p, el) => {
+  definirTopo('Feriados', '');
+  const r = await api('feriados');
+  r.feriados.forEach(f => S.feriados[f.data] = f);
+  const TIPO = { nacional:'Nacional', estadual:'Estadual', municipal:'Municipal (Osasco)', facultativo:'Ponto facultativo', emenda:'Emenda' };
+  el.innerHTML = `<div class="painel"><p class="small muted" style="margin-top:0">Usado para calcular o 5º dia útil do repasse de comissões. Marque "conta como feriado" nos dias em que a GVH não abre.</p>
+    <form id="f-fer" class="linha-form" style="margin-bottom:16px">
+      <label class="campo">Data<input type="date" name="data" required></label><label class="campo" style="flex:2">Nome<input type="text" name="nome" required></label>
+      <label class="campo">Tipo<select name="tipo">${Object.entries(TIPO).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+      <label class="check" style="flex:0;min-width:auto;padding-bottom:9px"><input type="checkbox" name="conta_como_feriado" value="true" checked> Conta como feriado</label>
+      <button class="btn prim" style="flex:0">Salvar</button></form>
+    <div class="tabela-wrap"><table><thead><tr><th>Data</th><th>Nome</th><th>Tipo</th><th>Conta como feriado</th><th></th></tr></thead><tbody>
+    ${r.feriados.map(f => `<tr><td class="num">${data(f.data)}</td><td>${esc(f.nome)}</td><td>${esc(TIPO[f.tipo] || f.tipo)}</td>
+      <td><button class="btn link peq" onclick="alternarFeriado('${f.data}')">${f.conta_como_feriado ? 'Sim' : 'Não'}</button></td>
+      <td class="dir"><button class="btn link peq" onclick="excluirFeriado('${f.data}')">Excluir</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#f-fer').onsubmit = async e => { e.preventDefault(); const d = formDados(e.target); d.conta_como_feriado = !!d.conta_como_feriado; await api('feriados', { salvar: d }); toast('Feriado salvo.'); recarregar(); };
+});
+async function alternarFeriado(dt) { const f = S.feriados[dt]; await api('feriados', { salvar: { ...f, conta_como_feriado: !f.conta_como_feriado } }); recarregar(); }
+async function excluirFeriado(d) { if (!await confirmar('Excluir este feriado?', 'Excluir', true)) return; await api('feriados', { excluir: d }); recarregar(); }
+
+/* ---------- USUÁRIOS (diretor) ---------- */
+rota('usuarios', async (_p, el) => {
+  definirTopo('Usuários', `<button class="btn prim" onclick="modalUsuario(null)">Novo usuário</button>`);
+  const r = await api('listar_usuarios'); S.vistaEmRender.dados = r;
+  el.innerHTML = `<div class="painel"><div class="tabela-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Comissão</th><th></th></tr></thead><tbody>
+    ${r.usuarios.map(u => `<tr class="clicavel" onclick="modalUsuario('${u.id}')"><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${esc(u.perfil_nome)}</td>
+      <td>${u.recebe_comissao ? num(u.percentual_comissao) + '%' : 'Não recebe (economizada)'}</td><td>${u.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+});
+function modalUsuario(id) {
+  const u = id ? S.vistaAtual.dados.usuarios.find(x => x.id === id) : { ativo: true, recebe_comissao: true, percentual_comissao: 5, perfil: 'vendedor' };
+  const m = abrirModal({ titulo: id ? u.nome : 'Novo usuário', corpo: `<form id="f-usu" class="grade g2">
+    <label class="campo">Nome<input type="text" name="nome" value="${esc(u.nome || '')}"></label>
+    <label class="campo">E-mail<input type="email" name="email" value="${esc(u.email || '')}"></label>
+    <label class="campo">Perfil<select name="perfil">${S.vistaAtual.dados.perfis.map(p => `<option value="${p.codigo}" ${p.codigo === u.perfil ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
+    <label class="campo">${id ? 'Nova senha (deixe em branco para manter)' : 'Senha'}<input type="text" name="senha" autocomplete="off"></label>
+    <label class="campo">Comissão (%)<input type="number" step="0.01" name="percentual_comissao" value="${esc(u.percentual_comissao)}"></label>
+    <div></div>
+    <label class="check"><input type="checkbox" name="recebe_comissao" value="true" ${u.recebe_comissao ? 'checked' : ''}> Recebe comissão</label>
+    <label class="check"><input type="checkbox" name="ativo" value="true" ${u.ativo ? 'checked' : ''}> Ativo</label></form>
+    <p class="small muted" style="margin:0">Quem não recebe comissão tem o valor registrado como "comissão economizada". Trocar a senha encerra as sessões abertas desse usuário.</p>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar usuário</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = formDados($('#f-usu', m.el)); d.ativo = !!d.ativo; d.recebe_comissao = !!d.recebe_comissao; if (id) d.id = id;
+    await api('salvar_usuario', d); m.fechar(); toast('Usuário salvo.'); recarregar();
+  };
+}
+
+/* ---------- inicialização ---------- */
+(async () => {
+  let t = null; try { t = localStorage.getItem('gvh_token'); } catch {}
+  if (!t) { $('#tela-login').classList.remove('hidden'); return; }
+  S.token = t;
+  try { const r = await api('sessao', {}, true); salvarSessao({ ...r, token: t }); await iniciarApp(); }
+  catch { sairLocal(); }
+})();
+</script>
+</body>
+</html>
