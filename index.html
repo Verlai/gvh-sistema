@@ -1318,7 +1318,7 @@ rota('orcamento', async (id, el) => {
   if (!o) throw new Error('Orçamento não encontrado.');
   const travado = o.status === 'aprovado';
   definirTopo(novo ? 'Novo orçamento' : `Orçamento ${o.numero}`, `<a class="btn" href="#/orcamentos">Voltar</a>
-    ${!novo ? `<button class="btn" onclick="window.print()">Imprimir</button>` : ''}
+    ${!novo ? `<button class="btn" id="o-imprimir">Imprimir orçamento</button>` : ''}
     ${!novo && !travado ? `<button class="btn escuro" id="o-converter">Transformar em pedido</button>` : ''}
     ${o.pedido_id ? `<a class="btn" href="#/pedido/${o.pedido_id}">Ver pedido</a>` : ''}`);
   let cliente = o.cliente || null, pegarItens;
@@ -1338,7 +1338,7 @@ rota('orcamento', async (id, el) => {
       <label class="campo">Situação<select name="status">${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${travado ? '<option value="aprovado" selected>Aprovado</option>' : ''}</select></label>
       <div></div>
       <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(o.condicoes_pagamento || '')}"></label>
-      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
+      <label class="campo" style="grid-column:1/-1">Observações <span class="muted">(aparecem no orçamento do cliente)</span><textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
     </form></div>
     ${!travado ? `<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn prim" id="o-salvar">Salvar orçamento</button></div>` : ''}`;
   const mostrarCli = c => { cliente = c; $('#o-cli-esc').innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(fmtDoc(c.cpf_cnpj))}</span>${!travado ? ' <button type="button" class="btn link peq" id="o-cli-limpar">Trocar</button>' : ''}${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}` : '<span class="muted small">Nenhum cliente cadastrado escolhido.</span>'; $('#o-cli').value = '';
@@ -1370,6 +1370,11 @@ rota('orcamento', async (id, el) => {
       m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
     };
   };
+  if ($('#o-imprimir')) $('#o-imprimir').onclick = async () => {
+    if (!travado) await salvar();
+    const r = await api('obter_orcamento', { id: o.id });
+    imprimirOrcamento(r.orcamento);
+  };
   if ($('#o-converter')) $('#o-converter').onclick = async () => {
     if (cliente) return abrirConversao();
     if (!pode('cadastra_clientes')) return toast('Pedido exige cliente cadastrado. Peça a quem cadastra clientes.', true);
@@ -1377,6 +1382,107 @@ rota('orcamento', async (id, el) => {
     modalCliente(null, async c => { mostrarCli(c); await salvar(); abrirConversao(); }, $('#o-cli-nome').value.trim());
   };
 });
+
+/* ---------- DOCUMENTO DO ORÇAMENTO (PDF) ---------- */
+// Dados da GVH que saem no cabeçalho e no rodapé do orçamento
+const EMPRESA = {
+  nome: 'Gráfica Venda Hoje',
+  cnpj: '52.570.432/0001-31',
+  endereco: 'Av. General Pedro Pinho, 438 · Pestana · Osasco/SP · CEP 06180-180',
+  telefone: '(11) 98456-6956',
+  email: 'diretoria@gvh.com.br',
+  site: 'graficavendahoje.impressao.site',
+  condicoes_gerais: 'Valores válidos até a data de validade. A produção começa após a aprovação da arte e a confirmação do pagamento combinado. Prazos contados em dias úteis a partir da aprovação da arte.'
+};
+function imprimirOrcamento(o) {
+  const c = o.cliente;
+  const dataBR = iso => iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+  const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const unit = (t, q) => Number(q) > 0 ? (Number(t) / Number(q)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '';
+  const nomeProd = id => S.base.produtos.find(p => p.id === id)?.nome || '';
+  const vendedor = S.base.vendedores.find(v => v.id === o.vendedor_id)?.nome || '';
+  const nomeCli = c ? (c.nome_fantasia || c.nome) : (o.cliente_nome || '');
+  const linhasCli = c ? [
+      c.nome_fantasia ? c.nome : '',
+      c.cpf_cnpj ? `${c.tipo_pessoa === 'PF' ? 'CPF' : 'CNPJ'} ${fmtDoc(c.cpf_cnpj)}` : '',
+      [c.telefone ? fmtTel(c.telefone) : '', c.email].filter(Boolean).join(' · '),
+      enderecoCliente(c)
+    ].filter(Boolean) : [];
+  const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
+  const logo = $('#logo-gvh', document)?.src || '';
+  const titulo = `Orçamento ${o.numero} - ${nomeCli}`.replace(/[\\/:*?"<>|]/g, '');
+  const itens = o.itens || [];
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${esc(titulo)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Sora, Arial, sans-serif; color: #1d262d; font-size: 10.5pt; margin: 0; }
+  .topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 14px; border-bottom: 3px solid #00a986; }
+  .topo img { height: 58px; }
+  .emp { text-align: right; font-size: 8.5pt; color: #5a6770; line-height: 1.5; }
+  .emp b { color: #1d262d; font-size: 10pt; }
+  .titulo { display: flex; justify-content: space-between; align-items: flex-end; margin: 18px 0 14px; }
+  .titulo h1 { margin: 0; font-size: 20pt; font-weight: 700; letter-spacing: .5px; }
+  .titulo h1 span { color: #00a986; }
+  .datas { text-align: right; font-size: 9pt; color: #5a6770; line-height: 1.6; }
+  .datas b { color: #1d262d; }
+  .caixa { background: #f6f6f6; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+  .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; color: #8a959c; margin-bottom: 4px; font-weight: 600; }
+  .cli b { font-size: 11.5pt; } .cli div { font-size: 9pt; color: #5a6770; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  th { background: #1d262d; color: #fff; font-size: 8pt; text-transform: uppercase; letter-spacing: .6px; text-align: left; padding: 8px 10px; font-weight: 600; }
+  th.n, td.n { text-align: right; white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid #e2e6e8; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  td .prod { font-weight: 600; } td .desc { font-size: 9pt; color: #5a6770; margin-top: 2px; }
+  .totais { margin: 12px 0 0 auto; width: 280px; font-size: 10pt; }
+  .totais div { display: flex; justify-content: space-between; padding: 4px 10px; }
+  .totais .final { background: #00a986; color: #fff; border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 9px 10px; margin-top: 6px; }
+  .bloco { margin-top: 18px; page-break-inside: avoid; } .bloco p { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
+  .rodape { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e2e6e8; font-size: 8pt; color: #8a959c; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="topo">
+    ${logo ? `<img src="${logo}" alt="GVH">` : `<b>${esc(EMPRESA.nome)}</b>`}
+    <div class="emp"><b>${esc(EMPRESA.nome)}</b>${empresaLinhas.map(l => `<br>${esc(l)}`).join('')}</div>
+  </div>
+  <div class="titulo">
+    <h1>ORÇAMENTO <span>Nº ${esc(o.numero)}</span></h1>
+    <div class="datas">Emitido em <b>${dataBR(o.updated_at || o.created_at)}</b>${o.validade ? `<br>Válido até <b>${dataBR(o.validade)}</b>` : ''}${vendedor ? `<br>Atendimento: <b>${esc(vendedor)}</b>` : ''}</div>
+  </div>
+  <div class="caixa cli"><div class="rot">Cliente</div><b>${esc(nomeCli)}</b>${linhasCli.map(l => `<div>${esc(l)}</div>`).join('')}</div>
+  <table>
+    <thead><tr><th style="width:28px">#</th><th>Produto / descrição</th><th class="n" style="width:70px">Qtd.</th><th class="n" style="width:100px">Unitário</th><th class="n" style="width:110px">Total</th></tr></thead>
+    <tbody>${itens.map((i, k) => {
+      const prod = nomeProd(i.produto_id); const desc = i.descricao && i.descricao !== prod ? i.descricao : '';
+      return `<tr><td>${k + 1}</td><td><div class="prod">${esc(prod || i.descricao)}</div>${desc ? `<div class="desc">${esc(desc)}</div>` : ''}</td>
+        <td class="n">${num(i.quantidade)}</td><td class="n">${unit(i.valor_total, i.quantidade)}</td><td class="n">${din(i.valor_total)}</td></tr>`;
+    }).join('')}</tbody>
+  </table>
+  <div class="totais">
+    ${Number(o.desconto) || Number(o.frete) ? `<div><span>Subtotal</span><span>${din(o.valor_itens)}</span></div>` : ''}
+    ${Number(o.desconto) ? `<div><span>Desconto</span><span>- ${din(o.desconto)}</span></div>` : ''}
+    ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
+    <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div>
+  </div>
+  ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Condições de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
+  ${o.observacoes ? `<div class="bloco"><div class="rot">Observações</div><p>${esc(o.observacoes)}</p></div>` : ''}
+  ${EMPRESA.condicoes_gerais ? `<div class="bloco"><div class="rot">Condições gerais</div><p>${esc(EMPRESA.condicoes_gerais)}</p></div>` : ''}
+  <div class="rodape"><span>${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</span><span>Orçamento nº ${esc(o.numero)}</span></div>
+</body></html>`;
+  document.getElementById('frame-impressao')?.remove();
+  const fr = document.createElement('iframe'); fr.id = 'frame-impressao';
+  fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+  fr.onload = async () => {
+    const w = fr.contentWindow;
+    try { await w.document.fonts.ready; } catch {}
+    const tituloOriginal = document.title; document.title = titulo;
+    setTimeout(() => { w.focus(); w.print(); setTimeout(() => { document.title = tituloOriginal; }, 1000); }, 150);
+  };
+  fr.srcdoc = html;
+}
 
 /* ---------- ARTE ---------- */
 rota('arte', async (_p, el) => {
