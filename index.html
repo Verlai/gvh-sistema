@@ -295,6 +295,21 @@ async function api(acao, dados = {}, silencioso = false) {
   } finally { setCarregando(-1); }
 }
 
+/* ---------- paginação ("mostrar mais") ---------- */
+const PASSO_LISTA = 50;
+const limLista = chave => (S.cache.lim ||= {})[chave] || PASSO_LISTA;
+const zerarLista = chave => { (S.cache.lim ||= {})[chave] = PASSO_LISTA; };
+function rodapeLista(chave, mostrados, total, rotulo, extra = '') {
+  if (!total) return '';
+  if (total <= mostrados) return `<p class="small muted" style="margin:10px 0 0">${total} ${rotulo}.${extra ? ' ' + extra : ''}</p>`;
+  return `<div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="small muted">Mostrando ${mostrados} de ${total} ${rotulo}.${extra ? ' ' + extra : ''}</span>
+    <button type="button" class="btn peq" data-mais="${chave}">Mostrar mais ${Math.min(PASSO_LISTA, total - mostrados)}</button></div>`;
+}
+function ligarMais(el, chave, aoMudar) {
+  const b = el.querySelector(`[data-mais="${chave}"]`);
+  if (b) b.onclick = () => { S.cache.lim[chave] = limLista(chave) + PASSO_LISTA; aoMudar(); };
+}
+
 /* ---------- modal ---------- */
 function abrirModal({ titulo, corpo, rodape = '', largo = false, aoAbrir }) {
   const f = document.createElement('div');
@@ -558,7 +573,7 @@ rota('inicio', async (_p, el) => {
       <a class="cartao-num ${fin.atrasados ? 'alerta-num' : ''}" href="#/financeiro/atrasados" style="text-decoration:none;color:inherit"><span class="n num">${fin.atrasados} · ${brl(fin.valor_atrasado)}</span><span class="muted small">Parcelas em atraso</span></a>
     </div>` : ''}`;
 });
-function irPedidos(etapa) { S.cache.filtroPedidos = { ...(S.cache.filtroPedidos || {}), etapa }; const v = VISTAS.get('pedidos'); if (v) v.sujo = true; location.hash = '#/pedidos'; }
+function irPedidos(etapa) { zerarLista('pedidos'); S.cache.filtroPedidos = { ...(S.cache.filtroPedidos || {}), etapa }; const v = VISTAS.get('pedidos'); if (v) v.sujo = true; location.hash = '#/pedidos'; }
 
 /* ---------- LISTA DE PEDIDOS ---------- */
 rota('pedidos', async (_p, el) => {
@@ -584,24 +599,26 @@ rota('pedidos', async (_p, el) => {
 
   let t;
   const buscar = async () => {
-    const dados = { busca: f.busca, incluir_finalizados: f.finalizados };
+    const dados = { busca: f.busca, incluir_finalizados: f.finalizados, limite: limLista('pedidos') };
     if (f.etapa) dados.status = f.etapa === 'saida' ? ['em_transporte','aguardando_retirada'] : [f.etapa];
     if (f.fin) dados.status_financeiro = f.fin;
     if (f.vendedor) dados.vendedor_id = f.vendedor;
     const r = await api('listar_pedidos', dados);
-    desenharListaPedidos(r.pedidos);
+    desenharListaPedidos(r.pedidos, r.total);
+    ligarMais($('#lista-pedidos'), 'pedidos', buscar);
   };
-  $('#f-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(buscar, 350); };
-  if ($('#f-fin')) $('#f-fin').onchange = e => { f.fin = e.target.value; buscar(); };
-  $('#f-vend').onchange = e => { f.vendedor = e.target.value; buscar(); };
-  $('#f-final').onchange = e => { f.finalizados = e.target.checked; buscar(); };
+  const filtrar = () => { zerarLista('pedidos'); buscar(); };
+  $('#f-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 350); };
+  if ($('#f-fin')) $('#f-fin').onchange = e => { f.fin = e.target.value; filtrar(); };
+  $('#f-vend').onchange = e => { f.vendedor = e.target.value; filtrar(); };
+  $('#f-final').onchange = e => { f.finalizados = e.target.checked; filtrar(); };
   $$('#f-etapas .chip').forEach(b => b.onclick = () => {
-    f.etapa = b.dataset.e; $$('#f-etapas .chip').forEach(x => x.classList.toggle('ativo', x === b)); buscar();
+    f.etapa = b.dataset.e; $$('#f-etapas .chip').forEach(x => x.classList.toggle('ativo', x === b)); filtrar();
   });
   await buscar();
 });
 
-function desenharListaPedidos(lista) {
+function desenharListaPedidos(lista, total = lista.length) {
   const el = $('#lista-pedidos');
   if (!lista.length) { el.innerHTML = `<div class="vazio">Nenhum pedido encontrado com esses filtros.${pode('cria_pedidos') ? ' <a href="#/novo">Lançar um pedido</a>' : ''}</div>`; return; }
   el.innerHTML = `<div class="tabela-wrap"><table>
@@ -617,7 +634,7 @@ function desenharListaPedidos(lista) {
         ${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}
         <td class="num ${p.dias_no_status >= 3 && !['concluido','cancelado'].includes(p.status) ? '' : 'muted'}" style="${p.dias_no_status >= 3 && !['concluido','cancelado'].includes(p.status) ? 'color:var(--vermelho);font-weight:500' : ''}">${p.dias_no_status} ${p.dias_no_status == 1 ? 'dia' : 'dias'}</td>
       </tr>`).join('')}</tbody></table></div>
-    <p class="small muted" style="margin:10px 0 0">${lista.length} pedido${lista.length > 1 ? 's' : ''}. Os números acima do trilho mostram quantos itens estão em cada etapa.</p>`;
+    ${rodapeLista('pedidos', lista.length, total, total > 1 ? 'pedidos' : 'pedido', 'Os números acima do trilho mostram quantos itens estão em cada etapa.')}`;
 }
 
 /* ---------- DETALHE DO PEDIDO ---------- */
@@ -1301,14 +1318,17 @@ rota('orcamentos', async (_p, el) => {
     </div></div><div class="painel" id="o-lista"></div>`;
   const NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aprovado:['Aprovado','b-verde'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
   const buscar = async () => {
-    const r = await api('listar_orcamentos', { busca: $('#o-busca').value, status: $('#o-status').value });
+    const r = await api('listar_orcamentos', { busca: $('#o-busca').value, status: $('#o-status').value, limite: limLista('orcamentos') });
     $('#o-lista').innerHTML = r.orcamentos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Vendedor</th><th>Validade</th><th>Situação</th><th class="dir">Total</th></tr></thead><tbody>
       ${r.orcamentos.map(o => `<tr class="clicavel" onclick="location.hash='#/orcamento/${o.id}'"><td><b>${esc(o.numero)}</b><div class="small muted">${data(o.created_at)}</div></td>
         <td>${esc(o.cliente_nome || '—')}${o.cliente_generico ? ' ' + badge('Sem cadastro', 'b-ambar') : ''}</td><td>${esc(o.vendedor_nome || '')}</td><td>${data(o.validade)}</td>
         <td>${badge(...NOMES[o.status])}</td><td class="dir num">${brl(o.valor_total)}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="vazio">Nenhum orçamento encontrado.</div>';
+    $('#o-lista').insertAdjacentHTML('beforeend', rodapeLista('orcamentos', r.orcamentos.length, r.total, 'orçamento(s)'));
+    ligarMais($('#o-lista'), 'orcamentos', buscar);
   };
-  let t; $('#o-busca').oninput = () => { clearTimeout(t); t = setTimeout(buscar, 350); }; $('#o-status').onchange = buscar;
+  const filtrar = () => { zerarLista('orcamentos'); buscar(); };
+  let t; $('#o-busca').oninput = () => { clearTimeout(t); t = setTimeout(filtrar, 350); }; $('#o-status').onchange = filtrar;
   await buscar();
 });
 
@@ -1642,7 +1662,7 @@ rota('financeiro', async (filtroInicial, el) => {
   const f = S.cache.filtroFin || (S.cache.filtroFin = { filtro: 'abertos', busca: '', de: '', ate: '' });
   if (filtroInicial && !S.vistaEmRender.filtroAplicado) { f.filtro = filtroInicial; S.vistaEmRender.filtroAplicado = true; }
   const abas = [['hoje','Vencem hoje'],['atrasados','Atrasadas'],['abertos','Em aberto'],['pagos','Pagas'],['todos','Todas']];
-  const r = await api('listar_recebimentos', f);
+  const r = await api('listar_recebimentos', { ...f, limite: limLista('receber') });
   const rs = r.resumo;
   el.innerHTML = `
     <div class="grade g4">
@@ -1660,12 +1680,14 @@ rota('financeiro', async (filtroInicial, el) => {
       </div>
       <p class="small muted" style="margin:0 0 10px">Parcelas pagas são filtradas pela data do pagamento; as demais, pelo vencimento.</p>
       ${tabelaParcelas(r.recebimentos, true)}
-      ${r.recebimentos.length ? `<p class="small muted">${r.recebimentos.length} parcela(s) · Total ${brl(r.recebimentos.reduce((s, x) => s + Number(x.valor), 0))}</p>` : ''}
+      ${rodapeLista('receber', r.recebimentos.length, r.total, 'parcela(s)', `Total filtrado: ${brl(r.valor_total)}`)}
     </div>`;
-  $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; recarregar(); });
-  let t; $('#fin-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(recarregar, 450); };
-  $('#fin-de').onchange = e => { f.de = e.target.value; recarregar(); };
-  $('#fin-ate').onchange = e => { f.ate = e.target.value; recarregar(); };
+  ligarMais(el, 'receber', recarregar);
+  const filtrar = () => { zerarLista('receber'); recarregar(); };
+  $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; filtrar(); });
+  let t; $('#fin-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
+  $('#fin-de').onchange = e => { f.de = e.target.value; filtrar(); };
+  $('#fin-ate').onchange = e => { f.ate = e.target.value; filtrar(); };
 });
 
 /* ---------- COMISSÕES ---------- */
@@ -1715,13 +1737,15 @@ rota('clientes', async (_p, el) => {
   definirTopo('Clientes', pode('cadastra_clientes') ? `<button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
   el.innerHTML = `<div class="painel filtros"><label class="campo">Buscar<input type="search" id="cl-busca" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp"></label></div><div class="painel" id="cl-lista"></div>`;
   const buscar = async () => {
-    const r = await api('buscar_clientes', { busca: $('#cl-busca').value, limite: 200, incluir_inativos: true });
+    const r = await api('buscar_clientes', { busca: $('#cl-busca').value, limite: limLista('clientes'), incluir_inativos: true });
     $('#cl-lista').innerHTML = r.clientes.length ? `<div class="tabela-wrap"><table><thead><tr><th>Cliente</th><th>CPF / CNPJ</th><th>Contato</th><th>Cidade</th><th></th></tr></thead><tbody>
       ${r.clientes.map(c => `<tr class="clicavel" onclick="modalCliente('${c.id}', recarregar)"><td><b>${esc(c.nome_fantasia || c.nome)}</b>${c.nome_fantasia ? `<div class="small muted">${esc(c.nome)}</div>` : ''}</td>
         <td class="num">${esc(fmtDoc(c.cpf_cnpj) || '—')}</td><td>${esc(fmtTel(c.whatsapp || c.telefone))}<div class="small muted">${esc(c.email || '')}</div></td><td>${esc(c.cidade || '')}</td>
         <td>${c.revenda ? badge('Revenda', 'b-azul') : ''} ${c.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum cliente encontrado.</div>';
+    $('#cl-lista').insertAdjacentHTML('beforeend', rodapeLista('clientes', r.clientes.length, r.total, 'cliente(s)'));
+    ligarMais($('#cl-lista'), 'clientes', buscar);
   };
-  let t; $('#cl-busca').oninput = () => { clearTimeout(t); t = setTimeout(buscar, 350); };
+  let t; $('#cl-busca').oninput = () => { clearTimeout(t); t = setTimeout(() => { zerarLista('clientes'); buscar(); }, 350); };
   await buscar();
 });
 
