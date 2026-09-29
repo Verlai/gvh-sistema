@@ -1056,7 +1056,7 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
         <label class="campo">Telefone<input type="text" name="telefone" value="${esc(fmtTel(c.telefone))}" placeholder="(11) 99999-9999" ${dis}></label>
         <label class="check" style="align-self:end;padding-bottom:9px"><input type="checkbox" name="telefone_whatsapp" ${c.telefone_whatsapp ? 'checked' : ''} ${dis}> É WhatsApp</label>
         <label class="check" style="align-self:end;padding-bottom:9px"><input type="checkbox" name="revenda" ${c.revenda ? 'checked' : ''} ${dis}> Revenda</label>
-        ${campo('email', 'E-mail')}${campo('email_nf', 'E-mail para nota fiscal')}${campo('instagram', 'Instagram', 'placeholder="@perfil"')}
+        ${campo('email', 'E-mail')}${campo('instagram', 'Instagram', 'placeholder="@perfil"')}
         ${campo('cep', 'CEP')}${campo('logradouro', 'Endereço')}${campo('numero', 'Número')}
         ${campo('complemento', 'Complemento')}${campo('bairro', 'Bairro')}${campo('cidade', 'Cidade')}
         ${campo('uf', 'UF', 'maxlength="2"')}
