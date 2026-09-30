@@ -112,20 +112,20 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .alerta.erro{background:var(--vermelho-bg);color:var(--vermelho)}
 
 /* ===== Trilho de produção (elemento central) ===== */
-.trilho{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;min-width:180px}
+.trilho{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;min-width:180px}
 .trilho span{height:8px;border-radius:2px;background:#e3e8ea;position:relative}
 .trilho span.feito{background:var(--verde)}
 .trilho span.atual{background:var(--grafite)}
 .trilho span i{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-style:normal;font-size:10px;color:var(--texto-2);font-weight:500}
 .trilho.cancelado span{background:#f1d4d1}
-.trilho-grande{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.trilho-grande{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .trilho-grande div{border-top:5px solid #e3e8ea;padding-top:8px;font-size:12px;color:var(--texto-3)}
 .trilho-grande div.feito{border-color:var(--verde);color:var(--grafite)}
 .trilho-grande div.atual{border-color:var(--grafite);color:var(--grafite);font-weight:700}
 .trilho-grande small{display:block;color:var(--texto-2);font-weight:400}
 
 /* ===== Início ===== */
-.etapas{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid var(--linha);border-radius:var(--raio);background:#fff;overflow:hidden}
+.etapas{display:grid;grid-template-columns:repeat(7,1fr);gap:0;border:1px solid var(--linha);border-radius:var(--raio);background:#fff;overflow:hidden}
 .etapas button{border:0;border-right:1px solid var(--linha);background:#fff;padding:18px 14px;text-align:left;cursor:pointer}
 .etapas button:last-child{border-right:0}
 .etapas button:hover{background:#fafbfb}
@@ -258,6 +258,8 @@ const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(
 const somaMeses = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0,10); };
 const pode = chave => !!S.perm[chave];
 const podeStatus = st => (S.perm.status_item_permitidos || []).includes(st);
+/* fornecedor: só quem acessa a aba Pré-impressão (mesma regra do banco: fn_ve_fornecedor) */
+const veFornecedor = () => podeStatus('em_producao') || podeStatus('despachado');
 const formDados = form => Object.fromEntries(new FormData(form).entries());
 const soDoc = v => String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
 const fmtDoc = v => { const d = soDoc(v);
@@ -339,13 +341,13 @@ function confirmar(texto, rotulo = 'Confirmar', perigo = false) {
 /* ---------- status ---------- */
 const ETAPAS = [
   ['criacao_arte','Criação de Arte'], ['pre_impressao','Pré-Impressão'],
-  ['em_producao','Em produção'], ['expedicao','Expedição'], ['saida','Transporte / Retirada'], ['entregue','Entregue']
+  ['em_producao','Em produção'], ['despachado','Despachado'], ['expedicao','Expedição'], ['saida','Transporte / Retirada'], ['entregue','Entregue']
 ];
-const ORDEM_PED = { criacao_arte:0, pre_impressao:1, em_producao:2, expedicao:3, em_transporte:4, aguardando_retirada:4, entregue:5, concluido:6, cancelado:-1 };
-const ORDEM_ITEM = { arte_a_fazer:0, arte_em_alteracao:0, arte_em_aprovacao:0, pre_impressao:1, em_producao:2, expedicao:3, em_transporte:4, aguardando_retirada:4, entregue:5, cancelado:-1 };
+const ORDEM_PED = { criacao_arte:0, pre_impressao:1, em_producao:2, despachado:3, expedicao:4, em_transporte:5, aguardando_retirada:5, entregue:6, concluido:7, cancelado:-1 };
+const ORDEM_ITEM = { arte_a_fazer:0, arte_em_alteracao:0, arte_em_aprovacao:0, pre_impressao:1, em_producao:2, despachado:3, expedicao:4, em_transporte:5, aguardando_retirada:5, entregue:6, cancelado:-1 };
 const COR_STATUS = {
   recebido:'b-cinza', criacao_arte:'b-azul', arte_a_fazer:'b-azul', arte_em_alteracao:'b-ambar', arte_em_aprovacao:'b-azul',
-  pre_impressao:'b-ambar', em_producao:'b-ambar', expedicao:'b-verde', em_transporte:'b-verde', aguardando_retirada:'b-verde',
+  pre_impressao:'b-ambar', em_producao:'b-ambar', despachado:'b-azul', expedicao:'b-verde', em_transporte:'b-verde', aguardando_retirada:'b-verde',
   entregue:'b-verde', concluido:'b-escuro', cancelado:'b-vermelho'
 };
 const COR_FIN = { pago:'b-verde', atrasado:'b-vermelho', boleto:'b-azul', sinal_pago:'b-ambar', aguardando_pagamento:'b-cinza' };
@@ -358,20 +360,20 @@ const badgeFin = (c, nome) => c ? badge(nome, COR_FIN[c]) : '';
 
 function trilho(pedido) {
   const at = ORDEM_PED[pedido.status];
-  if (at === -1) return `<div class="trilho cancelado">${'<span></span>'.repeat(6)}</div>`;
-  const cont = [0,0,0,0,0,0];
+  if (at === -1) return `<div class="trilho cancelado">${'<span></span>'.repeat(7)}</div>`;
+  const cont = [0,0,0,0,0,0,0];
   (pedido.itens || []).forEach(i => { const o = ORDEM_ITEM[i.status]; if (o >= 0) cont[o]++; });
   return `<div class="trilho" title="${esc(pedido.status_nome || '')}">` + ETAPAS.map((e, k) => {
-    const cls = at === 6 || k < at ? 'feito' : (k === at ? 'atual' : '');
-    return `<span class="${cls}">${cont[k] && at !== 6 ? `<i>${cont[k]}</i>` : ''}</span>`;
+    const cls = at === 7 || k < at ? 'feito' : (k === at ? 'atual' : '');
+    return `<span class="${cls}">${cont[k] && at !== 7 ? `<i>${cont[k]}</i>` : ''}</span>`;
   }).join('') + '</div>';
 }
 function trilhoGrande(pedido) {
   const at = ORDEM_PED[pedido.status];
-  const cont = [0,0,0,0,0,0];
+  const cont = [0,0,0,0,0,0,0];
   (pedido.itens || []).forEach(i => { const o = ORDEM_ITEM[i.status]; if (o >= 0) cont[o]++; });
   return `<div class="trilho-grande">` + ETAPAS.map((e, k) => {
-    const cls = at === 6 || (at >= 0 && k < at) ? 'feito' : (k === at ? 'atual' : '');
+    const cls = at === 7 || (at >= 0 && k < at) ? 'feito' : (k === at ? 'atual' : '');
     return `<div class="${cls}">${esc(e[1])}<small>${cont[k] ? cont[k] + (cont[k] > 1 ? ' itens' : ' item') : ''}</small></div>`;
   }).join('') + '</div>';
 }
@@ -421,7 +423,7 @@ function itensMenu() {
   m.push(['#/pedidos', 'Pedidos']);
   if (pode('cria_pedidos')) m.push(['#/orcamentos', 'Orçamentos']);
   if (podeStatus('arte_em_aprovacao')) m.push(['#/arte', 'Arte']);
-  if (podeStatus('em_producao')) m.push(['#/producao', 'Pré-impressão e produção']);
+  if (podeStatus('em_producao') || podeStatus('despachado')) m.push(['#/producao', 'Pré-impressão e produção']);
   if (podeStatus('expedicao')) m.push(['#/expedicao', 'Expedição e entrega']);
   if (pode('ve_financeiro') || pode('cria_pedidos')) m.push(['Financeiro']);
   if (pode('ve_financeiro')) m.push(['#/financeiro', 'Contas a receber']);
@@ -562,6 +564,7 @@ rota('inicio', async (_p, el) => {
     <div class="etapas">${ETAPAS.map(([k, n]) => `
       <button class="${qtd(k) ? 'tem' : ''}" onclick="irPedidos('${k}')"><span class="n num">${qtd(k)}</span><span class="t">${esc(n)}</span></button>`).join('')}
     </div>
+    ${r.acabamento_chegou && veFornecedor() ? `<a class="alerta" href="#/producao" onclick="S.cache.abaProd='em_producao'" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Chegou para acabamento:</b> ${r.acabamento_chegou} ${r.acabamento_chegou > 1 ? 'itens voltaram' : 'item voltou'} para a produção. Veja em Pré-impressão e produção.</a>` : ''}
     <div class="grade g4" style="margin-top:16px">
       <div class="cartao-num ${r.producao_atrasada ? 'alerta-num' : ''}"><span class="n num">${r.producao_atrasada}</span><span class="muted small">Itens com prazo de produção vencido</span></div>
       <div class="cartao-num"><span class="n num">${r.itens_em_pre_impressao}</span><span class="muted small">Itens aguardando pré-impressão</span></div>
@@ -684,10 +687,10 @@ rota('pedido', async (id, el) => {
           <tr>
             <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
             <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
-                ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}</td>
+                ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
-            <td class="small">${i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>'}
-                ${i.codigo_producao ? `<div>Cód. ${esc(i.codigo_producao)}</div>` : ''}
+            <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
+                ${i.codigo_producao ? `<div>Cód. fornecedor ${esc(i.codigo_producao)}</div>` : ''}
                 ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prazo ${data(i.prazo_producao)}</div>` : ''}</td>
             <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a><br>` : ''}
                 ${i.arte_drive_url ? `<a href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Drive</a><br>` : ''}
@@ -795,10 +798,26 @@ function modalEditarPedido() {
   };
 }
 
+/* acabamento do item */
+const infoAcabamento = i => !i.precisa_acabamento ? '' : `<div class="small" style="margin-top:4px">${badge(i.acabamento_iniciado_em ? 'Em acabamento' : 'Precisa de acabamento', i.acabamento_iniciado_em ? 'b-ambar' : 'b-azul')} ${esc(i.acabamento_por || '')}</div>`;
+const camposAcabamento = i => `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="precisa_acabamento" data-acab ${i.precisa_acabamento ? 'checked' : ''}> Precisa de acabamento depois que chegar do fornecedor?</label>
+  <label class="campo ${i.precisa_acabamento ? '' : 'hidden'}" style="grid-column:1/-1" data-acab-box>Quem vai fazer o acabamento *<input type="text" name="acabamento_por" value="${esc(i.acabamento_por || '')}" placeholder="Ex.: Interno — dobrar e grampear"></label>`;
+function ligarAcabamento(form) {
+  const ck = form.querySelector('[data-acab]'); if (!ck) return;
+  ck.onchange = () => form.querySelector('[data-acab-box]').classList.toggle('hidden', !ck.checked);
+}
+function lerAcabamento(form, d) {
+  const ck = form.querySelector('[data-acab]'); if (!ck) return true;
+  d.precisa_acabamento = ck.checked;
+  if (!ck.checked) delete d.acabamento_por;
+  else if (!String(d.acabamento_por || '').trim()) { toast('Informe quem vai fazer o acabamento.', true); return false; }
+  return true;
+}
+
 /* item: novo ou edição (campos conforme perfil) */
 function modalItem(itemId) {
   const p = S.vistaAtual.dados; const i = itemId ? p.itens.find(x => x.id === itemId) : {};
-  const cria = pode('cria_pedidos'); const prod = podeStatus('em_producao') || cria; const arte = podeStatus('arte_em_aprovacao') || cria;
+  const cria = pode('cria_pedidos'); const prod = podeStatus('em_producao') || podeStatus('despachado') || cria; const arte = podeStatus('arte_em_aprovacao') || cria;
   const opcoesForn = `<option value="">Selecione</option>` + S.base.fornecedores.filter(f => f.ativo || f.id === i.fornecedor_id)
      .map(f => `<option value="${f.id}" ${f.id === i.fornecedor_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
   const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
@@ -813,9 +832,10 @@ function modalItem(itemId) {
         ${!itemId ? `<label class="campo">Status inicial<select name="status">${opcoesStatusInicial()}</select></label>` : ''}
       ` : `<div style="grid-column:1/-1"><b>${esc(i.descricao)}</b> <span class="muted">· ${num(i.quantidade)} un</span></div>`}
       ${prod ? `
-        <label class="campo">Fornecedor<select name="fornecedor_id">${opcoesForn}</select></label>
+        ${veFornecedor() ? `<label class="campo">Fornecedor<select name="fornecedor_id">${opcoesForn}</select></label>` : ''}
         <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
-        <label class="campo">Código de produção<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>` : ''}
+        <label class="campo">Código do fornecedor<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
+        ${camposAcabamento(i)}` : ''}
       ${pode('ve_custo') ? `<label class="campo">Custo de produção (R$)<input type="number" step="0.01" min="0" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
       ${arte ? `
         <label class="campo" style="grid-column:span 2">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
@@ -826,7 +846,7 @@ function modalItem(itemId) {
     </form>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>${itemId ? 'Salvar item' : 'Adicionar item'}</button>`,
     aoAbrir: el => {
-      const f = $('#f-item', el); if (!f.quantidade) return;
+      const f = $('#f-item', el); ligarAcabamento(f); if (!f.quantidade) return;
       let manual = !!itemId, tmr;
       const prodId = () => f.produto_id ? f.produto_id.value : i.produto_id;
       const unit = () => { $('#it-unit', el).textContent = 'Unit. ' + unitario(f.valor_total.value, f.quantidade.value); };
@@ -848,6 +868,7 @@ function modalItem(itemId) {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados($('#f-item', m.el));
+    if (!lerAcabamento($('#f-item', m.el), d)) return;
     if (!itemId && !d.produto_id) return toast('Selecione o produto do item.', true);
     if (d.valor_total === '') return toast('Informe o valor total do item.', true);
     if (!pode('ve_custo')) delete d.custo; else if (d.custo === '' && i.custo == null) delete d.custo;
@@ -1550,7 +1571,9 @@ function modalArte(id) {
 /* ---------- PRÉ-IMPRESSÃO E PRODUÇÃO ---------- */
 rota('producao', async (_p, el) => {
   definirTopo('Pré-impressão e produção', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
-  const aba = S.cache.abaProd || (S.cache.abaProd = 'pre_impressao');
+  const soDespacha = !podeStatus('em_producao');   // ex.: Financeiro — confere a produção e despacha, não envia para produção
+  const despacha = podeStatus('despachado');
+  const aba = soDespacha ? 'em_producao' : (S.cache.abaProd || (S.cache.abaProd = 'pre_impressao'));
   const fForn = S.cache.fornProd || '';
   const r = await api('listar_itens', { status: ['pre_impressao','em_producao'] });
   S.vistaEmRender.dados = r.itens;
@@ -1562,13 +1585,14 @@ rota('producao', async (_p, el) => {
 
   let corpo;
   if (aba === 'pre_impressao') {
-    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, prazo e código de produção. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção.</p>
+    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, prazo e código do fornecedor. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção.</p>
       <div class="tabela-wrap"><table>
-      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:170px">Fornecedor</th><th>Prazo</th><th>Código</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
+      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:170px">Fornecedor</th><th>Prazo</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
         <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
-            ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}</td>
+            ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
+            ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
         <td><select data-c="fornecedor_id">${opForn(i.fornecedor_id)}</select></td>
         <td><input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}"></td>
         <td><input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}" style="min-width:110px"></td>
@@ -1581,33 +1605,42 @@ rota('producao', async (_p, el) => {
     prod.forEach(i => (grupos[i.fornecedor_nome || 'Sem fornecedor'] ||= []).push(i));
     corpo = `<div class="linha-form filtros" style="margin-bottom:12px">
         <label class="campo" style="max-width:280px">Fornecedor<select id="f-forn"><option value="">Todos</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === fForn ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
-        <span class="small muted" style="padding-bottom:9px">Confira diariamente com cada fornecedor os itens abaixo. Atrasados aparecem primeiro.</span></div>`
+        <span class="small muted" style="padding-bottom:9px;flex:2">Confira item por item com cada fornecedor. O prazo é só referência (atrasados aparecem primeiro). Marque o que vai chegar no balcão e clique em "Marcar como despachado".</span>
+        ${despacha ? `<button class="btn prim" id="btn-despachar" style="flex:0;white-space:nowrap" disabled>Marcar como despachado</button>` : ''}</div>`
       + (prod.length ? Object.entries(grupos).map(([nome, lista]) => `<div class="grupo-forn">
         <h3>${esc(nome)} <span class="badge b-cinza">${lista.length}</span></h3>
-        <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Item</th><th>Código</th><th>Prazo</th><th>Em produção há</th><th></th></tr></thead><tbody>
+        <div class="tabela-wrap"><table><thead><tr>${despacha ? '<th style="width:28px"></th>' : ''}<th>Pedido</th><th>Item</th><th>Código do fornecedor</th><th>Prazo de produção</th><th>Em produção há</th><th></th></tr></thead><tbody>
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
+          ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}<div class="small muted">${num(i.quantidade)} un</div></td>
+          <td>${esc(i.descricao)}<div class="small muted">${num(i.quantidade)} un</div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
-          <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="modalItemProd('${i.id}')">Ajustar</button>
-            ${podeStatus('expedicao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','expedicao')">Chegou no balcão</button>` : ''}</td>
+          <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="modalItemProd('${i.id}')">Ajustar</button></td>
         </tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="vazio">Nenhum item em produção.</div>');
   }
   el.innerHTML = `
     <div class="chips" style="margin-bottom:14px">
-      <button class="chip ${aba === 'pre_impressao' ? 'ativo' : ''}" onclick="S.cache.abaProd='pre_impressao';recarregar()">Pré-impressão (${pre.length})</button>
+      ${soDespacha ? '' : `<button class="chip ${aba === 'pre_impressao' ? 'ativo' : ''}" onclick="S.cache.abaProd='pre_impressao';recarregar()">Pré-impressão (${pre.length})</button>`}
       <button class="chip ${aba === 'em_producao' ? 'ativo' : ''}" onclick="S.cache.abaProd='em_producao';recarregar()">Em produção (${r.itens.filter(i => i.status === 'em_producao').length}${atrasados ? ` · ${atrasados} atrasado${atrasados > 1 ? 's' : ''}` : ''})</button>
     </div>
     <div class="painel">${corpo}</div>`;
   if ($('#f-forn')) $('#f-forn').onchange = e => { S.cache.fornProd = e.target.value; recarregar(); };
+  const bd = $('#btn-despachar');
+  if (bd) {
+    const marcados = () => $$('.sel-desp:checked').map(x => x.value);
+    $$('.sel-desp').forEach(c => c.onchange = () => { const n = marcados().length; bd.disabled = !n; bd.textContent = n ? `Marcar como despachado (${n})` : 'Marcar como despachado'; });
+    bd.onclick = async () => { const ids = marcados(); if (!ids.length) return;
+      await api('mudar_status_itens', { itens: ids, status: 'despachado' });
+      toast(`${ids.length} ${ids.length > 1 ? 'itens marcados' : 'item marcado'} como despachado.`); recarregar(); };
+  }
 });
 async function salvarLinhaProd(id, enviar) {
   const tr = $(`tr[data-item="${id}"]`); const d = { id };
   $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
   if (d.custo === '') delete d.custo;
-  if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, prazo e código de produção.', true);
+  if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, prazo e código do fornecedor.', true);
   await api('salvar_item', d);
   if (enviar) await api('mudar_status_itens', { itens: [id], status: 'em_producao' });
   toast(enviar ? 'Item enviado para produção.' : 'Dados salvos.'); recarregar();
@@ -1617,26 +1650,47 @@ function modalItemProd(id) {
   const m = abrirModal({ titulo: `${i.pedido_numero} · ${i.descricao}`, corpo: `<form id="f-ip" class="grade g2">
     <label class="campo">Fornecedor<select name="fornecedor_id">${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === i.fornecedor_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
     <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
-    <label class="campo">Código de produção<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
+    <label class="campo">Código do fornecedor<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
     ${pode('ve_custo') ? `<label class="campo">Custo (R$)<input type="number" step="0.01" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
-    <label class="campo" style="grid-column:1/-1">Observação<input type="text" name="observacao" value="${esc(i.observacao || '')}"></label></form>`,
+    <label class="campo" style="grid-column:1/-1">Observação interna<input type="text" name="observacao" value="${esc(i.observacao || '')}"></label>
+    ${camposAcabamento(i)}</form>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelector('[data-s]').onclick = async () => { const d = formDados($('#f-ip', m.el)); if (d.custo === '') delete d.custo; await api('salvar_item', { id, ...d }); m.fechar(); toast('Item atualizado.'); recarregar(); };
+  ligarAcabamento($('#f-ip', m.el));
+  m.el.querySelector('[data-s]').onclick = async () => { const d = formDados($('#f-ip', m.el)); if (d.custo === '') delete d.custo;
+    if (!lerAcabamento($('#f-ip', m.el), d)) return; await api('salvar_item', { id, ...d }); m.fechar(); toast('Item atualizado.'); recarregar(); };
 }
 
 /* ---------- EXPEDIÇÃO E ENTREGA ---------- */
 rota('expedicao', async (_p, el) => {
   definirTopo('Expedição e entrega', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
-  const r = await api('listar_itens', { status: ['expedicao','em_transporte','aguardando_retirada'] });
+  const r = await api('listar_itens', { status: ['despachado','expedicao','em_transporte','aguardando_retirada'] });
   const peds = {};
   r.itens.forEach(i => (peds[i.pedido_id] ||= { id: i.pedido_id, numero: i.pedido_numero, cliente: i.cliente_nome, obs: i.cliente_obs, forma: i.forma_entrega, itens: [] }).itens.push(i));
   const colunas = [
+    ['despachado', 'Despachados', 'Saiu do fornecedor e está vindo para o balcão.'],
     ['expedicao', 'No balcão', 'Material chegou da produção.'],
     ['em_transporte', 'Em transporte', 'Saiu para o endereço do cliente.'],
     ['aguardando_retirada', 'Aguardando retirada', 'Cliente vem buscar no balcão.']
   ];
+  const cartaoDespachado = p => {
+    const its = p.itens.filter(i => i.status === 'despachado');
+    const pode = podeStatus('expedicao');
+    const acabPendente = i => i.precisa_acabamento && !i.acabamento_iniciado_em;
+    const normais = its.filter(i => !acabPendente(i));
+    return `<div class="painel" style="padding:14px;margin:0 0 10px">
+      <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
+      <div>${esc(p.cliente)}</div>
+      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li style="margin-bottom:6px">${esc(i.descricao)} · ${num(i.quantidade)} un
+        ${acabPendente(i) ? `<div>${badge('Precisa de acabamento', 'b-azul')} ${esc(i.acabamento_por || '')}</div>
+          ${pode ? `<button class="btn prim peq" style="margin-top:4px" onclick="moverItensPedido('${i.id}','em_producao')">Chegou · vai para acabamento</button>` : ''}` : ''}</li>`).join('')}</ul>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${pode && normais.length ? `<button class="btn prim peq" onclick="moverItensPedido('${normais.map(i => i.id).join(',')}','expedicao')">Chegou no balcão${its.length > normais.length ? ` (${normais.length})` : ''}</button>` : ''}
+      ${podeStatus('despachado') ? `<button class="btn peq" onclick="naoChegou('${its.map(i => i.id).join(',')}')">Não chegou</button>` : ''}</div>
+    </div>`;
+  };
   const cartao = (p, etapa) => {
+    if (etapa === 'despachado') return cartaoDespachado(p);
     const its = p.itens.filter(i => i.status === etapa);
     const prox = etapa === 'expedicao' ? (p.forma === 'entrega' ? ['em_transporte', 'Saiu para entrega'] : ['aguardando_retirada', 'Avisar retirada']) : ['entregue', 'Marcar como entregue'];
     return `<div class="painel" style="padding:14px;margin:0 0 10px">
@@ -1647,12 +1701,17 @@ rota('expedicao', async (_p, el) => {
       ${podeStatus(prox[0]) ? `<button class="btn ${prox[0] === 'entregue' ? 'prim' : ''} peq" onclick="moverItensPedido('${its.map(i => i.id).join(',')}','${prox[0]}')">${prox[1]}</button>` : ''}
     </div>`;
   };
-  el.innerHTML = `<div class="grade g3">${colunas.map(([k, t, d]) => {
+  el.innerHTML = `<div class="grade g4">${colunas.map(([k, t, d]) => {
     const lista = Object.values(peds).filter(p => p.itens.some(i => i.status === k));
     return `<div><h2 style="margin-bottom:2px">${t} <span class="badge b-cinza">${lista.length}</span></h2><p class="small muted" style="margin:0 0 10px">${d}</p>
       ${lista.map(p => cartao(p, k)).join('') || '<div class="vazio painel">Nada aqui.</div>'}</div>`;
   }).join('')}</div>`;
 });
+async function naoChegou(ids) {
+  if (!confirm('Voltar estes itens para "Em produção"? Use quando o material não chegou no dia.')) return;
+  await api('mudar_status_itens', { itens: ids.split(','), status: 'em_producao', nao_chegou: true });
+  toast('Itens voltaram para Em produção.'); recarregar();
+}
 async function moverItensPedido(ids, status) { await api('mudar_status_itens', { itens: ids.split(','), status }); toast(`${nomeStatusItem(status)}.`); recarregar(); }
 
 /* ---------- CONTAS A RECEBER ---------- */
