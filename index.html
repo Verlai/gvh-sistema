@@ -427,6 +427,7 @@ function itensMenu() {
   if (podeStatus('expedicao')) m.push(['#/expedicao', 'Expedição e entrega']);
   if (pode('ve_financeiro') || pode('cria_pedidos')) m.push(['Financeiro']);
   if (pode('ve_financeiro')) m.push(['#/financeiro', 'Contas a receber']);
+  if (pode('edita_financeiro')) m.push(['#/conciliacao', 'Conciliação']);
   if (pode('ve_todas_comissoes') || pode('cria_pedidos')) m.push(['#/comissoes', 'Comissões']);
   m.push(['Cadastros']);
   m.push(['#/clientes', 'Clientes']);
@@ -718,7 +719,7 @@ rota('pedido', async (id, el) => {
     ${pode('ve_financeiro') ? `
     <div class="painel">
       <div class="painel-cab"><h2>Financeiro</h2>
-        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado ? `<button class="btn" onclick="modalParcelas()">Lançar parcelas</button>` : ''}</div>
+        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado ? `<button class="btn" onclick="modalParcelas()">Lançar pagamento</button>` : ''}</div>
       <div class="grade g3" style="margin-bottom:14px">
         <div><div class="small muted">Total do pedido</div><b class="num">${brl(p.valor_total)}</b></div>
         <div><div class="small muted">Recebido</div><b class="num" style="color:var(--verde)">${brl(p.valor_pago)}</b></div>
@@ -950,49 +951,62 @@ const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vist
 const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro' };
 const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 function badgeParcela(r) {
-  if (r.situacao === 'pago') return badge('Pago em ' + data(r.pago_em), 'b-verde');
+  if (r.situacao === 'pago') return r.conferencia === 'pendente'
+    ? badge('Pago em ' + data(r.pago_em) + ' · a conferir', 'b-ambar')
+    : badge('Pago em ' + data(r.pago_em), 'b-verde');
   if (r.situacao === 'cancelado') return badge('Cancelada', 'b-cinza');
   if (r.atrasado) return badge('Atrasada', 'b-vermelho');
   if (r.dias_para_vencer === 0) return badge('Vence hoje', 'b-ambar');
   return badge('Em aberto', 'b-cinza');
 }
+function detalheParcela(r) {
+  if (r.situacao === 'pago' && r.baixado_por_nome) return `<div class="small muted">Marcado por ${esc(r.baixado_por_nome)}${r.conferencia === 'conferido' && r.conferido_por_nome ? ` · conferido por ${esc(r.conferido_por_nome)}` : ''}</div>`;
+  if (r.situacao === 'aberto' && r.conferencia === 'devolvido') return `<div class="small" style="color:var(--vermelho)">Devolvido pelo financeiro: ${esc(r.motivo_devolucao || '')}</div>`;
+  return '';
+}
 function tabelaParcelas(lista, comPedido) {
   lista.forEach(r => S.parcelas[r.id] = r);
-  if (!lista.length) return `<div class="vazio">Nenhuma parcela lançada.</div>`;
-  const edita = pode('edita_financeiro');
+  if (!lista.length) return `<div class="vazio">Nenhum pagamento lançado.</div>`;
+  const fin = pode('edita_financeiro');
+  const vend = !fin && pode('cria_pedidos') && !comPedido;   // vendedor, na tela do pedido
+  const acoes = fin || vend;
+  const conferir = fin && (comPedido || S.usuario.perfil === 'financeiro');
   return `<div class="tabela-wrap"><table>
-    <thead><tr>${comPedido ? '<th>Pedido</th><th>Cliente</th>' : ''}<th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th>Situação</th>${edita ? '<th></th>' : ''}</tr></thead>
+    <thead><tr>${comPedido ? '<th>Pedido</th><th>Cliente</th>' : ''}<th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th>Situação</th>${acoes ? '<th></th>' : ''}</tr></thead>
     <tbody>${lista.map(r => `<tr>
       ${comPedido ? `<td><a href="#/pedido/${r.pedido_id}"><b>${esc(r.pedido_numero)}</b></a></td><td>${esc(r.cliente_nome)}</td>` : ''}
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
       <td class="num">${data(r.vencimento)}</td>
       <td class="dir num">${brl(r.valor)}</td>
       <td>${esc(FORMAS[r.forma_pagamento] || '—')}</td>
-      <td>${badgeParcela(r)}</td>
-      ${edita ? `<td class="dir" style="white-space:nowrap">
-        ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}')">Dar baixa</button>
-             <button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}
-        ${r.situacao === 'pago' ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer baixa</button>` : ''}
+      <td>${badgeParcela(r)}${detalheParcela(r)}</td>
+      ${acoes ? `<td class="dir" style="white-space:nowrap">
+        ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
+             ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
+        ${r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
 }
-function modalBaixa(id) {
+function modalBaixa(id, conferir) {
   const p0 = S.parcelas[id]; const r = { id, valor: p0.valor, forma: p0.forma_pagamento || '' };
   const m = abrirModal({ titulo: 'Registrar pagamento', corpo: `
     <form id="f-baixa" class="grade g3">
       <label class="campo">Data do pagamento<input type="date" name="pago_em" value="${hoje()}" required></label>
-      <label class="campo">Forma<select name="forma_pagamento">${opcoesForma(r.forma)}</select></label>
+      <label class="campo">Forma *<select name="forma_pagamento">${opcoesForma(r.forma)}</select></label>
       <label class="campo">Valor recebido (R$)<input type="number" step="0.01" min="0.01" name="valor" value="${r.valor}"></label>
-    </form><p class="small muted" style="margin:0">A comissão do vendedor é calculada automaticamente sobre o valor recebido, no mês do pagamento.</p>`,
+    </form><p class="small muted" style="margin:0">A comissão do vendedor é calculada automaticamente sobre o valor recebido, no mês do pagamento.
+    ${conferir ? '' : '<br><b>O pagamento vai para a conferência do financeiro.</b>'}</p>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Confirmar pagamento</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    await api('baixar_recebimento', { id: r.id, ...formDados($('#f-baixa', m.el)) }); m.fechar(); toast('Pagamento registrado.'); recarregar();
+    const f = formDados($('#f-baixa', m.el));
+    if (!f.forma_pagamento) return toast('Informe a forma de pagamento.', true);
+    await api('baixar_recebimento', { id: r.id, ...f, conferir: !!conferir }); m.fechar(); toast('Pagamento registrado.'); recarregar();
   };
 }
 async function desfazerBaixa(id) {
-  if (!await confirmar('Desfazer a baixa desta parcela? A comissão ligada a ela também será estornada.', 'Desfazer baixa', true)) return;
-  await api('baixar_recebimento', { id, desfazer: true }); toast('Baixa desfeita.'); recarregar();
+  if (!await confirmar('Desfazer este pagamento? A comissão ligada a ele também será estornada.', 'Desfazer', true)) return;
+  await api('baixar_recebimento', { id, desfazer: true }); toast('Pagamento desfeito.'); recarregar();
 }
 async function excluirParcela(id) {
   if (!await confirmar('Excluir esta parcela em aberto?', 'Excluir', true)) return;
@@ -1047,16 +1061,99 @@ function ligarGerador(el, onChange) {
   desenhar();
   return () => parcelas;
 }
+/* ---------- PAGAMENTO (Pago / Não pago) — novo pedido e pedido aberto ---------- */
+const FORMAS_PED = { pix:'Pix', cartao_credito:'Cartão de crédito', boleto:'Boleto', transferencia:'Transferência' };
+const opcoesFormaPed = (sel = '', vazio = 'Escolha…') => `<option value="">${vazio}</option>` + Object.entries(FORMAS_PED).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+function htmlPagamento(prev) {
+  return `<div id="pagamento">
+    <div class="chips" data-pg="sit"><button type="button" class="chip" data-v="pago">Pago</button><button type="button" class="chip" data-v="nao">Não pago</button></div>
+    <div data-box="pago" class="hidden" style="margin-top:12px">
+      <div class="grade g3"><label class="campo">Forma de pagamento *<select data-pg-f="forma_pago">${opcoesFormaPed()}</select></label></div>
+      <p class="small muted" style="margin:6px 0 0">O valor total entra como pago hoje e vai para a conferência do financeiro.</p>
+    </div>
+    <div data-box="nao" class="hidden" style="margin-top:12px">
+      <div class="small muted" style="margin-bottom:6px">Como foi combinado?</div>
+      <div class="chips" data-pg="modo"><button type="button" class="chip" data-v="entrega">Paga na entrega / retirada</button><button type="button" class="chip" data-v="sinal">Sinal + restante</button><button type="button" class="chip" data-v="parcelado">Parcelado</button></div>
+      <div data-box="entrega" class="hidden" style="margin-top:12px">
+        <div class="grade g3"><label class="campo">Forma prevista<select data-pg-f="forma_entrega">${opcoesFormaPed('', 'A combinar')}</select></label></div>
+        <p class="small muted" style="margin:6px 0 0">Vence na previsão de entrega.</p>
+      </div>
+      <div data-box="sinal" class="hidden" style="margin-top:12px">
+        <div class="grade g3">
+          <label class="campo">Valor do sinal (R$) *<input type="number" step="0.01" min="0.01" data-pg-f="sinal"></label>
+          <label class="campo">Forma do sinal<select data-pg-f="forma_sinal">${opcoesFormaPed('', 'A combinar')}</select></label>
+          <label class="campo">Forma prevista do restante<select data-pg-f="forma_restante">${opcoesFormaPed('', 'A combinar')}</select></label>
+        </div>
+        <label class="check" style="margin-top:8px"><input type="checkbox" data-pg-f="sinal_pago"> O sinal já foi pago <span class="small muted">(vai para a conferência do financeiro)</span></label>
+        <p class="small muted" style="margin:6px 0 0">O restante vence na previsão de entrega.</p>
+      </div>
+      <div data-box="parcelado" class="hidden" style="margin-top:12px"></div>
+    </div>
+  </div>`;
+}
+/* liga o componente; total() e prev() leem os valores atuais. Devolve coletar() → { recebimentos, resumo } ou lança Error */
+function ligarPagamento(el, total, prev) {
+  const st = { sit: '', modo: '' }; let pegarParcelas = null;
+  const box = n => el.querySelector(`[data-box="${n}"]`);
+  const f = n => el.querySelector(`[data-pg-f="${n}"]`);
+  const marcar = (grupo, v) => {
+    st[grupo] = v;
+    el.querySelectorAll(`[data-pg="${grupo}"] .chip`).forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
+    if (grupo === 'sit') { box('pago').classList.toggle('hidden', v !== 'pago'); box('nao').classList.toggle('hidden', v !== 'nao'); }
+    else ['entrega', 'sinal', 'parcelado'].forEach(k => box(k).classList.toggle('hidden', k !== v));
+    if (v === 'parcelado' && !pegarParcelas) { box('parcelado').innerHTML = htmlGeradorParcelas(total(), prev()); pegarParcelas = ligarGerador(box('parcelado')); }
+  };
+  el.querySelectorAll('[data-pg] .chip').forEach(b => b.onclick = () => marcar(b.closest('[data-pg]').dataset.pg, b.dataset.v));
+  const brlTxt = v => brl(v).replace(/\s/g, ' ');
+  return () => {
+    const t = Math.round(total() * 100) / 100, p = prev();
+    if (!(t > 0)) throw new Error('O total precisa ser maior que zero para lançar o pagamento.');
+    if (!st.sit) throw new Error('Informe se o pagamento já foi feito: Pago ou Não pago.');
+    if (st.sit === 'pago') {
+      const forma = f('forma_pago').value;
+      if (!forma) throw new Error('Informe a forma de pagamento.');
+      return { recebimentos: [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), pago: true, forma_pagamento: forma }],
+               resumo: `Pago (${FORMAS_PED[forma]})` };
+    }
+    if (!st.modo) throw new Error('Escolha como o pagamento foi combinado.');
+    if (st.modo === 'entrega') {
+      const forma = f('forma_entrega').value || null;
+      return { recebimentos: [{ tipo: 'restante', valor: t.toFixed(2), vencimento: p || hoje(), forma_pagamento: forma }],
+               resumo: 'Pagamento na entrega' + (forma ? ` (${FORMAS_PED[forma]})` : '') };
+    }
+    if (st.modo === 'sinal') {
+      const sinal = Math.round(Number(f('sinal').value || 0) * 100) / 100, pago = f('sinal_pago').checked, fs = f('forma_sinal').value || null;
+      if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
+      if (sinal >= t) throw new Error('O sinal precisa ser menor que o total. Se o cliente pagou tudo, escolha "Pago".');
+      if (pago && !fs) throw new Error('Informe a forma em que o sinal foi pago.');
+      const fr = f('forma_restante').value || null;
+      return { recebimentos: [
+          { tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), pago, forma_pagamento: fs },
+          { tipo: 'restante', valor: (t - sinal).toFixed(2), vencimento: p || hoje(), forma_pagamento: fr }],
+        resumo: `Sinal de ${brlTxt(sinal)}${pago ? ' (pago)' : ''} + restante na entrega` };
+    }
+    const parcelas = pegarParcelas ? pegarParcelas() : [];
+    if (!parcelas.length) throw new Error('Gere as parcelas antes de salvar.');
+    const soma = parcelas.reduce((s, x) => s + Number(x.valor), 0);
+    if (Math.abs(soma - t) > 0.01) throw new Error(`A soma das parcelas (${brlTxt(soma)}) precisa ser igual ao total (${brlTxt(t)}).`);
+    const n = parcelas.filter(x => x.tipo !== 'sinal').length, fp = parcelas.find(x => x.tipo !== 'sinal')?.forma_pagamento;
+    return { recebimentos: parcelas, resumo: `Parcelado em ${n}x` + (fp ? ` (${FORMAS[fp] || fp})` : '') };
+  };
+}
 function modalParcelas() {
   const p = S.vistaAtual.dados;
-  let pegar;
-  const m = abrirModal({ titulo: 'Lançar parcelas', largo: true, corpo: htmlGeradorParcelas(p.valor_em_aberto ?? p.valor_total, p.data_prevista_entrega),
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar parcelas</button>`,
-    aoAbrir: el => { pegar = ligarGerador(el); } });
+  const aberto = Number(p.valor_em_aberto ?? p.valor_total);
+  const lancado = (p.recebimentos || []).filter(r => r.situacao !== 'cancelado').reduce((s, r) => s + Number(r.valor), 0);
+  const falta = Math.round((Number(p.valor_total) - lancado) * 100) / 100;
+  if (falta <= 0) return toast('Todo o valor do pedido já tem pagamento lançado. Para mudar, desfaça ou exclua um pagamento antes.', true);
+  let coletar;
+  const m = abrirModal({ titulo: 'Lançar pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Valor ainda sem pagamento lançado: <b>${brl(falta)}</b></p>${htmlPagamento()}`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar pagamento</button>`,
+    aoAbrir: el => { coletar = ligarPagamento(el, () => falta, () => p.data_prevista_entrega); } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    const parcelas = pegar(); if (!parcelas.length) return toast('Gere as parcelas antes de salvar.', true);
-    await api('salvar_recebimentos', { pedido_id: p.id, parcelas }); m.fechar(); toast('Parcelas lançadas.'); recarregar();
+    let r; try { r = coletar(); } catch (e) { return toast(e.message, true); }
+    await api('salvar_recebimentos', { pedido_id: p.id, parcelas: r.recebimentos }); m.fechar(); toast('Pagamento lançado.'); recarregar();
   };
 }
 
@@ -1247,7 +1344,7 @@ rota('novo', async (_p, el) => {
   if (!pode('cria_pedidos')) throw new Error('Seu perfil não cria pedidos.');
   definirTopo('Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
   const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
-  let cliente = null, pegarItens, pegarParcelas = () => [];
+  let cliente = null, pegarItens, coletarPagamento;
   el.innerHTML = `
     <div class="painel" style="padding:12px 16px"><label class="check"><input type="checkbox" id="np-orc"> <b>Salvar como orçamento</b> <span class="muted small">(aceita nome do cliente sem cadastro; não exige previsão de entrega)</span></label></div>
     <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
@@ -1274,13 +1371,12 @@ rota('novo', async (_p, el) => {
         <label class="campo" id="np-prev-box">Previsão de entrega *<input type="date" name="data_prevista_entrega" id="np-prev" required></label>
         <label class="campo hidden" id="np-val-box">Validade do orçamento<input type="date" id="np-validade"></label>
         <label class="campo" style="grid-column:1/-1" id="np-end-box">Endereço de entrega<input type="text" name="endereco_entrega" id="np-end"></label>
-        <label class="campo" style="grid-column:1/-1">Condições de pagamento combinadas<input type="text" name="condicoes_pagamento" placeholder="Ex.: 50% de sinal e restante na entrega"></label>
+        <label class="campo" style="grid-column:1/-1">Condições de pagamento combinadas<input type="text" name="condicoes_pagamento" id="np-cond" placeholder="Preenchido pelo pagamento abaixo; escreva aqui se quiser detalhar"></label>
         <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes"></textarea></label>
       </form>
     </div>
-    <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Parcelas (opcional)</h2><span class="small muted">Pode ser lançado depois pelo financeiro.</span></div>
-      <label class="check"><input type="checkbox" id="np-com-parc"> Lançar parcelas agora</label>
-      <div id="np-parc" class="hidden" style="margin-top:12px"></div>
+    <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Pagamento *</h2><span class="small muted">O vendedor pode mudar depois, na tela do pedido.</span></div>
+      <div id="np-pag"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
       <button class="btn" type="button" id="np-descartar">Descartar pedido</button><button class="btn prim" id="np-salvar">Criar pedido</button>
@@ -1304,10 +1400,8 @@ rota('novo', async (_p, el) => {
   };
   ligarBuscaCliente($('#busca-cli'), escolher);
   if ($('#novo-cli')) $('#novo-cli').onclick = () => modalCliente(null, escolher);
-  $('#np-com-parc').onchange = e => {
-    const box = $('#np-parc'); box.classList.toggle('hidden', !e.target.checked);
-    if (e.target.checked && !box.innerHTML) { box.innerHTML = htmlGeradorParcelas(total(), $('#np-prev').value); pegarParcelas = ligarGerador(box); }
-  };
+  $('#np-pag').innerHTML = htmlPagamento();
+  coletarPagamento = ligarPagamento($('#np-pag'), total, () => $('#np-prev').value);
   // 1º vencimento acompanha a previsão de entrega (até a pessoa mudar à mão)
   $('#np-prev').onchange = e => { const v1 = $('#gerador [data-g=venc1]'); if (v1 && (!v1.dataset.manual)) v1.value = e.target.value; };
   el.addEventListener('input', e => { if (e.target.matches('#gerador [data-g=venc1]')) e.target.dataset.manual = '1'; });
@@ -1345,8 +1439,9 @@ rota('novo', async (_p, el) => {
     }
     if (!cliente) return toast('Pedido exige cliente cadastrado. Escolha ou cadastre o cliente.', true);
     if (!$('#np-prev').value) { $('#np-prev').focus(); return toast('Informe a previsão de entrega.', true); }
-    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value };
-    if ($('#np-com-parc').checked) d.recebimentos = pegarParcelas();
+    let pag; try { pag = coletarPagamento(); } catch (e) { $('#np-parc-painel').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast(e.message, true); }
+    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value, recebimentos: pag.recebimentos };
+    if (!d.condicoes_pagamento) d.condicoes_pagamento = pag.resumo;
     $('#np-salvar').disabled = true;
     try { const r = await api('criar_pedido', d); toast(`Pedido ${r.numero} criado.`); descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
     finally { $('#np-salvar').disabled = false; }
@@ -1770,6 +1865,72 @@ rota('financeiro', async (filtroInicial, el) => {
   $('#fin-de').onchange = e => { f.de = e.target.value; filtrar(); };
   $('#fin-ate').onchange = e => { f.ate = e.target.value; filtrar(); };
 });
+
+/* ---------- CONCILIAÇÃO (Financeiro confere o que foi marcado como pago) ---------- */
+rota('conciliacao', async (_p, el) => {
+  if (!pode('edita_financeiro')) throw new Error('Seu perfil não faz a conciliação.');
+  definirTopo('Conciliação de pagamentos', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const f = S.cache.filtroConc || (S.cache.filtroConc = { filtro: 'pendentes' });
+  const r = await api('listar_conciliacao', { ...f, limite: limLista('conc') });
+  const lista = r.recebimentos; lista.forEach(x => S.parcelas[x.id] = x);
+  const pend = f.filtro === 'pendentes';
+  const abas = [['pendentes', `A conferir (${r.pendentes})`], ['devolvidos', 'Devolvidos · 30 dias'], ['conferidos', 'Conferidos · 30 dias']];
+  el.innerHTML = `
+    <div class="painel filtros">
+      <div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
+      ${pend ? '<p class="small muted" style="margin:0 0 10px">Pagamentos marcados como pagos pelo vendedor ou no pedido. Confira no extrato/maquininha e confirme; se o dinheiro não entrou, devolva com o motivo (a parcela volta a ficar em aberto e a comissão é estornada).</p>' : ''}
+      ${!lista.length ? `<div class="vazio">${pend ? 'Nada para conferir. Tudo em dia.' : 'Nenhum registro nos últimos 30 dias.'}</div>` : `
+      <div class="tabela-wrap"><table>
+        <thead><tr>${pend ? '<th><input type="checkbox" id="conc-todos" aria-label="Selecionar todos"></th>' : ''}<th>Pedido</th><th>Cliente</th><th>Vendedor</th><th>Parcela</th><th>${pend ? 'Pago em' : 'Data'}</th><th>Forma</th><th class="dir">Valor</th><th>${pend ? 'Marcado por' : 'Situação'}</th>${pend ? '<th></th>' : ''}</tr></thead>
+        <tbody>${lista.map(x => `<tr>
+          ${pend ? `<td><input type="checkbox" class="sel-conc" value="${x.id}"></td>` : ''}
+          <td><a href="#/pedido/${x.pedido_id}"><b>${esc(x.pedido_numero)}</b></a></td>
+          <td>${esc(x.cliente_nome)}</td>
+          <td>${esc(x.vendedor_nome || '—')}</td>
+          <td>${esc(TIPOS_PARC[x.tipo] || x.tipo)}${x.parcela_num ? ` ${x.parcela_num}${x.parcelas_total ? '/' + x.parcelas_total : ''}` : ''}</td>
+          <td class="num">${data(pend ? x.pago_em : (x.conferido_em || '').slice(0, 10))}</td>
+          <td>${esc(FORMAS[x.forma_pagamento] || '—')}</td>
+          <td class="dir num">${brl(x.valor)}</td>
+          <td>${pend ? esc(x.baixado_por_nome || '—')
+              : f.filtro === 'devolvidos' ? `${badge('Devolvido', 'b-vermelho')}<div class="small muted">${esc(x.motivo_devolucao || '')} · ${esc(x.conferido_por_nome || '')}</div>`
+              : `${badge('Conferido', 'b-verde')}<div class="small muted">${esc(x.conferido_por_nome || '')}</div>`}</td>
+          ${pend ? `<td class="dir" style="white-space:nowrap"><button class="btn prim peq" data-ok="${x.id}">Confirmar</button> <button class="btn link peq" data-dev="${x.id}">Devolver</button></td>` : ''}
+        </tr>`).join('')}</tbody></table></div>
+      ${pend ? `<div class="barra-acao"><span id="conc-cont">Nenhum selecionado</span>
+        <button class="btn prim" id="conc-ok" disabled>Confirmar selecionados</button>
+        <button class="btn" id="conc-dev" disabled>Devolver selecionados</button></div>` : ''}`}
+      ${rodapeLista('conc', lista.length, r.total, 'pagamento(s)', `Total: ${brl(r.valor_total)}`)}
+    </div>`;
+  ligarMais(el, 'conc', recarregar);
+  $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; zerarLista('conc'); recarregar(); });
+  if (!pend || !lista.length) return;
+  const selecionados = () => $$('.sel-conc:checked').map(c => c.value);
+  const atualizar = () => {
+    const ids = selecionados(), soma = ids.reduce((s, id) => s + Number(S.parcelas[id].valor), 0);
+    $('#conc-cont').textContent = ids.length ? `${ids.length} selecionado(s) · ${brl(soma)}` : 'Nenhum selecionado';
+    $('#conc-ok').disabled = $('#conc-dev').disabled = !ids.length;
+  };
+  $$('.sel-conc').forEach(c => c.onchange = atualizar);
+  $('#conc-todos').onchange = e => { $$('.sel-conc').forEach(c => c.checked = e.target.checked); atualizar(); };
+  const confirmarIds = async ids => { const x = await api('conferir_recebimentos', { ids }); toast(`${x.quantidade} pagamento(s) conferido(s).`); recarregar(); };
+  $$('[data-ok]').forEach(b => b.onclick = () => confirmarIds([b.dataset.ok]));
+  $$('[data-dev]').forEach(b => b.onclick = () => devolverPagamentos([b.dataset.dev]));
+  $('#conc-ok').onclick = () => confirmarIds(selecionados());
+  $('#conc-dev').onclick = () => devolverPagamentos(selecionados());
+});
+function devolverPagamentos(ids) {
+  const soma = ids.reduce((s, id) => s + Number(S.parcelas[id]?.valor || 0), 0);
+  const m = abrirModal({ titulo: 'Devolver pagamento', corpo: `
+    <p style="margin:0 0 12px">${ids.length > 1 ? `${ids.length} pagamentos` : '1 pagamento'} · <b>${brl(soma)}</b>. A parcela volta a ficar em aberto, a comissão é estornada e o motivo aparece para o vendedor no pedido.</p>
+    <label class="campo">Motivo *<textarea id="dev-motivo" placeholder="Ex.: Pix não entrou na conta; valor diferente do extrato"></textarea></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-s>Devolver</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const motivo = $('#dev-motivo', m.el).value.trim();
+    if (!motivo) return toast('Informe o motivo da devolução.', true);
+    const x = await api('conferir_recebimentos', { ids, devolver: true, motivo }); m.fechar(); toast(`${x.quantidade} pagamento(s) devolvido(s).`); recarregar();
+  };
+}
 
 /* ---------- COMISSÕES ---------- */
 rota('comissoes', async (_p, el) => {
