@@ -850,8 +850,8 @@ function modalItem(itemId) {
   const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
     <form id="f-item" class="grade g3">
       ${cria ? `
-        <label class="campo" style="grid-column:span 2">O que está vendendo * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" value="${esc(i.descricao || '')}" placeholder="Ex.: Panfleto A5 4x4 couchê 90g"></label>
         <label class="campo">Categoria *<select name="categoria_id">${opcoesCategoria(i.categoria_id, podeNovaCategoria())}</select><span class="small muted" id="it-sug"></span></label>
+        <label class="campo" style="grid-column:span 2">Produto * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" value="${esc(i.descricao || '')}" placeholder="Ex.: Panfleto A5 4x4 couchê 90g"></label>
         ${i.especificacao ? `<div class="small muted" style="grid-column:1/-1">Especificação (campo antigo): ${esc(i.especificacao)}</div>` : ''}
         <label class="campo">Quantidade *<input type="number" step="any" min="0" name="quantidade" value="${esc(i.quantidade ?? 1)}"></label>
         <label class="campo">Valor total (R$) *<input type="number" step="0.01" min="0" name="valor_total" value="${esc(i.valor_total ?? '')}"><span class="unit-calc" id="it-unit"></span></label>
@@ -893,7 +893,7 @@ function modalItem(itemId) {
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados($('#f-item', m.el));
     if (!lerAcabamento($('#f-item', m.el), d)) return;
-    if (d.descricao !== undefined && !String(d.descricao).trim()) return toast('Escreva o que está vendendo.', true);
+    if (d.descricao !== undefined && !String(d.descricao).trim()) return toast('Escreva o produto do item.', true);
     if (d.categoria_id !== undefined && !d.categoria_id) return toast('Escolha a categoria do item.', true);
     if (d.valor_total === '') return toast('Informe o valor total do item.', true);
     if (!pode('ve_custo')) delete d.custo; else if (d.custo === '' && i.custo == null) delete d.custo;
@@ -1193,12 +1193,12 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
   const timers = {};
   const desenhar = () => {
     alvo.innerHTML = `<div class="tabela-wrap"><table class="itens-editor"><thead><tr>
-        <th style="min-width:220px">O que está vendendo * <span class="muted">(vai para o cliente)</span></th><th style="min-width:190px">Categoria *</th>
+        <th style="min-width:190px">Categoria *</th><th style="min-width:220px">Produto * <span class="muted">(vai para o cliente)</span></th>
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
         <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><input type="text" placeholder="Ex.: Panfleto A5 4x4 couchê 90g" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
         <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
+        <td><input type="text" placeholder="Ex.: Panfleto A5 4x4 couchê 90g" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
         <td><input type="number" step="0.01" min="0" value="${esc(it.valor_total)}" data-k="${k}" data-f="valor_total"><div class="unit-calc" data-u="${k}">Unit. ${unitario(it.valor_total, it.quantidade)}</div></td>
@@ -1258,7 +1258,7 @@ rota('novo', async (_p, el) => {
       <label class="campo hidden" id="np-cli-nome-box" style="margin-top:10px">Ou apenas o nome do cliente (sem cadastro)<input type="text" id="np-cli-nome" placeholder="Ex.: Padaria do Zé"></label>
       <div id="cli-escolhido" style="margin-top:10px"></div>
     </div>
-    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escreva o produto: a categoria é sugerida pelo que você digitar.</span></div>
+    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escolha a categoria ou só escreva o produto: a categoria é sugerida pelo que você digitar.</span></div>
       <div id="editor-itens"></div>
       <div class="grade g4" style="margin-top:14px">
         <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" id="np-desc" value="0"></label>
@@ -1330,7 +1330,7 @@ rota('novo', async (_p, el) => {
   };
   $('#np-salvar').onclick = async () => {
     const itens = pegarItens();
-    if (pegarItens.incompletos()) return toast('Há item sem descrição, categoria, quantidade ou total. Complete ou remova a linha.', true);
+    if (pegarItens.incompletos()) return toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true);
     if (!itens.length) return toast('Inclua ao menos um item.', true);
     if (modoOrc()) {
       const nomeCli = $('#np-cli-nome').value.trim();
@@ -1414,7 +1414,7 @@ rota('orcamento', async (id, el) => {
   if (travado) $$('#o-itens input, #o-itens select, #o-itens button').forEach(e => e.disabled = true);
   $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
   const salvar = async () => {
-    if (pegarItens.incompletos()) { toast('Há item sem descrição, categoria, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
+    if (pegarItens.incompletos()) { toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
     const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value };
     if (!novo) d.id = o.id;
     const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); return r;
@@ -1859,9 +1859,11 @@ function modalCategoria(id, aoSalvar) {
       ${id && ger ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Categoria ativa</label>` : ''}
     </form>`,
     rodape: `<button class="btn" data-v>Voltar</button>${!id || ger ? '<button class="btn prim" data-s>Salvar categoria</button>' : ''}` });
-  const f = $('#f-cat-m', m.el); let tmr;
+  const f = $('#f-cat-m', m.el); let tmr, capIncomum = '';
+  // capítulos que a GVH já usa (categorias ativas, com o NCM salvo); fora deles, só avisa
+  const capsUsados = new Set((S.base.categorias || []).filter(x => x.ativo).map(x => String(x.ncm).slice(0, 2)));
   const consultar = () => { clearTimeout(tmr); tmr = setTimeout(async () => {
-    const d = f.ncm.value.replace(/\D/g, ''); const box = $('#ncm-info', m.el);
+    const d = f.ncm.value.replace(/\D/g, ''); const box = $('#ncm-info', m.el); capIncomum = '';
     if (d.length !== 8) { box.innerHTML = '<span class="muted">Digite os 8 dígitos do NCM.</span>'; return; }
     const r = await api('ncm_consultar', { ncm: d }, true).catch(() => null); if (!r) return;
     f.ncm.value = r.codigo;
@@ -1869,11 +1871,16 @@ function modalCategoria(id, aoSalvar) {
     box.innerHTML = (!r.tabela_carregada ? '<span class="muted">A tabela oficial de NCM ainda não foi carregada; o código não pôde ser conferido.</span>'
       : r.valido ? `<span style="color:var(--verde)">✓ ${esc(r.descricao || 'Código vigente')}</span>` : '<span style="color:var(--vermelho)">Este NCM não existe na tabela oficial vigente.</span>')
       + (outras.length ? `<div class="muted">Já usado em: ${esc(outras.join(', '))}</div>` : '');
+    if (capsUsados.size && !capsUsados.has(d.slice(0, 2)) && (!r.tabela_carregada || r.valido)) {
+      capIncomum = (r.descricao || '').split(' › ')[0] || `capítulo ${d.slice(0, 2)}`;
+      box.innerHTML += `<div class="alerta small" style="margin-top:6px">Este NCM é de um capítulo que a gráfica não costuma usar: <b>${esc(capIncomum)}</b>. Confira se o código não foi digitado trocado.</div>`;
+    }
   }, 400); };
   f.ncm.oninput = consultar; if (c.ncm) consultar();
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bs = m.el.querySelector('[data-s]');
   if (bs) bs.onclick = async () => {
+    if (capIncomum && !confirm(`O NCM é do capítulo "${capIncomum}", que a gráfica não costuma usar. Salvar mesmo assim?`)) return;
     const d = formDados(f); if (id) d.id = id;
     if (id && ger) d.ativo = !!f.ativo?.checked; else delete d.ativo;
     const r = await api('salvar_categoria', d); await carregarBase(); m.fechar(); toast('Categoria salva.');
