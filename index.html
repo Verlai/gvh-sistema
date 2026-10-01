@@ -289,7 +289,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -430,7 +430,7 @@ function itensMenu() {
   if (pode('ve_todas_comissoes') || pode('cria_pedidos')) m.push(['#/comissoes', 'Comissões']);
   m.push(['Cadastros']);
   m.push(['#/clientes', 'Clientes']);
-  if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/produtos', 'Produtos']); m.push(['#/feriados', 'Feriados']); }
+  if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/categorias', 'Categorias']); m.push(['#/feriados', 'Feriados']); }
   if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
   return m;
 }
@@ -686,7 +686,7 @@ rota('pedido', async (id, el) => {
         <tbody>${p.itens.map(i => `
           <tr>
             <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
-            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
+            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
                 ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
             <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
@@ -798,7 +798,34 @@ function modalEditarPedido() {
   };
 }
 
+/* ---------- CATEGORIAS (sugestão pelo que o vendedor escreve) ---------- */
+const normTxt = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const catsAtivas = () => (S.base.categorias || []).filter(c => c.ativo);
+function sugerirCategorias(texto, max = 3) {
+  const t = normTxt(texto); if (t.length < 3) return [];
+  const tt = ' ' + t + ' ';
+  const res = [];
+  for (const c of catsAtivas()) {
+    let melhor = 0;
+    for (const a0 of [c.nome, ...(c.apelidos || [])]) {
+      const a = normTxt(a0); if (!a) continue;
+      let sc = 0;
+      if (a === t) sc = 1000;
+      else if (tt.includes(' ' + a + ' ')) sc = 100 + a.length;   // o apelido aparece no texto ("folder 3 dobras")
+      else if (a.startsWith(t)) sc = 20 + t.length;             // o texto é o começo do apelido ("panf")
+      if (sc > melhor) melhor = sc;
+    }
+    if (melhor) res.push({ c, sc: melhor });
+  }
+  return res.sort((x, y) => y.sc - x.sc).slice(0, max).map(x => x.c);
+}
+const opcoesCategoria = (sel, podeNova) => `<option value="">Selecione a categoria</option>` +
+  (S.base.categorias || []).filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.nome)}</option>`).join('') +
+  (podeNova ? '<option value="__nova">+ Cadastrar nova categoria</option>' : '');
+const podeNovaCategoria = () => pode('cadastra_produtos') || pode('gerencia_cadastros');
+
 /* acabamento do item */
+
 const infoAcabamento = i => !i.precisa_acabamento ? '' : `<div class="small" style="margin-top:4px">${badge(i.acabamento_iniciado_em ? 'Em acabamento' : 'Precisa de acabamento', i.acabamento_iniciado_em ? 'b-ambar' : 'b-azul')} ${esc(i.acabamento_por || '')}</div>`;
 const camposAcabamento = i => `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="precisa_acabamento" data-acab ${i.precisa_acabamento ? 'checked' : ''}> Precisa de acabamento depois que chegar do fornecedor?</label>
   <label class="campo ${i.precisa_acabamento ? '' : 'hidden'}" style="grid-column:1/-1" data-acab-box>Quem vai fazer o acabamento *<input type="text" name="acabamento_por" value="${esc(i.acabamento_por || '')}" placeholder="Ex.: Interno — dobrar e grampear"></label>`;
@@ -823,9 +850,8 @@ function modalItem(itemId) {
   const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
     <form id="f-item" class="grade g3">
       ${cria ? `
-        ${itemId ? `<div class="campo"><span class="small muted">Produto</span><b>${esc(S.base.produtos.find(x => x.id === i.produto_id)?.nome || 'Sem produto (item antigo)')}</b><span class="small muted">Para trocar o produto, exclua o item e crie outro.</span></div>`
-          : `<label class="campo">Produto *<select name="produto_id"><option value="">Selecione o produto</option>${S.base.produtos.filter(x => x.ativo).map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}${pode('cadastra_produtos') || pode('gerencia_cadastros') ? '<option value="__novo">+ Cadastrar novo produto</option>' : ''}</select></label>`}
-        <label class="campo" style="grid-column:span 2">Descrição <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" value="${esc(i.descricao || '')}" placeholder="Em branco = nome do produto"></label>
+        <label class="campo" style="grid-column:span 2">O que está vendendo * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" value="${esc(i.descricao || '')}" placeholder="Ex.: Panfleto A5 4x4 couchê 90g"></label>
+        <label class="campo">Categoria *<select name="categoria_id">${opcoesCategoria(i.categoria_id, podeNovaCategoria())}</select><span class="small muted" id="it-sug"></span></label>
         ${i.especificacao ? `<div class="small muted" style="grid-column:1/-1">Especificação (campo antigo): ${esc(i.especificacao)}</div>` : ''}
         <label class="campo">Quantidade *<input type="number" step="any" min="0" name="quantidade" value="${esc(i.quantidade ?? 1)}"></label>
         <label class="campo">Valor total (R$) *<input type="number" step="0.01" min="0" name="valor_total" value="${esc(i.valor_total ?? '')}"><span class="unit-calc" id="it-unit"></span></label>
@@ -847,29 +873,28 @@ function modalItem(itemId) {
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>${itemId ? 'Salvar item' : 'Adicionar item'}</button>`,
     aoAbrir: el => {
       const f = $('#f-item', el); ligarAcabamento(f); if (!f.quantidade) return;
-      let manual = !!itemId, tmr;
-      const prodId = () => f.produto_id ? f.produto_id.value : i.produto_id;
+      let catManual = !!itemId;
       const unit = () => { $('#it-unit', el).textContent = 'Unit. ' + unitario(f.valor_total.value, f.quantidade.value); };
-      const sugerir = () => { clearTimeout(tmr); tmr = setTimeout(async () => {
-        if (manual) return; const t = await sugerirTotal(prodId(), f.quantidade.value);
-        if (t != null && !manual) { f.valor_total.value = t.toFixed(2); unit(); } }, 400); };
-      f.quantidade.oninput = () => { unit(); sugerir(); };
-      f.valor_total.oninput = () => { manual = f.valor_total.value !== ''; unit(); };
-      unit();
-      if (f.produto_id) f.produto_id.onchange = () => {
-        if (f.produto_id.value === '__novo') { f.produto_id.value = ''; modalProdutoRapido(id => {
-          f.produto_id.insertAdjacentHTML('beforeend', `<option value="${id}">${esc(S.base.produtos.find(x => x.id === id)?.nome || '')}</option>`);
-          f.produto_id.value = id; f.produto_id.onchange(); }); return; }
-        const pr = S.base.produtos.find(x => x.id === f.produto_id.value); if (!pr) return;
-        if (f.fornecedor_id && pr.fornecedor_padrao_id && !f.fornecedor_id.value) f.fornecedor_id.value = pr.fornecedor_padrao_id;
-        manual = false; sugerir();
+      f.quantidade.oninput = unit; f.valor_total.oninput = unit; unit();
+      const sug = () => {
+        const l = sugerirCategorias(f.descricao.value);
+        if (!catManual && l[0]) f.categoria_id.value = l[0].id;
+        $('#it-sug', el).innerHTML = l.length > 1 ? 'Também pode ser: ' + l.slice(1).map(c => `<a href="#" data-cat="${c.id}">${esc(c.nome)}</a>`).join(' · ') : '';
+        $$('[data-cat]', el).forEach(a => a.onclick = e => { e.preventDefault(); f.categoria_id.value = a.dataset.cat; catManual = true; });
+      };
+      f.descricao.oninput = sug;
+      f.categoria_id.onchange = () => {
+        catManual = true;
+        if (f.categoria_id.value === '__nova') { f.categoria_id.value = ''; modalCategoria(null, id => {
+          f.categoria_id.innerHTML = opcoesCategoria(id, podeNovaCategoria()); f.categoria_id.value = id; }); }
       };
     } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados($('#f-item', m.el));
     if (!lerAcabamento($('#f-item', m.el), d)) return;
-    if (!itemId && !d.produto_id) return toast('Selecione o produto do item.', true);
+    if (d.descricao !== undefined && !String(d.descricao).trim()) return toast('Escreva o que está vendendo.', true);
+    if (d.categoria_id !== undefined && !d.categoria_id) return toast('Escolha a categoria do item.', true);
     if (d.valor_total === '') return toast('Informe o valor total do item.', true);
     if (!pode('ve_custo')) delete d.custo; else if (d.custo === '' && i.custo == null) delete d.custo;
     const arq = $('#arq-arte', m.el)?.files?.[0];
@@ -1163,18 +1188,17 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
 /* ---------- EDITOR DE ITENS (novo pedido / orçamento) ---------- */
 function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
   const novo = () => ({ quantidade: 1, valor_total: '', status: 'arte_a_fazer' });
-  let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x, _manual: true })) : [novo()];
-  const prods = () => S.base.produtos.filter(p => p.ativo);
-  const podeCad = pode('cadastra_produtos') || pode('gerencia_cadastros');
+  let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x, _catManual: true })) : [novo()];
+  const podeCad = podeNovaCategoria();
   const timers = {};
   const desenhar = () => {
     alvo.innerHTML = `<div class="tabela-wrap"><table class="itens-editor"><thead><tr>
-        <th style="min-width:170px">Produto *</th><th style="min-width:190px">Descrição <span class="muted">(vai para o cliente)</span></th>
+        <th style="min-width:220px">O que está vendendo * <span class="muted">(vai para o cliente)</span></th><th style="min-width:190px">Categoria *</th>
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
         <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><select data-k="${k}" data-f="produto_id"><option value="">Selecione o produto</option>${prods().map(p => `<option value="${p.id}" ${p.id === it.produto_id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}${podeCad ? '<option value="__novo">+ Cadastrar novo produto</option>' : ''}</select></td>
-        <td><input type="text" placeholder="Ex.: 4x0, couché 300g, laminação fosca" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
+        <td><input type="text" placeholder="Ex.: Panfleto A5 4x4 couchê 90g" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
+        <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
         <td><input type="number" step="0.01" min="0" value="${esc(it.valor_total)}" data-k="${k}" data-f="valor_total"><div class="unit-calc" data-u="${k}">Unit. ${unitario(it.valor_total, it.quantidade)}</div></td>
@@ -1184,25 +1208,23 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
       <button type="button" class="btn peq" id="add-item" style="margin-top:8px">Adicionar outro item</button>`;
     alvo.classList.toggle('ocultar-status', !comStatus);
     const atualizarUnit = k => { const u = $(`[data-u="${k}"]`, alvo); if (u) u.textContent = 'Unit. ' + unitario(itens[k].valor_total, itens[k].quantidade); };
-    const sugerir = k => {
-      clearTimeout(timers[k]);
-      timers[k] = setTimeout(async () => {
-        const it = itens[k]; if (!it || it._manual) return;
-        const t = await sugerirTotal(it.produto_id, it.quantidade); if (t == null || it._manual) return;
-        it.valor_total = t.toFixed(2); const inp = $(`[data-k="${k}"][data-f=valor_total]`, alvo); if (inp) inp.value = it.valor_total;
-        atualizarUnit(k); aoMudar && aoMudar(itens);
-      }, 400);
+    const sugerirCat = k => {
+      const it = itens[k]; const l = sugerirCategorias(it.descricao);
+      if (!it._catManual && l[0] && it.categoria_id !== l[0].id) { it.categoria_id = l[0].id; const sel = $(`[data-k="${k}"][data-f=categoria_id]`, alvo); if (sel) sel.value = l[0].id; }
+      const box = $(`[data-sug="${k}"]`, alvo); if (!box) return;
+      box.innerHTML = l.length > 1 ? 'Também: ' + l.slice(1).map(c => `<a href="#" data-k2="${k}" data-cat="${c.id}">${esc(c.nome)}</a>`).join(' · ') : '';
+      $$(`[data-k2="${k}"]`, box).forEach(a => a.onclick = e => { e.preventDefault(); it.categoria_id = a.dataset.cat; it._catManual = true;
+        const sel = $(`[data-k="${k}"][data-f=categoria_id]`, alvo); if (sel) sel.value = it.categoria_id; });
     };
     $$('[data-f]', alvo).forEach(el => el.onchange = el.oninput = e => {
       const k = Number(el.dataset.k); const it = itens[k]; const f = el.dataset.f;
-      if (f === 'produto_id') {
+      if (f === 'categoria_id') {
         if (e.type === 'input') return;
-        if (el.value === '__novo') { el.value = it.produto_id || ''; modalProdutoRapido(id => { it.produto_id = id; it._manual = false; desenhar(); sugerir(k); }); return; }
-        it.produto_id = el.value; it._manual = false; it.valor_total = ''; desenhar(); sugerir(k); return;
+        if (el.value === '__nova') { el.value = it.categoria_id || ''; modalCategoria(null, id => { it.categoria_id = id; it._catManual = true; desenhar(); }); return; }
+        it.categoria_id = el.value; it._catManual = true; aoMudar && aoMudar(itens); return;
       }
       it[f] = el.value;
-      if (f === 'valor_total') it._manual = el.value !== '';
-      if (f === 'quantidade') sugerir(k);
+      if (f === 'descricao') sugerirCat(k);
       if (f === 'quantidade' || f === 'valor_total') atualizarUnit(k);
       aoMudar && aoMudar(itens);
     });
@@ -1211,11 +1233,12 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
     aoMudar && aoMudar(itens);
   };
   desenhar();
-  const pegar = () => itens.filter(i => i.produto_id).map(i => ({ produto_id: i.produto_id, descricao: i.descricao || '', observacao: i.observacao || '',
+  const usado = i => (i.descricao || '').trim() || i.categoria_id || Number(i.valor_total);
+  const pegar = () => itens.filter(usado).map(i => ({ categoria_id: i.categoria_id, descricao: (i.descricao || '').trim(), observacao: i.observacao || '',
     especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: i.status }));
   pegar.definirStatus = v => { comStatus = v; alvo.classList.toggle('ocultar-status', !v); };
-  pegar.incompletos = () => itens.filter(i => !i.produto_id && ((i.descricao || '').trim() || Number(i.valor_total))).length
-    + itens.filter(i => i.produto_id && (!(Number(i.quantidade) > 0) || i.valor_total === '' || i.valor_total == null)).length;
+  pegar.incompletos = () => itens.filter(usado).filter(i => !(i.descricao || '').trim() || !i.categoria_id
+    || !(Number(i.quantidade) > 0) || i.valor_total === '' || i.valor_total == null).length;
   return pegar;
 }
 
@@ -1235,7 +1258,7 @@ rota('novo', async (_p, el) => {
       <label class="campo hidden" id="np-cli-nome-box" style="margin-top:10px">Ou apenas o nome do cliente (sem cadastro)<input type="text" id="np-cli-nome" placeholder="Ex.: Padaria do Zé"></label>
       <div id="cli-escolhido" style="margin-top:10px"></div>
     </div>
-    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">O fornecedor padrão do produto é aplicado automaticamente.</span></div>
+    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escreva o produto: a categoria é sugerida pelo que você digitar.</span></div>
       <div id="editor-itens"></div>
       <div class="grade g4" style="margin-top:14px">
         <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" id="np-desc" value="0"></label>
@@ -1307,8 +1330,8 @@ rota('novo', async (_p, el) => {
   };
   $('#np-salvar').onclick = async () => {
     const itens = pegarItens();
-    if (pegarItens.incompletos()) return toast('Há item sem produto, quantidade ou total. Complete ou remova a linha.', true);
-    if (!itens.length) return toast('Inclua ao menos um item com produto.', true);
+    if (pegarItens.incompletos()) return toast('Há item sem descrição, categoria, quantidade ou total. Complete ou remova a linha.', true);
+    if (!itens.length) return toast('Inclua ao menos um item.', true);
     if (modoOrc()) {
       const nomeCli = $('#np-cli-nome').value.trim();
       if (!cliente && !nomeCli) return toast('Escolha um cliente ou informe o nome dele.', true);
@@ -1391,7 +1414,7 @@ rota('orcamento', async (id, el) => {
   if (travado) $$('#o-itens input, #o-itens select, #o-itens button').forEach(e => e.disabled = true);
   $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
   const salvar = async () => {
-    if (pegarItens.incompletos()) { toast('Há item sem produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
+    if (pegarItens.incompletos()) { toast('Há item sem descrição, categoria, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
     const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value };
     if (!novo) d.id = o.id;
     const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); return r;
@@ -1494,10 +1517,9 @@ function imprimirOrcamento(o) {
   </div>
   <div class="caixa cli"><div class="rot">Cliente</div><b>${esc(nomeCli)}</b>${linhasCli.map(l => `<div>${esc(l)}</div>`).join('')}</div>
   <table>
-    <thead><tr><th style="width:28px">#</th><th>Produto / descrição</th><th class="n" style="width:70px">Qtd.</th><th class="n" style="width:100px">Unitário</th><th class="n" style="width:110px">Total</th></tr></thead>
+    <thead><tr><th style="width:28px">#</th><th>Descrição</th><th class="n" style="width:70px">Qtd.</th><th class="n" style="width:100px">Unitário</th><th class="n" style="width:110px">Total</th></tr></thead>
     <tbody>${itens.map((i, k) => {
-      const prod = nomeProd(i.produto_id); const desc = i.descricao && i.descricao !== prod ? i.descricao : '';
-      return `<tr><td>${k + 1}</td><td><div class="prod">${esc(prod || i.descricao)}</div>${desc ? `<div class="desc">${esc(desc)}</div>` : ''}</td>
+      return `<tr><td>${k + 1}</td><td><div class="prod">${esc(i.descricao || nomeProd(i.produto_id))}</div></td>
         <td class="n">${num(i.quantidade)}</td><td class="n">${unit(i.valor_total, i.quantidade)}</td><td class="n">${din(i.valor_total)}</td></tr>`;
     }).join('')}</tbody>
   </table>
@@ -1539,7 +1561,7 @@ rota('arte', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th>Status</th><th>Arte</th><th>Parado há</th><th></th></tr></thead>
       <tbody>${lista.map(i => `<tr>
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
+        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
         <td>${badgeItem(i.status)}</td>
         <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Arquivo</button>` : ''}</td>
         <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
@@ -1590,7 +1612,7 @@ rota('producao', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:170px">Fornecedor</th><th>Prazo</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}</div>
+        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
         <td><select data-c="fornecedor_id">${opForn(i.fornecedor_id)}</select></td>
@@ -1808,7 +1830,59 @@ rota('clientes', async (_p, el) => {
   await buscar();
 });
 
+/* ---------- CATEGORIAS ---------- */
+rota('categorias', async (_p, el) => {
+  definirTopo('Categorias', `<button class="btn prim" onclick="modalCategoria(null)">Nova categoria</button>`);
+  await carregarBase();
+  const f = S.cache.filtroCat || '';
+  const sug = f ? sugerirCategorias(f, 999) : [];
+  const lista = (S.base.categorias || []).filter(c => !f || sug.includes(c) || normTxt(c.nome + ' ' + c.ncm).includes(normTxt(f)));
+  el.innerHTML = `<div class="painel">
+    <div class="linha-form" style="margin-bottom:12px"><label class="campo" style="max-width:360px">Buscar (nome, NCM ou apelido)<input type="search" id="f-cat" value="${esc(f)}"></label>
+      <span class="small muted" style="padding-bottom:9px">A categoria define o NCM da nota. Os apelidos são o que o vendedor costuma escrever.</span></div>
+    <div class="tabela-wrap"><table><thead><tr><th>Categoria</th><th>NCM</th><th>Apelidos</th><th></th></tr></thead><tbody>
+    ${lista.map(c => `<tr class="clicavel" onclick="modalCategoria('${c.id}')"><td><b>${esc(c.nome)}</b></td><td class="num">${esc(c.ncm)}</td>
+      <td class="small muted">${esc((c.apelidos || []).slice(0, 8).join(', '))}${(c.apelidos || []).length > 8 ? ` +${c.apelidos.length - 8}` : ''}</td>
+      <td>${c.ativo ? '' : badge('Inativa', 'b-cinza')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Nenhuma categoria encontrada.</td></tr>'}
+    </tbody></table></div></div>`;
+  const b = $('#f-cat'); b.onchange = () => { S.cache.filtroCat = b.value; recarregar(); };
+});
+function modalCategoria(id, aoSalvar) {
+  const c = id ? S.base.categorias.find(x => x.id === id) : { ativo: true, apelidos: [] };
+  const ger = pode('gerencia_cadastros');
+  const m = abrirModal({ titulo: id ? c.nome : 'Nova categoria', largo: true, corpo: `<form id="f-cat-m" class="grade g2">
+      <label class="campo">Nome da categoria *<input type="text" name="nome" value="${esc(c.nome || '')}" placeholder="Ex.: Impressos publicitários"></label>
+      <label class="campo">NCM * <span class="muted">(8 dígitos)</span><input type="text" name="ncm" value="${esc(c.ncm || '')}" placeholder="0000.00.00" inputmode="numeric"></label>
+      <div class="small" id="ncm-info" style="grid-column:1/-1"></div>
+      <label class="campo" style="grid-column:1/-1">Apelidos <span class="muted">(o que o vendedor pode escrever; um por linha ou separados por vírgula)</span>
+        <textarea name="apelidos" rows="6">${esc((c.apelidos || []).join('\n'))}</textarea></label>
+      ${id && ger ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Categoria ativa</label>` : ''}
+    </form>`,
+    rodape: `<button class="btn" data-v>Voltar</button>${!id || ger ? '<button class="btn prim" data-s>Salvar categoria</button>' : ''}` });
+  const f = $('#f-cat-m', m.el); let tmr;
+  const consultar = () => { clearTimeout(tmr); tmr = setTimeout(async () => {
+    const d = f.ncm.value.replace(/\D/g, ''); const box = $('#ncm-info', m.el);
+    if (d.length !== 8) { box.innerHTML = '<span class="muted">Digite os 8 dígitos do NCM.</span>'; return; }
+    const r = await api('ncm_consultar', { ncm: d }, true).catch(() => null); if (!r) return;
+    f.ncm.value = r.codigo;
+    const outras = (r.categorias || []).filter(n => n !== c.nome);
+    box.innerHTML = (!r.tabela_carregada ? '<span class="muted">A tabela oficial de NCM ainda não foi carregada; o código não pôde ser conferido.</span>'
+      : r.valido ? `<span style="color:var(--verde)">✓ ${esc(r.descricao || 'Código vigente')}</span>` : '<span style="color:var(--vermelho)">Este NCM não existe na tabela oficial vigente.</span>')
+      + (outras.length ? `<div class="muted">Já usado em: ${esc(outras.join(', '))}</div>` : '');
+  }, 400); };
+  f.ncm.oninput = consultar; if (c.ncm) consultar();
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bs = m.el.querySelector('[data-s]');
+  if (bs) bs.onclick = async () => {
+    const d = formDados(f); if (id) d.id = id;
+    if (id && ger) d.ativo = !!f.ativo?.checked; else delete d.ativo;
+    const r = await api('salvar_categoria', d); await carregarBase(); m.fechar(); toast('Categoria salva.');
+    if (aoSalvar) aoSalvar(r.id); else recarregar();
+  };
+}
+
 /* ---------- FORNECEDORES ---------- */
+
 rota('fornecedores', async (_p, el) => {
   definirTopo('Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null)">Novo fornecedor</button>`);
   await carregarBase();
