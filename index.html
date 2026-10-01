@@ -289,7 +289,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -565,9 +565,11 @@ rota('inicio', async (_p, el) => {
     <div class="etapas">${ETAPAS.map(([k, n]) => `
       <button class="${qtd(k) ? 'tem' : ''}" onclick="irPedidos('${k}')"><span class="n num">${qtd(k)}</span><span class="t">${esc(n)}</span></button>`).join('')}
     </div>
+    ${(r.orcamentos_aceitos || []).map(o => `<a class="alerta" href="#/orcamento/${o.id}" style="display:block;margin-top:16px;text-decoration:none;color:var(--grafite);background:var(--verde-bg)"><b>Orçamento ${esc(o.numero)} aprovado pelo cliente</b> · ${esc(o.cliente || '')} — aprovado por ${esc(o.aprovado_por || '')} em ${dataHoraLonga(o.aprovado_em)}${o.vendedor ? ` · vendedor ${esc(o.vendedor)}` : ''}. Abra para transformar em pedido.</a>`).join('')}
+    ${fin && fin.a_conferir && pode('edita_financeiro') ? `<a class="alerta" href="#/conciliacao" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Conciliação:</b> ${fin.a_conferir} ${fin.a_conferir > 1 ? 'pagamentos marcados como pagos aguardam' : 'pagamento marcado como pago aguarda'} conferência.</a>` : ''}
     ${r.acabamento_chegou && veFornecedor() ? `<a class="alerta" href="#/producao" onclick="S.cache.abaProd='em_producao'" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Chegou para acabamento:</b> ${r.acabamento_chegou} ${r.acabamento_chegou > 1 ? 'itens voltaram' : 'item voltou'} para a produção. Veja em Pré-impressão e produção.</a>` : ''}
     <div class="grade g4" style="margin-top:16px">
-      <div class="cartao-num ${r.producao_atrasada ? 'alerta-num' : ''}"><span class="n num">${r.producao_atrasada}</span><span class="muted small">Itens com prazo de produção vencido</span></div>
+      <div class="cartao-num ${r.producao_atrasada ? 'alerta-num' : ''}"><span class="n num">${r.producao_atrasada}</span><span class="muted small">Itens com previsão de produção vencida</span></div>
       <div class="cartao-num"><span class="n num">${r.itens_em_pre_impressao}</span><span class="muted small">Itens aguardando pré-impressão</span></div>
       <div class="cartao-num ${r.parados_3_dias ? 'alerta-num' : ''}"><span class="n num">${r.parados_3_dias}</span><span class="muted small">Pedidos parados há 3 dias ou mais</span></div>
       ${fin ? `<div class="cartao-num"><span class="n num">${brl(fin.recebido_hoje)}</span><span class="muted small">Recebido hoje</span></div>` : ''}
@@ -692,7 +694,7 @@ rota('pedido', async (id, el) => {
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
             <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
                 ${i.codigo_producao ? `<div>Cód. fornecedor ${esc(i.codigo_producao)}</div>` : ''}
-                ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prazo ${data(i.prazo_producao)}</div>` : ''}</td>
+                ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prev. produção ${data(i.prazo_producao)}</div>` : ''}</td>
             <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a><br>` : ''}
                 ${i.arte_drive_url ? `<a href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Drive</a><br>` : ''}
                 ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arquivo</button>` : ''}
@@ -860,7 +862,7 @@ function modalItem(itemId) {
       ` : `<div style="grid-column:1/-1"><b>${esc(i.descricao)}</b> <span class="muted">· ${num(i.quantidade)} un</span></div>`}
       ${prod ? `
         ${veFornecedor() ? `<label class="campo">Fornecedor<select name="fornecedor_id">${opcoesForn}</select></label>` : ''}
-        <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
+        <label class="campo">Previsão de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
         <label class="campo">Código do fornecedor<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
         ${camposAcabamento(i)}` : ''}
       ${pode('ve_custo') ? `<label class="campo">Custo de produção (R$)<input type="number" step="0.01" min="0" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
@@ -1453,9 +1455,9 @@ rota('orcamentos', async (_p, el) => {
   definirTopo('Orçamentos', `<a class="btn prim" href="#/orcamento/novo">Novo orçamento</a>`);
   el.innerHTML = `<div class="painel filtros"><div class="linha-form">
       <label class="campo" style="flex:2">Buscar<input type="search" id="o-busca" placeholder="Número ou cliente"></label>
-      <label class="campo">Situação<select id="o-status"><option value="">Todas</option><option value="aberto">Em elaboração</option><option value="enviado">Enviado</option><option value="aprovado">Aprovado</option><option value="recusado">Recusado</option><option value="expirado">Expirado</option></select></label>
+      <label class="campo">Situação<select id="o-status"><option value="">Todas</option><option value="aberto">Em elaboração</option><option value="enviado">Enviado</option><option value="aceito">Aprovado pelo cliente</option><option value="aprovado">Virou pedido</option><option value="recusado">Recusado</option><option value="expirado">Expirado</option></select></label>
     </div></div><div class="painel" id="o-lista"></div>`;
-  const NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aprovado:['Aprovado','b-verde'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
+  const NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aceito:['Aprovado pelo cliente','b-verde'], aprovado:['Virou pedido','b-azul'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
   const buscar = async () => {
     const r = await api('listar_orcamentos', { busca: $('#o-busca').value, status: $('#o-status').value, limite: limLista('orcamentos') });
     $('#o-lista').innerHTML = r.orcamentos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Vendedor</th><th>Validade</th><th>Situação</th><th class="dir">Total</th></tr></thead><tbody>
@@ -1475,14 +1477,22 @@ rota('orcamento', async (id, el) => {
   const novo = id === 'novo';
   const o = novo ? { itens: [], desconto: 0, frete: 0, status: 'aberto', validade: somaDias(hoje(), 7) } : (await api('obter_orcamento', { id })).orcamento;
   if (!o) throw new Error('Orçamento não encontrado.');
-  const travado = o.status === 'aprovado';
+  const convertido = o.status === 'aprovado';
+  const aceito = o.status === 'aceito';
+  const liberado = aceito && (S.cache.editarAceito || {})[o.id];
+  const travado = convertido || (aceito && !liberado);
   definirTopo(novo ? 'Novo orçamento' : `Orçamento ${o.numero}`, `<a class="btn" href="#/orcamentos">Voltar</a>
+    ${!novo && !convertido ? `<button class="btn" id="o-link">Link para o cliente</button>` : ''}
     ${!novo ? `<button class="btn" id="o-imprimir">Imprimir orçamento</button>` : ''}
-    ${!novo && !travado ? `<button class="btn escuro" id="o-converter">Transformar em pedido</button>` : ''}
+    ${!novo && !convertido ? `<button class="btn escuro" id="o-converter">Transformar em pedido</button>` : ''}
     ${o.pedido_id ? `<a class="btn" href="#/pedido/${o.pedido_id}">Ver pedido</a>` : ''}`);
   let cliente = o.cliente || null, pegarItens;
   el.innerHTML = `
-    ${travado ? '<div class="alerta" style="margin-bottom:16px">Este orçamento já virou pedido e não pode mais ser alterado.</div>' : ''}
+    ${convertido ? '<div class="alerta" style="margin-bottom:16px">Este orçamento já virou pedido e não pode mais ser alterado.</div>' : ''}
+    ${aceito ? `<div class="alerta" style="margin-bottom:16px;background:var(--verde-bg);color:var(--grafite)">
+        <b>Aprovado pelo cliente</b> · ${esc(o.aprovado_cliente_nome || '')} em ${dataHoraLonga(o.aprovado_cliente_em)}
+        ${o.aprovado_cliente_comentario ? `<div style="margin-top:4px"><span class="muted">Comentário do cliente:</span> ${esc(o.aprovado_cliente_comentario)}</div>` : ''}
+        ${!liberado ? `<div style="margin-top:8px"><button type="button" class="btn peq" id="o-editar-aceito">Editar orçamento</button> <span class="small muted">Se for alterado, o cliente precisa aprovar de novo.</span></div>` : '<div class="small" style="margin-top:6px"><b>Ao salvar, a aprovação do cliente será desfeita.</b></div>'}</div>` : ''}
     <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
       <label class="campo busca-box">Buscar cliente<input type="search" id="o-cli" placeholder="Nome, fantasia, CPF/CNPJ" autocomplete="off" ${travado ? 'disabled' : ''}></label>
       <label class="campo" id="o-cli-nome-box" style="margin-top:10px">Ou apenas o nome do cliente (sem cadastro)<input type="text" id="o-cli-nome" value="${esc(o.cliente_nome || '')}" ${travado ? 'disabled' : ''}></label>
@@ -1494,7 +1504,7 @@ rota('orcamento', async (id, el) => {
         <div></div><div class="totais" style="margin:0"><span class="muted small">Total</span><b class="num" id="o-total"></b></div></div></div>
     <div class="painel"><form id="f-orc" class="grade g3">
       <label class="campo">Validade<input type="date" name="validade" value="${esc(o.validade || '')}"></label>
-      <label class="campo">Situação<select name="status">${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${travado ? '<option value="aprovado" selected>Aprovado</option>' : ''}</select></label>
+      <label class="campo">Situação<select name="status" ${travado ? 'disabled' : ''}>${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${convertido ? '<option value="aprovado" selected>Virou pedido</option>' : ''}${aceito && !liberado ? '<option value="aceito" selected>Aprovado pelo cliente</option>' : ''}</select></label>
       <div></div>
       <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(o.condicoes_pagamento || '')}"></label>
       <label class="campo" style="grid-column:1/-1">Observações <span class="muted">(aparecem no orçamento do cliente)</span><textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
@@ -1506,29 +1516,42 @@ rota('orcamento', async (id, el) => {
   mostrarCli(cliente); ligarBuscaCliente($('#o-cli'), mostrarCli);
   const tot = () => { const its = pegarItens ? pegarItens() : o.itens; $('#o-total').textContent = brl(its.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0)); };
   pegarItens = editorItens($('#o-itens'), o.itens, { aoMudar: tot });
-  if (travado) $$('#o-itens input, #o-itens select, #o-itens button').forEach(e => e.disabled = true);
+  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #o-desc, #o-frete, #o-cli, #o-cli-nome').forEach(e => e.disabled = true);
+  if ($('#o-editar-aceito')) $('#o-editar-aceito').onclick = () => { (S.cache.editarAceito ||= {})[o.id] = true; renderVista(S.vistaAtual); };
   $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
   const salvar = async () => {
     if (pegarItens.incompletos()) { toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
     const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value };
     if (!novo) d.id = o.id;
-    const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); return r;
+    if (d.status === 'aceito') d.status = 'aberto';
+    const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`);
+    if (S.cache.editarAceito) delete S.cache.editarAceito[o.id];
+    return r;
   };
+  if (travado && $('#o-salvar')) $('#o-salvar').remove();
   if ($('#o-salvar')) $('#o-salvar').onclick = async () => { const r = await salvar(); if (novo) { descartarVista('orcamento/novo'); location.hash = '#/orcamento/' + r.id; } else renderVista(S.vistaAtual); };
   const abrirConversao = () => {
-    const m = abrirModal({ titulo: 'Transformar em pedido', corpo: `<p style="margin:0">Os itens entram no pedido como "Arte · À fazer".</p>
+    const totalOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
+    let coletar;
+    const m = abrirModal({ titulo: 'Transformar em pedido', largo: true, corpo: `<p style="margin:0 0 12px">Os itens entram no pedido como "Arte · À fazer". Total: <b>${brl(totalOrc())}</b></p>
+      <div class="grade g2">
       <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required></label>
-      <label class="campo">Forma de entrega<select id="conv-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label>`,
-      rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>` });
+      <label class="campo">Forma de entrega<select id="conv-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label></div>
+      <h3 style="margin:16px 0 8px">Pagamento *</h3><div id="conv-pag">${htmlPagamento()}</div>`,
+      rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
+      aoAbrir: el => { coletar = ligarPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value); } });
     m.el.querySelector('[data-v]').onclick = m.fechar;
     m.el.querySelector('[data-s]').onclick = async () => {
       const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
-      await salvar();
+      let pag; try { pag = coletar(); } catch (e) { return toast(e.message, true); }
+      if (!travado) await salvar();
       const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: $('#conv-forma', m.el).value,
-        endereco_entrega: cliente ? enderecoCliente(cliente) : '' });
+        endereco_entrega: cliente ? enderecoCliente(cliente) : '', recebimentos: pag.recebimentos,
+        ...(o.condicoes_pagamento ? {} : { condicoes_pagamento: pag.resumo }) });
       m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
     };
   };
+  if ($('#o-link')) $('#o-link').onclick = async () => { if (!travado && !novo) await salvar(); modalLinkOrcamento(o, cliente); };
   if ($('#o-imprimir')) $('#o-imprimir').onclick = async () => {
     if (!travado) await salvar();
     const r = await api('obter_orcamento', { id: o.id });
@@ -1541,6 +1564,114 @@ rota('orcamento', async (id, el) => {
     modalCliente(null, async c => { mostrarCli(c); await salvar(); abrirConversao(); }, $('#o-cli-nome').value.trim());
   };
 });
+
+const dataHoraLonga = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).replace(',', ' às') : '—';
+const linkPublicoOrc = chave => location.origin + location.pathname + '#/o/' + chave;
+function modalLinkOrcamento(o, cliente) {
+  const link = linkPublicoOrc(o.chave);
+  const tel = cliente ? String(cliente.whatsapp || (cliente.telefone_whatsapp ? cliente.telefone : '') || '').replace(/\D/g, '') : '';
+  const nome = cliente ? (cliente.nome_fantasia || cliente.nome) : (o.cliente_nome || '');
+  const texto = `Olá${nome ? ', ' + nome.split(' ')[0] : ''}! Segue o orçamento nº ${o.numero} da Gráfica Venda Hoje. Você pode conferir e aprovar por este link: ${link}`;
+  const m = abrirModal({ titulo: `Link do orçamento ${o.numero}`, corpo: `
+    <p style="margin:0 0 10px">O cliente abre o orçamento sem precisar de login e aprova informando o nome. A aprovação (quem, data e hora) aparece aqui no orçamento e no Início.</p>
+    <div style="display:flex;gap:6px"><input type="text" readonly value="${esc(link)}" id="lk-url" style="flex:1"><button class="btn" id="lk-copiar">Copiar</button></div>
+    ${o.validade ? `<p class="small muted" style="margin:8px 0 0">Válido até ${data(o.validade)}. Depois disso o cliente não consegue mais aprovar.</p>` : ''}`,
+    rodape: `<button class="btn" data-v>Fechar</button><a class="btn prim" target="_blank" rel="noopener" href="https://wa.me/${tel}?text=${encodeURIComponent(texto)}">Enviar pelo WhatsApp</a>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('#lk-copiar').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.'); } catch { $('#lk-url', m.el).select(); } };
+}
+
+/* ---------- PÁGINA PÚBLICA DO ORÇAMENTO (cliente, sem login) ---------- */
+async function paginaPublicaOrcamento(chave) {
+  document.title = 'Orçamento · Gráfica Venda Hoje';
+  const logo = $('#logo-gvh', document)?.src || '';
+  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+  const est = document.createElement('style');
+  est.textContent = `
+    #pub { min-height: 100vh; background: #eef1f2; padding: 24px 12px 48px; font-family: Sora, Arial, sans-serif; color: #1d262d; }
+    #pub .folha { max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 6px 30px rgba(29,38,45,.08); overflow: hidden; }
+    #pub .cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 22px 26px 16px; border-bottom: 4px solid #00a986; flex-wrap: wrap; }
+    #pub .cab img { height: 54px; }
+    #pub .emp { text-align: right; font-size: 12px; color: #5a6770; line-height: 1.55; }
+    #pub .emp b { color: #1d262d; font-size: 13px; }
+    #pub .corpo { padding: 20px 26px 26px; }
+    #pub h1 { margin: 0; font-size: 26px; letter-spacing: .4px; } #pub h1 span { color: #00a986; }
+    #pub .linha-tit { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    #pub .datas { font-size: 12.5px; color: #5a6770; text-align: right; line-height: 1.6; } #pub .datas b { color: #1d262d; }
+    #pub .caixa { background: #f6f6f6; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+    #pub .rot { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.2px; color: #8a959c; font-weight: 600; margin-bottom: 4px; }
+    #pub table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    #pub th { background: #1d262d; color: #fff; font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; text-align: left; padding: 9px 10px; font-weight: 600; }
+    #pub td { padding: 10px; border-bottom: 1px solid #e2e6e8; vertical-align: top; }
+    #pub .n { text-align: right; white-space: nowrap; }
+    #pub .tot { margin: 14px 0 0 auto; max-width: 300px; font-size: 14px; }
+    #pub .tot div { display: flex; justify-content: space-between; padding: 4px 10px; }
+    #pub .tot .final { background: #00a986; color: #fff; border-radius: 8px; font-size: 18px; font-weight: 700; padding: 10px 12px; margin-top: 6px; }
+    #pub .bloco { margin-top: 18px; } #pub .bloco p { margin: 0; font-size: 13.5px; white-space: pre-wrap; }
+    #pub .aprovar { margin-top: 26px; border: 2px solid #00a986; border-radius: 12px; padding: 18px; }
+    #pub .aprovar h2 { margin: 0 0 4px; font-size: 18px; }
+    #pub .aprovar label { display: block; font-size: 12.5px; color: #5a6770; margin-top: 12px; }
+    #pub .aprovar input, #pub .aprovar textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid #cfd6da; border-radius: 8px; margin-top: 4px; }
+    #pub .aprovar textarea { min-height: 70px; resize: vertical; }
+    #pub .bt { display: inline-block; border: 0; border-radius: 10px; padding: 13px 22px; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; }
+    #pub .bt.prim { background: #00a986; color: #fff; } #pub .bt.prim:disabled { opacity: .6; cursor: default; }
+    #pub .bt.sec { background: #fff; color: #1d262d; border: 1px solid #cfd6da; }
+    #pub .ok { background: #e3f6f1; border-radius: 12px; padding: 16px 18px; margin-top: 26px; }
+    #pub .ok b { color: #00795f; font-size: 17px; }
+    #pub .aviso { background: #fdf3e1; border-radius: 12px; padding: 14px 18px; margin-top: 26px; }
+    #pub .erro { color: #c0453b; font-size: 13px; margin-top: 8px; min-height: 1em; }
+    #pub .acoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    #pub .rod { max-width: 820px; margin: 14px auto 0; text-align: center; font-size: 11.5px; color: #8a959c; }
+    @media (max-width: 560px) { #pub .corpo, #pub .cab { padding-left: 14px; padding-right: 14px; } #pub h1 { font-size: 21px; } #pub .emp { text-align: left; }
+      #pub .col-unit { display: none; } }
+    @media print { #pub { background: #fff; padding: 0; } #pub .folha { box-shadow: none; } #pub .aprovar, #pub .acoes, #pub .rod { display: none; } }`;
+  document.head.appendChild(est);
+  const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const unit = (t, q) => Number(q) > 0 ? (Number(t) / Number(q)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '';
+  const desenhar = (o, msgErro) => {
+    const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, EMPRESA.email].filter(Boolean).join(' · ')].filter(Boolean);
+    const rodapeAprov = o.situacao === 'aprovado'
+      ? `<div class="ok"><b>Orçamento aprovado ✓</b><div style="margin-top:4px">Aprovado por <b style="font-size:inherit;color:inherit">${esc(o.aprovado_por || '')}</b>${o.aprovado_em ? ' em ' + dataHoraLonga(o.aprovado_em) : ''}. A equipe da Gráfica Venda Hoje já foi avisada e vai seguir com o seu pedido.</div></div>`
+      : o.situacao === 'vencido' ? `<div class="aviso"><b>Este orçamento venceu em ${data(o.validade)}.</b> Fale com a Gráfica Venda Hoje para atualizar os valores.</div>`
+      : o.situacao === 'indisponivel' ? `<div class="aviso"><b>Este orçamento não está mais disponível para aprovação.</b> Fale com a Gráfica Venda Hoje.</div>`
+      : `<div class="aprovar"><h2>Aprovar este orçamento</h2><div style="font-size:13px;color:#5a6770">Confira os itens e os valores. Ao aprovar, a Gráfica Venda Hoje recebe a sua confirmação com o seu nome, a data e a hora.</div>
+          <label>Seu nome *<input type="text" id="pub-nome" maxlength="120" autocomplete="name"></label>
+          <label>Comentário (opcional)<textarea id="pub-com" maxlength="1000" placeholder="Algum ajuste ou recado para a equipe?"></textarea></label>
+          <div class="erro" id="pub-erro">${esc(msgErro || '')}</div>
+          <div class="acoes"><button class="bt prim" id="pub-aprovar">Aprovar orçamento</button></div></div>`;
+    raiz.innerHTML = `<div class="folha">
+      <div class="cab">${logo ? `<img src="${logo}" alt="Gráfica Venda Hoje">` : `<b>${esc(EMPRESA.nome)}</b>`}
+        <div class="emp"><b>${esc(EMPRESA.nome)}</b>${empresaLinhas.map(l => `<br>${esc(l)}`).join('')}</div></div>
+      <div class="corpo">
+        <div class="linha-tit"><h1>ORÇAMENTO <span>Nº ${esc(o.numero)}</span></h1>
+          <div class="datas">Emitido em <b>${data(o.emissao)}</b>${o.validade ? `<br>Válido até <b>${data(o.validade)}</b>` : ''}${o.vendedor ? `<br>Atendimento: <b>${esc(o.vendedor)}</b>` : ''}</div></div>
+        <div class="caixa"><div class="rot">Cliente</div><b>${esc(o.cliente || '')}</b></div>
+        <div style="overflow-x:auto"><table><thead><tr><th>Descrição</th><th class="n">Qtd.</th><th class="n col-unit">Unitário</th><th class="n">Total</th></tr></thead>
+          <tbody>${(o.itens || []).map(i => `<tr><td><b>${esc(i.descricao || '')}</b></td><td class="n">${num(i.quantidade)}</td><td class="n col-unit">${unit(i.valor_total, i.quantidade)}</td><td class="n">${din(i.valor_total)}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tot">
+          ${Number(o.desconto) || Number(o.frete) ? `<div><span>Subtotal</span><span>${din(o.valor_itens)}</span></div>` : ''}
+          ${Number(o.desconto) ? `<div><span>Desconto</span><span>- ${din(o.desconto)}</span></div>` : ''}
+          ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
+          <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div></div>
+        ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Condições de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
+        ${o.observacoes ? `<div class="bloco"><div class="rot">Observações</div><p>${esc(o.observacoes)}</p></div>` : ''}
+        ${EMPRESA.condicoes_gerais ? `<div class="bloco"><div class="rot">Condições gerais</div><p>${esc(EMPRESA.condicoes_gerais)}</p></div>` : ''}
+        ${rodapeAprov}
+        <div class="acoes"><button class="bt sec" onclick="window.print()">Imprimir / salvar PDF</button></div>
+      </div></div>
+      <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
+    const b = $('#pub-aprovar', raiz);
+    if (b) b.onclick = async () => {
+      const nome = $('#pub-nome', raiz).value.trim();
+      if (nome.length < 3) { $('#pub-erro', raiz).textContent = 'Informe o seu nome para aprovar.'; $('#pub-nome', raiz).focus(); return; }
+      b.disabled = true; b.textContent = 'Enviando…';
+      try { const r = await api('orc_publico_aprovar', { chave, nome, comentario: $('#pub-com', raiz).value }, true); desenhar(r.orcamento); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
+      catch (e) { b.disabled = false; b.textContent = 'Aprovar orçamento'; $('#pub-erro', raiz).textContent = e.message === 'Failed to fetch' ? 'Sem conexão. Tente de novo.' : e.message; }
+    };
+  };
+  try { const r = await api('orc_publico', { chave }, true); desenhar(r.orcamento); }
+  catch (e) { raiz.innerHTML = `<div class="folha"><div class="corpo"><h1 style="font-size:20px">Não foi possível abrir o orçamento</h1><p>${esc(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor. Tente de novo em instantes.' : e.message)}</p></div></div>`; }
+}
 
 /* ---------- DOCUMENTO DO ORÇAMENTO (PDF) ---------- */
 // Dados da GVH que saem no cabeçalho e no rodapé do orçamento
@@ -1698,20 +1829,25 @@ rota('producao', async (_p, el) => {
   let prod = r.itens.filter(i => i.status === 'em_producao');
   const atrasados = prod.filter(i => i.producao_atrasada).length;
   if (fForn) prod = prod.filter(i => i.fornecedor_id === fForn);
-  const opForn = sel => `<option value="">Selecione</option>` + S.base.fornecedores.filter(f => f.ativo).map(f => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+  const opForn = sel => opcoesFornecedor(sel);
+  const criaForn = podeCadastrarFornecedor();
 
   let corpo;
   if (aba === 'pre_impressao') {
-    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, prazo e código do fornecedor. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção.</p>
+    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, previsão de produção e código do fornecedor. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção. A previsão de entrega é a combinada pelo vendedor com o cliente.</p>
       <div class="tabela-wrap"><table>
-      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:170px">Fornecedor</th><th>Prazo</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
+      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
         <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
-        <td><select data-c="fornecedor_id">${opForn(i.fornecedor_id)}</select></td>
-        <td><input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}"></td>
+        <td><div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opForn(i.fornecedor_id)}</select>
+            ${criaForn ? `<button type="button" class="btn peq" title="Cadastrar fornecedor" onclick="novoFornecedorNaLinha('${i.id}')">+</button>` : ''}</div>
+            <div class="small" data-acesso="${i.id}">${linkAcessoFornecedor(i.fornecedor_id)}</div></td>
+        <td class="num">${data(i.data_prevista_entrega)}</td>
+        <td><input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}" data-entrega="${esc(i.data_prevista_entrega || '')}">
+            <div class="small aviso-prev" style="color:var(--vermelho)"></div></td>
         <td><input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}" style="min-width:110px"></td>
         ${pode('ve_custo') ? `<td><input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}" style="max-width:110px"></td>` : ''}
         <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="salvarLinhaProd('${i.id}',false)">Salvar</button>
@@ -1722,17 +1858,18 @@ rota('producao', async (_p, el) => {
     prod.forEach(i => (grupos[i.fornecedor_nome || 'Sem fornecedor'] ||= []).push(i));
     corpo = `<div class="linha-form filtros" style="margin-bottom:12px">
         <label class="campo" style="max-width:280px">Fornecedor<select id="f-forn"><option value="">Todos</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === fForn ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
-        <span class="small muted" style="padding-bottom:9px;flex:2">Confira item por item com cada fornecedor. O prazo é só referência (atrasados aparecem primeiro). Marque o que vai chegar no balcão e clique em "Marcar como despachado".</span>
+        <span class="small muted" style="padding-bottom:9px;flex:2">Confira item por item com cada fornecedor. A previsão de produção é só referência (atrasados aparecem primeiro). Marque o que vai chegar no balcão e clique em "Marcar como despachado".</span>
         ${despacha ? `<button class="btn prim" id="btn-despachar" style="flex:0;white-space:nowrap" disabled>Marcar como despachado</button>` : ''}</div>`
       + (prod.length ? Object.entries(grupos).map(([nome, lista]) => `<div class="grupo-forn">
-        <h3>${esc(nome)} <span class="badge b-cinza">${lista.length}</span></h3>
-        <div class="tabela-wrap"><table><thead><tr>${despacha ? '<th style="width:28px"></th>' : ''}<th>Pedido</th><th>Item</th><th>Código do fornecedor</th><th>Prazo de produção</th><th>Em produção há</th><th></th></tr></thead><tbody>
+        <h3>${esc(nome)} <span class="badge b-cinza">${lista.length}</span> <span class="small" style="font-weight:400">${linkAcessoFornecedor(lista[0].fornecedor_id)}</span></h3>
+        <div class="tabela-wrap"><table><thead><tr>${despacha ? '<th style="width:28px"></th>' : ''}<th>Pedido</th><th>Item</th><th>Código do fornecedor</th><th>Previsão de produção</th><th>Previsão de entrega</th><th>Em produção há</th><th></th></tr></thead><tbody>
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
           <td>${esc(i.descricao)}<div class="small muted">${num(i.quantidade)} un</div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
+          <td class="num">${data(i.data_prevista_entrega)}</td>
           <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
           <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="modalItemProd('${i.id}')">Ajustar</button></td>
         </tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="vazio">Nenhum item em produção.</div>');
@@ -1744,6 +1881,12 @@ rota('producao', async (_p, el) => {
     </div>
     <div class="painel">${corpo}</div>`;
   if ($('#f-forn')) $('#f-forn').onchange = e => { S.cache.fornProd = e.target.value; recarregar(); };
+  // aviso (sem bloquear) quando a previsão de produção passa da previsão de entrega
+  const avisarPrev = inp => { const a = inp.parentElement.querySelector('.aviso-prev'); if (!a) return;
+    a.textContent = inp.value && inp.dataset.entrega && inp.value > inp.dataset.entrega ? 'Depois da previsão de entrega' : ''; };
+  $$('input[data-c="prazo_producao"]').forEach(inp => { avisarPrev(inp); inp.addEventListener('change', () => avisarPrev(inp)); });
+  $$('select[data-c="fornecedor_id"]').forEach(sel => sel.addEventListener('change', () => {
+    const tr = sel.closest('tr'); const box = tr && tr.querySelector('[data-acesso]'); if (box) box.innerHTML = linkAcessoFornecedor(sel.value); }));
   const bd = $('#btn-despachar');
   if (bd) {
     const marcados = () => $$('.sel-desp:checked').map(x => x.value);
@@ -1757,7 +1900,7 @@ async function salvarLinhaProd(id, enviar) {
   const tr = $(`tr[data-item="${id}"]`); const d = { id };
   $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
   if (d.custo === '') delete d.custo;
-  if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, prazo e código do fornecedor.', true);
+  if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, previsão de produção e código do fornecedor.', true);
   await api('salvar_item', d);
   if (enviar) await api('mudar_status_itens', { itens: [id], status: 'em_producao' });
   toast(enviar ? 'Item enviado para produção.' : 'Dados salvos.'); recarregar();
@@ -1765,8 +1908,9 @@ async function salvarLinhaProd(id, enviar) {
 function modalItemProd(id) {
   const i = S.vistaAtual.dados.find(x => x.id === id);
   const m = abrirModal({ titulo: `${i.pedido_numero} · ${i.descricao}`, corpo: `<form id="f-ip" class="grade g2">
-    <label class="campo">Fornecedor<select name="fornecedor_id">${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === i.fornecedor_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
-    <label class="campo">Prazo de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
+    <label class="campo">Fornecedor<select name="fornecedor_id">${opcoesFornecedor(i.fornecedor_id)}</select></label>
+    <div class="campo"><span>Previsão de entrega <span class="muted">(do pedido)</span></span><b class="num" style="padding:9px 0">${data(i.data_prevista_entrega)}</b></div>
+    <label class="campo">Previsão de produção<input type="date" name="prazo_producao" value="${esc(i.prazo_producao || '')}"></label>
     <label class="campo">Código do fornecedor<input type="text" name="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
     ${pode('ve_custo') ? `<label class="campo">Custo (R$)<input type="number" step="0.01" name="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
     <label class="campo" style="grid-column:1/-1">Observação interna<input type="text" name="observacao" value="${esc(i.observacao || '')}"></label>
@@ -1935,6 +2079,10 @@ function devolverPagamentos(ids) {
 /* ---------- COMISSÕES ---------- */
 rota('comissoes', async (_p, el) => {
   definirTopo('Comissões', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const visao = S.cache.visaoComissao || 'mes';
+  const abasVisao = `<div class="chips" style="margin-bottom:14px"><button class="chip ${visao === 'mes' ? 'ativo' : ''}" data-visao="mes">Por mês</button><button class="chip ${visao === 'pedidos' ? 'ativo' : ''}" data-visao="pedidos">Por pedido</button></div>`;
+  const ligarVisao = () => $$('[data-visao]').forEach(b => b.onclick = () => { S.cache.visaoComissao = b.dataset.visao; recarregar(); });
+  if (visao === 'pedidos') { await comissoesPorPedido(el, abasVisao); ligarVisao(); return; }
   const comp = S.cache.compComissao || hoje().slice(0, 7);
   const r = await api('listar_comissoes', { competencia: comp + '-01' });
   const nomeMes = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -1942,7 +2090,7 @@ rota('comissoes', async (_p, el) => {
   const devidos = doMes.filter(x => x.recebe_comissao);
   const economizado = doMes.reduce((s, x) => s + Number(x.valor_economizado || 0), 0);
   const SIT = { aberto: ['Mês em andamento', 'b-cinza'], fechado: ['Aguardando repasse', 'b-ambar'], pago: ['Repassado', 'b-verde'] };
-  el.innerHTML = `
+  el.innerHTML = `${abasVisao}
     <div class="painel filtros"><div class="linha-form">
       <label class="campo" style="max-width:220px">Mês dos pagamentos<input type="month" id="c-mes" value="${comp}"></label>
       <p class="small muted" style="flex:3;margin:0 0 9px">A comissão é de 5% sobre cada valor pago pelo cliente, contada no mês em que o pagamento entrou. O repasse acontece no 5º dia útil do mês seguinte.</p>
@@ -1956,11 +2104,11 @@ rota('comissoes', async (_p, el) => {
       ${!doMes.length ? `<div class="vazio painel" style="grid-column:1/-1">Nenhum pagamento de cliente gerou comissão em ${nomeMes(r.competencia)}.</div>` : ''}
     </div>
     ${r.lancamentos.length ? `<div class="painel" style="margin-top:16px"><div class="painel-cab"><h2>Pagamentos que geraram comissão em ${nomeMes(r.competencia)}</h2></div>
-      <div class="tabela-wrap"><table><thead><tr><th>Data</th><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th class="dir">Valor pago</th><th class="dir">Comissão</th><th></th></tr></thead><tbody>
+      <div class="tabela-wrap"><table><thead><tr><th>Data</th><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th class="dir">Valor pago</th><th class="dir">Comissão</th><th>Repasse</th></tr></thead><tbody>
       ${r.lancamentos.map(l => `<tr><td class="num">${data(l.pago_em || l.created_at)}</td><td>${l.pedido_id ? `<a href="#/pedido/${l.pedido_id}">${esc(l.pedido_numero)}</a>` : '—'}</td>
         <td>${esc(l.cliente_nome || '')}</td><td>${esc(l.vendedor_nome)}</td><td class="dir num">${brl(l.valor_base)}</td>
         <td class="dir num" style="${l.valor_comissao < 0 ? 'color:var(--vermelho)' : ''}">${brl(l.valor_comissao)}</td>
-        <td>${l.tipo === 'estorno' ? badge('Estorno', 'b-vermelho') : !l.devida ? badge('Economizada', 'b-verde') : l.estornado ? badge('Estornada', 'b-cinza') : ''}</td></tr>`).join('')}
+        <td>${situacaoLancamento(l)}</td></tr>`).join('')}
       </tbody></table></div></div>` : ''}
     ${r.fechamentos.length ? `<div class="painel" style="margin-top:16px"><div class="painel-cab"><h2>Últimos 12 meses</h2></div>
       <div class="tabela-wrap"><table><thead><tr><th>Mês</th><th>Vendedor</th><th class="dir">Devido</th><th class="dir">Economizado</th><th>Repasse</th><th>Situação</th></tr></thead><tbody>
@@ -1968,7 +2116,46 @@ rota('comissoes', async (_p, el) => {
         <td class="dir num">${Number(x.valor_economizado) ? brl(x.valor_economizado) : '—'}</td><td class="num">${x.pago_em ? 'Feito em ' + data(x.pago_em) : data(x.data_repasse_prevista)}</td><td>${badge(...SIT[x.situacao])}</td></tr>`).join('')}
       </tbody></table></div></div>` : ''}`;
   $('#c-mes').onchange = e => { S.cache.compComissao = e.target.value; recarregar(); };
+  ligarVisao();
 });
+function situacaoLancamento(l) {
+  if (!l.devida) return badge('Economizada', 'b-verde');
+  if (l.tipo === 'estorno') return `${badge(l.repasse_feito_em ? 'Descontado em ' + data(l.repasse_feito_em) : 'Desconto no repasse de ' + data(l.repasse_previsto), 'b-vermelho')}<div class="small muted">${esc(l.motivo || '')}</div>`;
+  if (l.estornado) return `${badge('Repassada e estornada', 'b-cinza')}<div class="small muted">${esc(l.motivo || '')}</div>`;
+  return l.repasse_feito_em ? badge('Repassada em ' + data(l.repasse_feito_em), 'b-verde') : badge('A repassar em ' + data(l.repasse_previsto), 'b-ambar');
+}
+async function comissoesPorPedido(el, abasVisao) {
+  const f = S.cache.filtroComPed || (S.cache.filtroComPed = { filtro: 'todos', busca: '', vendedor_id: '' });
+  const r = await api('listar_comissoes', { visao: 'pedidos', ...f, limite: limLista('comped') });
+  const todas = pode('ve_todas_comissoes');
+  const abas = [['todos', 'Todos'], ['a_repassar', 'A repassar / descontar'], ['cancelados', 'Pedidos cancelados']];
+  el.innerHTML = `${abasVisao}
+    <div class="painel filtros">
+      <div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-fc="${k}">${n}</button>`).join('')}</div>
+      <div class="linha-form" style="margin-bottom:12px">
+        <label class="campo" style="flex:2">Buscar<input type="search" id="cp-busca" value="${esc(f.busca)}" placeholder="Pedido ou cliente"></label>
+        ${todas ? `<label class="campo">Vendedor<select id="cp-vend"><option value="">Todos</option>${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === f.vendedor_id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : ''}
+      </div>
+      <p class="small muted" style="margin:0 0 10px">Cada pedido que já teve pagamento do cliente, com a comissão gerada e quanto já foi repassado. Se um pedido com comissão repassada for cancelado, o valor é descontado do vendedor no próximo repasse.</p>
+      ${r.pedidos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th class="dir">Pago pelo cliente</th><th class="dir">Comissão</th><th class="dir">Repassada</th><th class="dir">A repassar</th><th>Situação</th></tr></thead><tbody>
+      ${r.pedidos.map(p => { const ar = Number(p.a_repassar || 0); return `<tr>
+        <td><a href="#/pedido/${p.pedido_id}"><b>${esc(p.pedido_numero)}</b></a></td><td>${esc(p.cliente_nome)}</td><td>${esc(p.vendedor_nome)}</td>
+        <td class="dir num">${brl(p.pago_cliente)}</td>
+        <td class="dir num">${p.devida ? brl(p.comissao_liquida) : `<span class="muted">${brl(p.comissao_liquida)}</span>`}</td>
+        <td class="dir num">${brl(p.repassada)}</td>
+        <td class="dir num" style="${ar < 0 ? 'color:var(--vermelho)' : ''}">${ar < 0 ? 'Descontar ' + brl(-ar) : brl(ar)}</td>
+        <td>${p.pedido_status === 'cancelado' ? `${badge('Pedido cancelado', 'b-vermelho')}<div class="small muted">${esc(p.motivo_cancelamento || '')}</div>`
+             : !p.devida ? badge('Economizada (diretoria)', 'b-verde')
+             : ar === 0 ? badge('Repassada', 'b-verde') : badge('A repassar', 'b-ambar')}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<div class="vazio">Nenhum pedido com comissão neste filtro.</div>'}
+      ${rodapeLista('comped', r.pedidos.length, r.total, 'pedido(s)')}
+    </div>`;
+  ligarMais(el, 'comped', recarregar);
+  const filtrar = () => { zerarLista('comped'); recarregar(); };
+  $$('[data-fc]').forEach(b => b.onclick = () => { f.filtro = b.dataset.fc; filtrar(); });
+  let t; $('#cp-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
+  if ($('#cp-vend')) $('#cp-vend').onchange = e => { f.vendedor_id = e.target.value; filtrar(); };
+}
 async function pagarComissao(id, desfazer = false) {
   if (!await confirmar(desfazer ? 'Desfazer o registro deste repasse?' : 'Confirmar que o repasse desta comissão foi feito hoje?', desfazer ? 'Desfazer' : 'Confirmar repasse')) return;
   await api('pagar_comissao', { id, desfazer }); toast(desfazer ? 'Registro desfeito.' : 'Repasse registrado.'); recarregar();
@@ -2050,31 +2237,84 @@ function modalCategoria(id, aoSalvar) {
 }
 
 /* ---------- FORNECEDORES ---------- */
-
+const CAT_FORN = { offset: 'Offset', comunicacao_visual: 'Comunicação visual' };
+const podeCadastrarFornecedor = () => pode('gerencia_cadastros') || podeStatus('em_producao');
+function opcoesFornecedor(sel) {
+  const lista = (S.base.fornecedores || []).filter(f => f.ativo || f.id === sel);
+  const grupo = cat => lista.filter(f => (f.categoria || '') === cat);
+  const ops = l => l.map(f => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+  const sem = grupo('');
+  return `<option value="">Selecione</option>`
+    + Object.entries(CAT_FORN).map(([k, n]) => grupo(k).length ? `<optgroup label="${n}">${ops(grupo(k))}</optgroup>` : '').join('')
+    + (sem.length ? `<optgroup label="Sem categoria">${ops(sem)}</optgroup>` : '');
+}
+function linkAcessoFornecedor(id) {
+  const f = id && (S.base.fornecedores || []).find(x => x.id === id);
+  if (!f || (!f.site && !f.login_site && !f.tem_senha)) return '';
+  return `<button type="button" class="btn link peq" onclick="modalAcessoFornecedor('${f.id}')">Acesso ao site</button>`;
+}
+async function modalAcessoFornecedor(id) {
+  const f = S.base.fornecedores.find(x => x.id === id); if (!f) return;
+  const r = f.tem_senha ? await api('fornecedor_senha', { id }) : { senha: null };
+  const site = f.site ? (/^https?:\/\//i.test(f.site) ? f.site : 'https://' + f.site) : '';
+  const linha = (rot, val, k) => `<div class="campo"><span>${rot}</span><div style="display:flex;gap:6px;align-items:center">
+      <input type="${k === 'senha' ? 'password' : 'text'}" readonly value="${esc(val || '')}" data-ac="${k}" style="flex:1">
+      ${k === 'senha' && val ? `<button type="button" class="btn peq" data-ver>Mostrar</button>` : ''}
+      ${val ? `<button type="button" class="btn peq" data-copiar="${k}">Copiar</button>` : ''}</div></div>`;
+  const m = abrirModal({ titulo: `Acesso · ${f.nome}`, corpo: `
+    ${site ? `<p style="margin:0 0 12px"><a href="${esc(site)}" target="_blank" rel="noopener">Abrir o site do fornecedor ↗</a></p>` : ''}
+    ${linha('Login', f.login_site, 'login')}${linha('Senha', r.senha, 'senha')}
+    ${!f.login_site && !r.senha ? '<p class="small muted">Nenhum login cadastrado.</p>' : ''}`,
+    rodape: `<button class="btn" data-v>Fechar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const vb = m.el.querySelector('[data-ver]');
+  if (vb) vb.onclick = () => { const i = m.el.querySelector('[data-ac="senha"]'); const ver = i.type === 'password'; i.type = ver ? 'text' : 'password'; vb.textContent = ver ? 'Ocultar' : 'Mostrar'; };
+  m.el.querySelectorAll('[data-copiar]').forEach(b => b.onclick = async () => {
+    const v = m.el.querySelector(`[data-ac="${b.dataset.copiar}"]`).value;
+    try { await navigator.clipboard.writeText(v); toast('Copiado.'); } catch { toast('Não foi possível copiar.', true); } });
+}
 rota('fornecedores', async (_p, el) => {
-  definirTopo('Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null)">Novo fornecedor</button>`);
+  definirTopo('Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null, recarregar)">Novo fornecedor</button>`);
   await carregarBase();
   const l = S.base.fornecedores;
-  el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Especialidades</th><th>Contato</th><th>Prazo padrão</th><th></th></tr></thead><tbody>
-    ${l.map(f => `<tr class="clicavel" onclick="modalFornecedor('${f.id}')"><td><b>${esc(f.nome)}</b><div class="small muted">${esc(f.cnpj || '')}</div></td><td>${esc(f.especialidades || '')}</td>
-      <td>${esc(f.contato_nome || '')}<div class="small muted">${esc(f.whatsapp || f.telefone || '')}</div></td><td>${f.prazo_padrao_dias ? f.prazo_padrao_dias + ' dias' : '—'}</td><td>${f.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
+  el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Categoria</th><th>Site</th><th>Login</th><th></th></tr></thead><tbody>
+    ${l.map(f => `<tr class="clicavel" onclick="modalFornecedor('${f.id}', recarregar)"><td><b>${esc(f.nome)}</b></td>
+      <td>${f.categoria ? esc(CAT_FORN[f.categoria]) : '<span class="muted">—</span>'}</td>
+      <td class="small">${esc(f.site || '—')}</td>
+      <td class="small">${esc(f.login_site || '—')}${f.tem_senha ? ' · senha cadastrada' : ''}</td>
+      <td>${f.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vazio">Cadastre as gráficas parceiras para usar na pré-impressão.</div>'}</div>`;
 });
-function modalFornecedor(id) {
+function modalFornecedor(id, aoSalvar) {
   const f = id ? S.base.fornecedores.find(x => x.id === id) : { ativo: true };
-  const c = (n, r, t = 'text') => `<label class="campo">${r}<input type="${t}" name="${n}" value="${esc(f[n] ?? '')}"></label>`;
-  const m = abrirModal({ titulo: id ? f.nome : 'Novo fornecedor', largo: true, corpo: `<form id="f-forn" class="grade g3">
-    ${c('nome', 'Nome')}${c('razao_social', 'Razão social')}${c('cnpj', 'CNPJ')}${c('contato_nome', 'Contato')}${c('whatsapp', 'WhatsApp')}${c('telefone', 'Telefone')}
-    ${c('email', 'E-mail')}${c('site', 'Site / portal')}${c('prazo_padrao_dias', 'Prazo padrão (dias)', 'number')}
-    <label class="campo" style="grid-column:1/-1">Especialidades<input type="text" name="especialidades" value="${esc(f.especialidades || '')}" placeholder="Ex.: cartões, banners, adesivos"></label>
-    <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(f.observacoes || '')}</textarea></label>
-    <label class="check"><input type="checkbox" name="ativo" value="true" ${f.ativo ? 'checked' : ''}> Ativo</label></form>`,
+  const m = abrirModal({ titulo: id ? f.nome : 'Novo fornecedor', corpo: `<form id="f-forn" class="grade g2">
+    <label class="campo" style="grid-column:1/-1">Nome *<input type="text" name="nome" value="${esc(f.nome || '')}" required></label>
+    <label class="campo" style="grid-column:1/-1">Categoria *<select name="categoria"><option value="">Selecione</option>${Object.entries(CAT_FORN).map(([k, n]) => `<option value="${k}" ${f.categoria === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <label class="campo" style="grid-column:1/-1">Site<input type="text" name="site" value="${esc(f.site || '')}" placeholder="Ex.: www.fornecedor.com.br"></label>
+    <label class="campo">Login do site<input type="text" name="login_site" value="${esc(f.login_site || '')}" autocomplete="off"></label>
+    <label class="campo">Senha do site<input type="password" name="senha_site" autocomplete="new-password" placeholder="${f.tem_senha ? 'Deixe em branco para manter' : ''}"></label>
+    ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" value="true" ${f.ativo ? 'checked' : ''}> Ativo</label>` : ''}
+    <p class="small muted" style="grid-column:1/-1;margin:0">A senha fica criptografada no banco e só aparece para quem cuida da pré-impressão e da produção.</p></form>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar fornecedor</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    const d = formDados($('#f-forn', m.el)); d.ativo = !!d.ativo; if (id) d.id = id;
-    await api('salvar_fornecedor', d); m.fechar(); toast('Fornecedor salvo.'); recarregar();
+    const d = formDados($('#f-forn', m.el));
+    if (!d.nome.trim()) return toast('Informe o nome do fornecedor.', true);
+    if (!d.categoria) return toast('Escolha a categoria: Offset ou Comunicação visual.', true);
+    if (!d.senha_site) delete d.senha_site;
+    if (id) { d.id = id; d.ativo = !!d.ativo; } else d.ativo = true;
+    const r = await api('salvar_fornecedor', d); m.fechar(); toast('Fornecedor salvo.');
+    await carregarBase();
+    if (aoSalvar) aoSalvar(r.id);
   };
+}
+/* cadastra o fornecedor sem sair da pré-impressão e já escolhe na linha (não recarrega a tela, para não perder o que foi digitado) */
+function novoFornecedorNaLinha(itemId) {
+  modalFornecedor(null, novoId => {
+    $$('select[data-c="fornecedor_id"]').forEach(sel => { const atual = sel.value; sel.innerHTML = opcoesFornecedor(atual); });
+    const tr = $(`tr[data-item="${itemId}"]`); const sel = tr && tr.querySelector('select[data-c="fornecedor_id"]');
+    if (sel) { sel.value = novoId; sel.dispatchEvent(new Event('change')); }
+  });
 }
 
 /* ---------- PRODUTOS ---------- */
@@ -2175,6 +2415,8 @@ function modalUsuario(id) {
 
 /* ---------- inicialização ---------- */
 (async () => {
+  const mPub = location.hash.match(/^#\/o\/([0-9a-fA-F]{32})$/);
+  if (mPub) { window.removeEventListener('hashchange', rotear); return paginaPublicaOrcamento(mPub[1].toLowerCase()); }
   let t = null; try { t = localStorage.getItem('gvh_token'); } catch {}
   if (!t) { $('#tela-login').classList.remove('hidden'); return; }
   S.token = t;
