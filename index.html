@@ -289,7 +289,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -595,6 +595,7 @@ rota('pedidos', async (_p, el) => {
         <label class="campo">Vendedor<select id="f-vend"><option value="">Todos</option>
           ${S.base.vendedores.map(v => `<option value="${v.id}" ${f.vendedor === v.id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>
         <label class="check" style="flex:0;min-width:auto;padding-bottom:9px"><input type="checkbox" id="f-final" ${f.finalizados ? 'checked' : ''}> Mostrar concluídos e cancelados</label>
+        ${podeStatus('cancelado') ? `<label class="check" style="flex:0;min-width:auto;padding-bottom:9px"><input type="checkbox" id="f-excl" ${f.excluidos ? 'checked' : ''}> Só excluídos</label>` : ''}
       </div>
       <div class="chips" style="margin-top:14px" id="f-etapas">
         <button class="chip ${!f.etapa ? 'ativo' : ''}" data-e="">Todas as etapas</button>
@@ -605,7 +606,7 @@ rota('pedidos', async (_p, el) => {
 
   let t;
   const buscar = async () => {
-    const dados = { busca: f.busca, incluir_finalizados: f.finalizados, limite: limLista('pedidos') };
+    const dados = { busca: f.busca, incluir_finalizados: f.finalizados || f.excluidos, excluidos: !!f.excluidos, limite: limLista('pedidos') };
     if (f.etapa) dados.status = f.etapa === 'saida' ? ['em_transporte','aguardando_retirada'] : [f.etapa];
     if (f.fin) dados.status_financeiro = f.fin;
     if (f.vendedor) dados.vendedor_id = f.vendedor;
@@ -618,6 +619,7 @@ rota('pedidos', async (_p, el) => {
   if ($('#f-fin')) $('#f-fin').onchange = e => { f.fin = e.target.value; filtrar(); };
   $('#f-vend').onchange = e => { f.vendedor = e.target.value; filtrar(); };
   $('#f-final').onchange = e => { f.finalizados = e.target.checked; filtrar(); };
+  if ($('#f-excl')) $('#f-excl').onchange = e => { f.excluidos = e.target.checked; filtrar(); };
   $$('#f-etapas .chip').forEach(b => b.onclick = () => {
     f.etapa = b.dataset.e; $$('#f-etapas .chip').forEach(x => x.classList.toggle('ativo', x === b)); filtrar();
   });
@@ -648,11 +650,12 @@ rota('pedido', async (id, el) => {
   const r = await api('obter_pedido', { id });
   const p = r.pedido; S.vistaEmRender.dados = p;
   const cancelado = p.status === 'cancelado';
-  definirTopo(`Pedido ${p.numero}`, `
+  const excluido = !!p.excluido_em;
+  definirTopo(`Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
     <a class="btn" href="#/pedidos">Voltar</a>
     ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
-    ${podeStatus('cancelado') ? (cancelado
-        ? `<button class="btn" onclick="reativarPedido()">Reativar pedido</button>`
+    ${podeStatus('cancelado') && !excluido ? (cancelado
+        ? `${p.cancelado_em ? `<button class="btn" onclick="reativarPedido()">Reativar pedido</button><button class="btn perigo" onclick="cancelarPedido(true)">Excluir pedido</button>` : ''}`
         : `<button class="btn perigo" onclick="cancelarPedido()">Cancelar pedido</button>`) : ''}
     <button class="btn" onclick="recarregar()">Atualizar</button>`);
 
@@ -668,7 +671,8 @@ rota('pedido', async (id, el) => {
         <div style="display:flex;gap:8px;flex-wrap:wrap">${badgePed(p.status, p.status_nome)} ${badgeFin(p.status_financeiro, p.status_financeiro_nome)}</div>
       </div>
       ${cli.observacoes ? `<div class="alerta" style="margin-bottom:14px"><b>Observação do cliente:</b> ${esc(cli.observacoes)}</div>` : ''}
-      ${cancelado ? `<div class="alerta erro" style="margin-bottom:14px">Cancelado em ${dataHora(p.cancelado_em)}. Motivo: ${esc(p.motivo_cancelamento || '—')}</div>` : trilhoGrande(p)}
+      ${excluido ? `<div class="alerta erro" style="margin-bottom:8px"><b>Pedido excluído</b> em ${dataHora(p.excluido_em)}${p.excluido_por_nome ? ' por ' + esc(p.excluido_por_nome) : ''}. Motivo: ${esc(p.motivo_exclusao || '—')}. Ele não aparece mais nas listas; o histórico e os registros financeiros ficam guardados.</div>` : ''}
+      ${cancelado ? `<div class="alerta erro" style="margin-bottom:14px">${p.cancelado_em ? `Cancelado em ${dataHora(p.cancelado_em)}. Motivo: ${esc(p.motivo_cancelamento || '—')}. Todos os itens foram parados.` : 'Todos os itens deste pedido foram cancelados.'}</div>` : trilhoGrande(p)}
       <div class="grade g4" style="margin-top:18px">
         <div><div class="small muted">Vendedor</div>${esc(p.vendedor_nome)}</div>
         <div><div class="small muted">Entrega</div>${p.forma_entrega === 'entrega' ? 'Entregar no cliente' : 'Cliente retira no balcão'}${p.endereco_entrega ? `<div class="small muted">${esc(p.endereco_entrega)}</div>` : ''}</div>
@@ -767,17 +771,36 @@ async function moverSelecionados() {
   toast('Itens atualizados.'); recarregar();
 }
 
-async function cancelarPedido() {
-  const m = abrirModal({ titulo: 'Cancelar pedido', corpo: `<label class="campo">Motivo do cancelamento<textarea id="motivo" required></textarea></label>
-    <p class="small muted" style="margin:0">Parcelas em aberto serão canceladas. Parcelas já pagas continuam registradas.</p>`,
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Cancelar pedido</button>` });
+async function cancelarPedido(excluir = false) {
+  const p = S.vistaAtual.dados;
+  const r = await api('previa_cancelamento', { id: p.id });
+  const avisos = r.avisos || [];
+  const acao = excluir ? 'Excluir' : 'Cancelar';
+  const m = abrirModal({ titulo: `${acao} pedido ${p.numero}`, corpo: `
+    ${excluir
+      ? '<p style="margin:0 0 12px">O pedido sai de todas as listas e não pode mais ser reativado. O histórico, os pagamentos e as comissões continuam registrados.</p>'
+      : '<p style="margin:0 0 12px">Todos os itens param na hora: saem da arte, da pré-impressão, da produção e da expedição. Parcelas em aberto são canceladas. Se reativar depois, cada item volta para onde estava.</p>'}
+    ${avisos.length ? `<div style="margin-bottom:12px"><b>Confirme cada ponto antes de continuar:</b>
+      ${avisos.map(a => `<label class="check" style="align-items:flex-start;margin-top:10px;padding:10px 12px;border:1px solid var(--vermelho);border-radius:8px;background:var(--vermelho-bg)">
+        <input type="checkbox" data-conf="${esc(a.codigo)}" style="margin-top:3px">
+        <span><b>${esc(a.titulo)}</b><br><span class="small">${esc(a.texto)}</span></span></label>`).join('')}</div>`
+      : '<p class="small muted" style="margin:0 0 12px">Nenhum pagamento, produção ou repasse de comissão ligado a este pedido.</p>'}
+    <label class="campo">Motivo ${excluir ? 'da exclusão' : 'do cancelamento'} *<textarea id="motivo" required></textarea></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>${acao} pedido</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-c]').onclick = async () => {
-    await api('cancelar_pedido', { id: S.vistaAtual.dados.id, motivo: $('#motivo', m.el).value }); m.fechar(); toast('Pedido cancelado.'); recarregar();
+    const motivo = $('#motivo', m.el).value.trim();
+    const confirmados = [...m.el.querySelectorAll('[data-conf]:checked')].map(c => c.dataset.conf);
+    if (confirmados.length < avisos.length) return toast('Marque todos os avisos para confirmar.', true);
+    if (!motivo) return toast(`Informe o motivo ${excluir ? 'da exclusão' : 'do cancelamento'}.`, true);
+    await api(excluir ? 'excluir_pedido' : 'cancelar_pedido', { id: p.id, motivo, confirmados });
+    m.fechar();
+    if (excluir) { toast('Pedido excluído.'); descartarVista(chaveRota()); location.hash = '#/pedidos'; }
+    else { toast('Pedido cancelado. Os itens foram parados.'); recarregar(); }
   };
 }
 async function reativarPedido() {
-  if (!await confirmar('Reativar este pedido? Ele volta a seguir o status dos itens.', 'Reativar')) return;
+  if (!await confirmar('Reativar este pedido? Cada item volta para a etapa em que estava quando o pedido foi cancelado, e as parcelas canceladas junto com ele voltam a ficar em aberto.', 'Reativar')) return;
   await api('cancelar_pedido', { id: S.vistaAtual.dados.id, reativar: true }); toast('Pedido reativado.'); recarregar();
 }
 
