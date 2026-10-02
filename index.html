@@ -289,7 +289,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -566,6 +566,7 @@ rota('inicio', async (_p, el) => {
       <button class="${qtd(k) ? 'tem' : ''}" onclick="irPedidos('${k}')"><span class="n num">${qtd(k)}</span><span class="t">${esc(n)}</span></button>`).join('')}
     </div>
     ${(r.orcamentos_aceitos || []).map(o => `<a class="alerta" href="#/orcamento/${o.id}" style="display:block;margin-top:16px;text-decoration:none;color:var(--grafite);background:var(--verde-bg)"><b>Orçamento ${esc(o.numero)} aprovado pelo cliente</b> · ${esc(o.cliente || '')} — aprovado por ${esc(o.aprovado_por || '')} em ${dataHoraLonga(o.aprovado_em)}${o.vendedor ? ` · vendedor ${esc(o.vendedor)}` : ''}. Abra para transformar em pedido.</a>`).join('')}
+    ${r.cadastros_link ? `<a class="alerta" href="#/clientes" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Cadastros pelo link:</b> ${r.cadastros_link} ${r.cadastros_link > 1 ? 'clientes enviaram' : 'cliente enviou'} o cadastro e ${r.cadastros_link > 1 ? 'aguardam' : 'aguarda'} conferência em Clientes.</a>` : ''}
     ${fin && fin.a_conferir && pode('edita_financeiro') ? `<a class="alerta" href="#/conciliacao" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Conciliação:</b> ${fin.a_conferir} ${fin.a_conferir > 1 ? 'pagamentos marcados como pagos aguardam' : 'pagamento marcado como pago aguarda'} conferência.</a>` : ''}
     ${r.acabamento_chegou && veFornecedor() ? `<a class="alerta" href="#/producao" onclick="S.cache.abaProd='em_producao'" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Chegou para acabamento:</b> ${r.acabamento_chegou} ${r.acabamento_chegou > 1 ? 'itens voltaram' : 'item voltou'} para a produção. Veja em Pré-impressão e produção.</a>` : ''}
     <div class="grade g4" style="margin-top:16px">
@@ -1604,12 +1605,10 @@ function modalLinkOrcamento(o, cliente) {
   m.el.querySelector('#lk-copiar').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.'); } catch { $('#lk-url', m.el).select(); } };
 }
 
-/* ---------- PÁGINA PÚBLICA DO ORÇAMENTO (cliente, sem login) ---------- */
-async function paginaPublicaOrcamento(chave) {
-  document.title = 'Orçamento · Gráfica Venda Hoje';
-  const logo = $('#logo-gvh', document)?.src || '';
-  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
-  const est = document.createElement('style');
+/* ---------- PÁGINAS PÚBLICAS (cliente, sem login) ---------- */
+function aplicarEstiloPublico() {
+  if (document.getElementById('estilo-pub')) return;
+  const est = document.createElement('style'); est.id = 'estilo-pub';
   est.textContent = `
     #pub { min-height: 100vh; background: #eef1f2; padding: 24px 12px 48px; font-family: Sora, Arial, sans-serif; color: #1d262d; }
     #pub .folha { max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 6px 30px rgba(29,38,45,.08); overflow: hidden; }
@@ -1649,6 +1648,14 @@ async function paginaPublicaOrcamento(chave) {
       #pub .col-unit { display: none; } }
     @media print { #pub { background: #fff; padding: 0; } #pub .folha { box-shadow: none; } #pub .aprovar, #pub .acoes, #pub .rod { display: none; } }`;
   document.head.appendChild(est);
+}
+
+/* ---------- PÁGINA PÚBLICA DO ORÇAMENTO ---------- */
+async function paginaPublicaOrcamento(chave) {
+  document.title = 'Orçamento · Gráfica Venda Hoje';
+  const logo = $('#logo-gvh', document)?.src || '';
+  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+  aplicarEstiloPublico();
   const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const unit = (t, q) => Number(q) > 0 ? (Number(t) / Number(q)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '';
   const desenhar = (o, msgErro) => {
@@ -1694,6 +1701,191 @@ async function paginaPublicaOrcamento(chave) {
   };
   try { const r = await api('orc_publico', { chave }, true); desenhar(r.orcamento); }
   catch (e) { raiz.innerHTML = `<div class="folha"><div class="corpo"><h1 style="font-size:20px">Não foi possível abrir o orçamento</h1><p>${esc(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor. Tente de novo em instantes.' : e.message)}</p></div></div>`; }
+}
+
+/* validação de CPF / CNPJ (inclusive CNPJ alfanumérico) no navegador — o banco valida de novo */
+function docValido(v) {
+  const d = String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  const dv = (base, pesos) => { const s = base.split('').reduce((t, ch, k) => t + (ch.charCodeAt(0) - 48) * pesos[k], 0); const r = s % 11; return r < 2 ? 0 : 11 - r; };
+  if (/^\d{11}$/.test(d)) {
+    if (/^(\d)\1{10}$/.test(d)) return null;
+    const c = (n) => { let s = 0; for (let k = 0; k < n; k++) s += Number(d[k]) * (n + 1 - k); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+    return c(9) === Number(d[9]) && c(10) === Number(d[10]) ? 'PF' : null;
+  }
+  if (/^[0-9A-Z]{12}\d{2}$/.test(d)) {
+    if (/^(\d)\1{13}$/.test(d)) return null;
+    const p1 = [5,4,3,2,9,8,7,6,5,4,3,2], p2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+    return dv(d.slice(0, 12), p1) === Number(d[12]) && dv(d.slice(0, 13), p2) === Number(d[13]) ? 'PJ' : null;
+  }
+  return null;
+}
+const linkCadastroPublico = () => location.origin + location.pathname + '#/cadastro';
+function modalLinkCadastro() {
+  const link = linkCadastroPublico();
+  const texto = `Olá! Para agilizar seus pedidos na Gráfica Venda Hoje, faça seu cadastro por este link (leva 2 minutos): ${link}`;
+  const m = abrirModal({ titulo: 'Link de cadastro para o cliente', corpo: `
+    <p style="margin:0 0 10px">O cliente preenche os próprios dados, sem login. O cadastro só entra no sistema depois que alguém da GVH conferir e aprovar (aviso no Início e aqui em Clientes).</p>
+    <div style="display:flex;gap:6px"><input type="text" readonly value="${esc(link)}" id="lc-url" style="flex:1"><button class="btn" id="lc-copiar">Copiar</button></div>`,
+    rodape: `<button class="btn" data-v>Fechar</button><a class="btn prim" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texto)}">Enviar pelo WhatsApp</a>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('#lc-copiar').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.'); } catch { $('#lc-url', m.el).select(); } };
+}
+async function paginaPublicaCadastro() {
+  document.title = 'Cadastro · Gráfica Venda Hoje';
+  aplicarEstiloPublico();
+  const est = document.createElement('style');
+  est.textContent = `
+    #pub .gr { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px 12px; }
+    #pub .gr label { grid-column: span 6; display: block; font-size: 12.5px; color: #5a6770; margin-top: 10px; }
+    #pub .gr .c2 { grid-column: span 2; } #pub .gr .c3 { grid-column: span 3; } #pub .gr .c4 { grid-column: span 4; } #pub .gr .c1 { grid-column: span 1; }
+    #pub .gr input:not([type=checkbox]) { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid #cfd6da; border-radius: 8px; margin-top: 4px; background: #fff; }
+    #pub .gr input:focus { outline: 2px solid #00a986; border-color: #00a986; }
+    #pub .sec { grid-column: span 6; margin: 22px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.3px; color: #00a986; font-weight: 700; border-bottom: 1px solid #e2e6e8; padding-bottom: 6px; }
+    #pub .chk { display: flex !important; gap: 8px; align-items: flex-start; color: #1d262d !important; font-size: 13.5px !important; }
+    #pub .chk input { margin-top: 3px; width: 18px; height: 18px; accent-color: #00a986; }
+    #pub .dica { font-size: 12px; color: #8a959c; margin-top: 4px; min-height: 1em; } #pub .dica.err { color: #c0453b; }
+    #pub .obr { color: #c0453b; }
+    #pub .hp { position: absolute; left: -5000px; width: 1px; height: 1px; overflow: hidden; }
+    @media (max-width: 560px) { #pub .gr .c2, #pub .gr .c3, #pub .gr .c4 { grid-column: span 6; } #pub .gr .c1 { grid-column: span 2; } }`;
+  document.head.appendChild(est);
+  const logo = $('#logo-gvh', document)?.src || '';
+  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+  const ob = '<span class="obr">*</span>';
+  raiz.innerHTML = `<div class="folha">
+    <div class="cab">${logo ? `<img src="${logo}" alt="Gráfica Venda Hoje">` : `<b>${esc(EMPRESA.nome)}</b>`}
+      <div class="emp"><b>${esc(EMPRESA.nome)}</b><br>${esc(EMPRESA.telefone)} · ${esc(EMPRESA.email)}</div></div>
+    <div class="corpo" id="cad-corpo">
+      <h1 style="font-size:24px">Cadastro de cliente</h1>
+      <p style="color:#5a6770;margin:6px 0 0;font-size:14px">Preencha seus dados para agilizar orçamentos, pedidos, entregas e notas fiscais. Campos com ${ob} são obrigatórios.</p>
+      <form id="cad" class="gr" novalidate autocomplete="on">
+        <div class="hp" aria-hidden="true"><label>Site<input type="text" name="site_url" tabindex="-1" autocomplete="off"></label></div>
+        <div class="sec">Documento</div>
+        <label class="c3">CPF ou CNPJ ${ob}<input type="text" name="cpf_cnpj" maxlength="18" inputmode="text" style="text-transform:uppercase" placeholder="Digite o CPF ou o CNPJ"><div class="dica" id="dica-doc">Pessoa física: CPF · Empresa: CNPJ</div></label>
+        <div id="cad-resto" style="display:none;grid-column:span 6"><div class="gr">
+          <div class="sec" id="sec-dados">Seus dados</div>
+          <label class="c4"><span id="rot-nome">Nome completo</span> ${ob}<input type="text" name="nome" autocomplete="name"></label>
+          <label class="c2" data-t="PF">Data de aniversário (dia/mês) ${ob}<input type="text" name="aniversario" maxlength="5" placeholder="DD/MM" inputmode="numeric"></label>
+          <label class="c3" data-t="PJ">Nome fantasia<input type="text" name="nome_fantasia"></label>
+          <label class="c3" data-t="PJ">Ramo de atividade ${ob}<input type="text" name="segmento" placeholder="Ex.: Restaurante, Clínica, Loja de roupas"></label>
+          <label class="c3" data-t="PJ">Inscrição estadual<input type="text" name="inscricao_estadual"></label>
+          <label class="c3" data-t="PJ">Nome completo do responsável ${ob}<input type="text" name="responsavel" autocomplete="name"></label>
+          <div class="sec">Contato</div>
+          <label class="c3">Telefone com DDD ${ob}<input type="tel" name="telefone" placeholder="(11) 99999-9999" autocomplete="tel"></label>
+          <label class="c3 chk" style="align-self:end;padding-bottom:10px"><input type="checkbox" name="telefone_whatsapp" checked> Este número é WhatsApp</label>
+          <label class="c3">E-mail ${ob}<input type="email" name="email" autocomplete="email"></label>
+          <label class="c3">Instagram<input type="text" name="instagram" placeholder="@perfil"></label>
+          <div class="sec">Endereço</div>
+          <label class="c2">CEP ${ob}<input type="text" name="cep" maxlength="9" inputmode="numeric" autocomplete="postal-code"><div class="dica" id="dica-cep"></div></label>
+          <label class="c4">Endereço (rua, avenida) ${ob}<input type="text" name="logradouro" autocomplete="address-line1"></label>
+          <label class="c1">Número ${ob}<input type="text" name="numero"></label>
+          <label class="c2">Complemento<input type="text" name="complemento" autocomplete="address-line2"></label>
+          <label class="c3">Bairro ${ob}<input type="text" name="bairro"></label>
+          <label class="c4">Cidade ${ob}<input type="text" name="cidade" autocomplete="address-level2"></label>
+          <label class="c2">UF ${ob}<input type="text" name="uf" maxlength="2" style="text-transform:uppercase" autocomplete="address-level1"></label>
+          <label class="chk" style="margin-top:22px"><input type="checkbox" name="lgpd"> <span>Autorizo a Gráfica Venda Hoje a usar estes dados para orçamentos, pedidos, entregas, emissão de nota fiscal e contato comercial, conforme a Lei Geral de Proteção de Dados (LGPD). ${ob}</span></label>
+          <div class="erro" id="cad-erro" style="grid-column:span 6"></div>
+          <div class="acoes" style="grid-column:span 6"><button type="submit" class="bt prim" id="cad-enviar">Enviar cadastro</button></div>
+        </div></div>
+      </form>
+    </div></div>
+    <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
+  const f = $('#cad', raiz); const F = new Proxy({}, { get: (_, n) => f.elements.namedItem(n) }); let tipo = null;
+  const dica = (id, t, err) => { const e = $('#' + id, raiz); e.textContent = t; e.classList.toggle('err', !!err); };
+  const preencher = (n, v) => { if (v && F[n] && !F[n].value.trim()) F[n].value = v; };
+  const mostrarTipo = () => {
+    $('#cad-resto', raiz).style.display = tipo ? '' : 'none';
+    $$('[data-t]', raiz).forEach(e => e.style.display = e.dataset.t === tipo ? '' : 'none');
+    $('#rot-nome', raiz).textContent = tipo === 'PJ' ? 'Razão social' : 'Nome completo';
+    $('#sec-dados', raiz).textContent = tipo === 'PJ' ? 'Dados da empresa' : 'Seus dados';
+  };
+  F.cpf_cnpj.oninput = async () => {
+    const d = F.cpf_cnpj.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+    if (d.length !== 11 && d.length !== 14) { tipo = null; mostrarTipo(); dica('dica-doc', 'Pessoa física: CPF · Empresa: CNPJ'); return; }
+    const t = docValido(d);
+    if (!t) { tipo = null; mostrarTipo(); dica('dica-doc', 'CPF/CNPJ inválido. Confira o que foi digitado.', true); return; }
+    F.cpf_cnpj.value = fmtDoc(d); const novo = t !== tipo; tipo = t; mostrarTipo();
+    dica('dica-doc', tipo === 'PJ' ? 'Empresa (CNPJ)' : 'Pessoa física (CPF)');
+    if (novo) F.nome.focus();
+    if (tipo === 'PJ' && /^\d{14}$/.test(d)) {
+      try { const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${d}`); if (r.ok) { const j = await r.json();
+        preencher('nome', j.razao_social); preencher('nome_fantasia', j.nome_fantasia); preencher('cep', j.cep);
+        preencher('logradouro', [j.descricao_tipo_de_logradouro, j.logradouro].filter(Boolean).join(' ')); preencher('numero', j.numero);
+        preencher('complemento', j.complemento); preencher('bairro', j.bairro); preencher('cidade', j.municipio); preencher('uf', j.uf);
+        dica('dica-doc', 'Empresa (CNPJ) · dados da Receita preenchidos, confira abaixo'); } } catch {}
+    }
+  };
+  F.cep.onblur = async () => {
+    const cep = F.cep.value.replace(/\D/g, ''); if (cep.length !== 8) { if (cep) dica('dica-cep', 'CEP com 8 números', true); return; }
+    F.cep.value = cep.replace(/^(\d{5})(\d{3})$/, '$1-$2'); dica('dica-cep', '');
+    try { const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`); if (!r.ok) return dica('dica-cep', 'CEP não encontrado, preencha o endereço', true); const j = await r.json();
+      preencher('logradouro', j.street); preencher('bairro', j.neighborhood); preencher('cidade', j.city); preencher('uf', j.state);
+      if (!F.numero.value) F.numero.focus(); } catch {}
+  };
+  F.aniversario.oninput = () => { let v = F.aniversario.value.replace(/\D/g, '').slice(0, 4); if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2); F.aniversario.value = v; };
+  F.telefone.onblur = () => { const d = F.telefone.value.replace(/\D/g, ''); if (d.length === 10 || d.length === 11) F.telefone.value = fmtTel('55' + d); };
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const dados = formDados(f); dados.telefone_whatsapp = F.telefone_whatsapp.checked; dados.lgpd = F.lgpd.checked;
+    const err = msg => { $('#cad-erro', raiz).textContent = msg; return false; };
+    const falta = [['nome', tipo === 'PJ' ? 'a razão social' : 'o nome completo'], ...(tipo === 'PJ' ? [['segmento', 'o ramo de atividade'], ['responsavel', 'o nome do responsável']] : [['aniversario', 'a data de aniversário']]),
+      ['telefone', 'o telefone'], ['email', 'o e-mail'], ['cep', 'o CEP'], ['logradouro', 'o endereço'], ['numero', 'o número'], ['bairro', 'o bairro'], ['cidade', 'a cidade'], ['uf', 'a UF']]
+      .find(([n]) => !String(dados[n] || '').trim());
+    if (falta) { F[falta[0]].focus(); return err(`Informe ${falta[1]}.`); }
+    if (!dados.lgpd) return err('Marque a autorização de uso dos dados (LGPD) para enviar.');
+    const b = $('#cad-enviar', raiz); b.disabled = true; b.textContent = 'Enviando…'; err('');
+    try {
+      await api('cadastro_publico', dados, true);
+      $('#cad-corpo', raiz).innerHTML = `<div class="ok" style="margin-top:0"><b>Cadastro enviado ✓</b>
+        <div style="margin-top:6px">Obrigado! A equipe da Gráfica Venda Hoje vai conferir os seus dados. Se precisar alterar alguma informação, é só preencher de novo ou falar com o seu atendente pelo ${esc(EMPRESA.telefone)}.</div></div>`;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (ex) { b.disabled = false; b.textContent = 'Enviar cadastro'; err(ex.message === 'Failed to fetch' ? 'Sem conexão. Tente de novo.' : ex.message); }
+  };
+  setTimeout(() => F.cpf_cnpj.focus(), 50);
+}
+
+/* ---------- conferência dos cadastros recebidos pelo link ---------- */
+async function modalCadastrosLink() {
+  const r = await api('listar_cadastros_link', {});
+  S.cadLink = {}; r.solicitacoes.forEach(x => S.cadLink[x.id] = x);
+  const m = abrirModal({ titulo: `Cadastros pelo link (${r.pendentes})`, largo: true, corpo: r.solicitacoes.length ? `
+    <p class="small muted" style="margin:0 0 10px">Confira os dados enviados pelo cliente. Aprovando, o cadastro entra no sistema (ou atualiza o cliente que já existe, sem mexer em revenda, observação fixa e contatos).</p>
+    <div class="tabela-wrap"><table><thead><tr><th>Enviado em</th><th>Cliente</th><th>Documento</th><th>Contato</th><th></th></tr></thead><tbody>
+    ${r.solicitacoes.map(x => `<tr><td class="num">${dataHora(x.updated_at)}</td>
+      <td><b>${esc(x.nome)}</b>${x.existente ? `<div>${badge('Já é cliente: ' + x.existente.nome, 'b-ambar')}</div>` : ''}</td>
+      <td class="num">${esc(fmtDoc(x.cpf_cnpj))}</td><td class="small">${esc(fmtTel(x.dados.telefone))}<br>${esc(x.dados.email || '')}</td>
+      <td class="dir"><button class="btn prim peq" onclick="conferirCadastroLink('${x.id}')">Conferir</button></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vazio">Nenhum cadastro aguardando conferência.</div>',
+    rodape: `<button class="btn" data-v>Fechar</button><button class="btn" id="cl-link">Link de cadastro</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('#cl-link').onclick = () => { m.fechar(); modalLinkCadastro(); };
+}
+function conferirCadastroLink(id) {
+  document.querySelector('.fundo-modal')?.remove();
+  const x = S.cadLink[id], d = x.dados;
+  const lin = (rot, v) => v ? `<div><div class="small muted">${rot}</div>${esc(v)}</div>` : '';
+  const end = [d.logradouro && `${d.logradouro}, ${d.numero}`, d.complemento, d.bairro, d.cidade && `${d.cidade}/${d.uf}`, d.cep && 'CEP ' + d.cep.replace(/^(\d{5})(\d{3})$/, '$1-$2')].filter(Boolean).join(' · ');
+  const m = abrirModal({ titulo: `Conferir cadastro · ${x.nome}`, largo: true, corpo: `
+    ${x.existente ? `<div class="alerta" style="margin-bottom:12px"><b>Este documento já é do cliente ${esc(x.existente.nome)}.</b> Ao aprovar, nome, telefone, e-mail e endereço desse cadastro serão atualizados com os dados abaixo. Revenda, observação fixa e contatos continuam como estão.</div>` : ''}
+    <div class="grade g3">
+      ${lin(x.tipo_pessoa === 'PJ' ? 'CNPJ' : 'CPF', fmtDoc(x.cpf_cnpj))}${lin(x.tipo_pessoa === 'PJ' ? 'Razão social' : 'Nome completo', d.nome)}
+      ${lin('Nome fantasia', d.nome_fantasia)}${lin('Ramo de atividade', d.segmento)}${lin('Inscrição estadual', d.inscricao_estadual)}${lin('Responsável', d.responsavel)}
+      ${d.aniversario_dia ? lin('Aniversário', String(d.aniversario_dia).padStart(2, '0') + '/' + String(d.aniversario_mes).padStart(2, '0')) : ''}
+      ${lin('Telefone', fmtTel(d.telefone) + (d.telefone_whatsapp ? ' (WhatsApp)' : ''))}${lin('E-mail', d.email)}${lin('Instagram', d.instagram && '@' + d.instagram)}
+      <div style="grid-column:1/-1">${lin('Endereço', end)}</div>
+      <div style="grid-column:1/-1" class="small muted">Enviado em ${dataHora(x.updated_at)} · aceite LGPD em ${dataHora(x.lgpd_aceite_em)}</div>
+    </div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-r>Recusar</button><button class="btn prim" data-a>${x.existente ? 'Aprovar e atualizar cliente' : 'Aprovar cadastro'}</button>` });
+  m.el.querySelector('[data-v]').onclick = () => { m.fechar(); modalCadastrosLink(); };
+  m.el.querySelector('[data-a]').onclick = async () => {
+    const r = await api('revisar_cadastro_link', { id, acao: 'aprovar' }); m.fechar(); toast('Cadastro aprovado.');
+    if (VISTAS.get('clientes')) VISTAS.get('clientes').sujo = true;
+    if (await confirmar('Cadastro aprovado. Quer abrir o cliente para completar dados internos (revenda, observação fixa)?', 'Abrir cliente')) modalCliente(r.cliente_id, recarregar);
+    else recarregar();
+  };
+  m.el.querySelector('[data-r]').onclick = async () => {
+    const motivo = prompt('Motivo da recusa (uso interno):'); if (!motivo || !motivo.trim()) return;
+    await api('revisar_cadastro_link', { id, acao: 'recusar', motivo: motivo.trim() }); m.fechar(); toast('Cadastro recusado.'); modalCadastrosLink();
+  };
 }
 
 /* ---------- DOCUMENTO DO ORÇAMENTO (PDF) ---------- */
@@ -2186,8 +2378,9 @@ async function pagarComissao(id, desfazer = false) {
 
 /* ---------- CLIENTES ---------- */
 rota('clientes', async (_p, el) => {
-  definirTopo('Clientes', pode('cadastra_clientes') ? `<button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
-  el.innerHTML = `<div class="painel filtros"><label class="campo">Buscar<input type="search" id="cl-busca" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp"></label></div><div class="painel" id="cl-lista"></div>`;
+  definirTopo('Clientes', pode('cadastra_clientes') ? `<button class="btn" onclick="modalLinkCadastro()">Link de cadastro</button><button class="btn" onclick="modalCadastrosLink()">Cadastros pelo link</button><button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
+  const pend = pode('cadastra_clientes') ? (await api('listar_cadastros_link', { limite: 1 }).catch(() => ({ pendentes: 0 }))).pendentes : 0;
+  el.innerHTML = `${pend ? `<a class="alerta" href="javascript:void(0)" onclick="modalCadastrosLink()" style="display:block;margin-bottom:16px;text-decoration:none;color:inherit"><b>${pend} ${pend > 1 ? 'cadastros enviados' : 'cadastro enviado'} pelo link</b> aguardando conferência. Clique para conferir.</a>` : ''}<div class="painel filtros"><label class="campo">Buscar<input type="search" id="cl-busca" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp"></label></div><div class="painel" id="cl-lista"></div>`;
   const buscar = async () => {
     const r = await api('buscar_clientes', { busca: $('#cl-busca').value, limite: limLista('clientes'), incluir_inativos: true });
     $('#cl-lista').innerHTML = r.clientes.length ? `<div class="tabela-wrap"><table><thead><tr><th>Cliente</th><th>CPF / CNPJ</th><th>Contato</th><th>Cidade</th><th></th></tr></thead><tbody>
@@ -2438,6 +2631,7 @@ function modalUsuario(id) {
 
 /* ---------- inicialização ---------- */
 (async () => {
+  if (/^#\/cadastro\/?$/.test(location.hash)) { window.removeEventListener('hashchange', rotear); return paginaPublicaCadastro(); }
   const mPub = location.hash.match(/^#\/o\/([0-9a-fA-F]{32})$/);
   if (mPub) { window.removeEventListener('hashchange', rotear); return paginaPublicaOrcamento(mPub[1].toLowerCase()); }
   let t = null; try { t = localStorage.getItem('gvh_token'); } catch {}
