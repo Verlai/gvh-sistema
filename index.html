@@ -655,6 +655,7 @@ rota('pedido', async (id, el) => {
   definirTopo(`Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
     <a class="btn" href="#/pedidos">Voltar</a>
     ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
+    ${!pode('cria_pedidos') && pode('edita_financeiro') && !cancelado && !saiuParaEntrega(p) ? `<button class="btn" onclick="modalAlterarEntrega()">Alterar entrega</button>` : ''}
     ${podeStatus('cancelado') && !excluido ? (cancelado
         ? `${p.cancelado_em ? `<button class="btn" onclick="reativarPedido()">Reativar pedido</button><button class="btn perigo" onclick="cancelarPedido(true)">Excluir pedido</button>` : ''}`
         : `<button class="btn perigo" onclick="cancelarPedido()">Cancelar pedido</button>`) : ''}
@@ -814,13 +815,13 @@ function modalEditarPedido() {
     <form id="f-ped" class="grade g2">
       <label class="campo">Número do pedido<input type="text" name="numero" value="${esc(p.numero)}"></label>
       ${gestor ? `<label class="campo">Vendedor<select name="vendedor_id">${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === p.vendedor_id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : '<span></span>'}
-      <label class="campo">Forma de entrega<select name="forma_entrega"><option value="retirada">Cliente retira no balcão</option><option value="entrega" ${p.forma_entrega === 'entrega' ? 'selected' : ''}>Entregar no cliente</option></select></label>
       <label class="campo">Previsão de entrega *<input type="date" name="data_prevista_entrega" value="${esc(p.data_prevista_entrega || '')}" required></label>
-      <label class="campo" style="grid-column:1/-1">Endereço de entrega<input type="text" name="endereco_entrega" value="${esc(p.endereco_entrega || '')}"></label>
+      ${saiuParaEntrega(p) ? `<div class="small muted" style="grid-column:1/-1">Entrega: ${p.forma_entrega === 'entrega' ? 'Entregar no cliente' : 'Retira no balcão'}${p.endereco_entrega ? ' · ' + esc(p.endereco_entrega) : ''} <i>(já saiu para entrega, não pode mais ser alterada)</i></div>` : htmlEntrega(p)}
       <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" name="desconto" value="${esc(p.desconto)}"></label>
       <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" name="frete" value="${esc(p.frete)}"></label>
-      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
-    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>` });
+      <label class="campo" style="grid-column:1/-1">Observações da entrega<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>`,
+    aoAbrir: el => { if (!saiuParaEntrega(p)) { const e = ligarEntrega(el); if (p.forma_entrega !== 'entrega' && p.cliente) e.definirCliente(p.cliente); } } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     await api('editar_pedido', { id: p.id, ...formDados($('#f-ped', m.el)) }); m.fechar(); toast('Pedido atualizado.'); recarregar();
@@ -1462,12 +1463,12 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
   const timers = {};
   const desenhar = () => {
     alvo.innerHTML = `<div class="tabela-wrap"><table class="itens-editor"><thead><tr>
-        <th style="min-width:190px">Categoria *</th><th style="min-width:220px">Produto * <span class="muted">(vai para o cliente)</span></th>
+        <th style="min-width:220px">Produto * <span class="muted">(vai para o cliente)</span></th><th style="min-width:190px">Categoria *</th>
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
         <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Ex.: Panfleto A5 4x4 couchê 90g" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
+        <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
         <td><input type="number" step="0.01" min="0" value="${esc(it.valor_total)}" data-k="${k}" data-f="valor_total"><div class="unit-calc" data-u="${k}">Unit. ${unitario(it.valor_total, it.quantidade)}</div></td>
@@ -1511,6 +1512,69 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
   return pegar;
 }
 
+/* ---------- ENTREGA (V3) — novo pedido, editar pedido, alterar entrega e conversão de orçamento ---------- */
+function htmlEntrega(v = {}) {
+  const forma = v.forma_entrega || 'retirada';
+  return `<div data-ent style="grid-column:1/-1">
+    <input type="hidden" name="forma_entrega" value="${forma}"><input type="hidden" name="endereco_entrega" value="${esc(v.endereco_entrega || '')}">
+    <div class="chips" data-ent-forma><button type="button" class="chip" data-v="retirada">Retira no balcão</button><button type="button" class="chip" data-v="entrega">Entregar no cliente</button></div>
+    <div data-ent-corpo style="margin-top:10px"></div></div>`;
+}
+function ligarEntrega(el) {
+  const raiz = el.querySelector('[data-ent]');
+  const hForma = raiz.querySelector('[name=forma_entrega]'), hEnd = raiz.querySelector('[name=endereco_entrega]');
+  const corpo = raiz.querySelector('[data-ent-corpo]');
+  let endEntrega = hForma.value === 'entrega' ? hEnd.value : '', manual = !!endEntrega, cepInfo = null;
+  const render = () => {
+    const f = hForma.value;
+    raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === f));
+    if (f === 'retirada') { hEnd.value = EMPRESA.endereco; corpo.innerHTML = `<div class="small">Balcão: ${esc(EMPRESA.endereco)}</div>`; return; }
+    hEnd.value = endEntrega;
+    corpo.innerHTML = `<div class="grade g4">
+        <label class="campo">CEP<input type="text" data-e="cep" maxlength="9" inputmode="numeric" placeholder="Buscar endereço"></label>
+        <label class="campo">Número<input type="text" data-e="num"></label>
+        <label class="campo" style="grid-column:span 2">Complemento<input type="text" data-e="comp"></label></div>
+      <label class="campo" style="margin-top:8px">Endereço de entrega<input type="text" data-e="end" value="${esc(endEntrega)}"></label>
+      <div class="small muted" data-e="dica" style="margin-top:4px">${endEntrega ? '' : 'Digite o CEP ou escreva o endereço completo.'}</div>`;
+    const q = k => corpo.querySelector(`[data-e="${k}"]`);
+    const montar = () => {
+      if (!cepInfo) return;
+      const c = cepInfo, num = q('num').value.trim(), comp = q('comp').value.trim();
+      endEntrega = [`${c.street || ''}${num ? ', ' + num : ''}`.trim(), comp, c.neighborhood, c.city && `${c.city}/${c.state}`, 'CEP ' + c.cep].filter(Boolean).join(' · ');
+      q('end').value = endEntrega; hEnd.value = endEntrega; manual = true;
+    };
+    q('end').oninput = () => { endEntrega = q('end').value; hEnd.value = endEntrega; manual = true; };
+    q('num').oninput = q('comp').oninput = montar;
+    q('cep').oninput = async () => {
+      const cep = q('cep').value.replace(/\D/g, ''); if (cep.length !== 8) return;
+      const fmt = cep.replace(/^(\d{5})(\d{3})$/, '$1-$2'); q('cep').value = fmt; q('dica').textContent = 'Buscando…';
+      try {
+        const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`); if (!r.ok) throw new Error();
+        cepInfo = { ...(await r.json()), cep: fmt }; montar(); q('dica').textContent = 'Confira o número e o complemento.'; q('num').focus();
+      } catch { cepInfo = null; q('dica').textContent = 'CEP não encontrado. Escreva o endereço completo.'; }
+    };
+  };
+  raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.onclick = () => { hForma.value = b.dataset.v; render(); });
+  render();
+  return {
+    forma: () => hForma.value,
+    endereco: () => hEnd.value,
+    definirCliente: c => { if (manual) return; endEntrega = c ? enderecoCliente(c) : ''; cepInfo = null; render(); }
+  };
+}
+const saiuParaEntrega = p => (p.itens || []).some(i => ['em_transporte', 'entregue'].includes(i.status));
+function modalAlterarEntrega() {
+  const p = S.vistaAtual.dados;
+  if (saiuParaEntrega(p)) return toast('O pedido já saiu para entrega. O endereço não pode mais ser alterado.', true);
+  const m = abrirModal({ titulo: `Entrega do pedido ${p.numero}`, corpo: `<form id="f-ent" class="grade g2">${htmlEntrega(p)}</form>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar entrega</button>`,
+    aoAbrir: el => ligarEntrega(el) });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    await api('editar_pedido', { id: p.id, ...formDados($('#f-ent', m.el)) }); m.fechar(); toast('Entrega atualizada.'); recarregar();
+  };
+}
+
 /* ---------- NOVO PEDIDO ---------- */
 rota('novo', async (_p, el) => {
   if (!pode('cria_pedidos')) throw new Error('Seu perfil não cria pedidos.');
@@ -1527,7 +1591,7 @@ rota('novo', async (_p, el) => {
       <label class="campo hidden" id="np-cli-nome-box" style="margin-top:10px">Ou apenas o nome do cliente (sem cadastro)<input type="text" id="np-cli-nome" placeholder="Ex.: Padaria do Zé"></label>
       <div id="cli-escolhido" style="margin-top:10px"></div>
     </div>
-    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escolha a categoria ou só escreva o produto: a categoria é sugerida pelo que você digitar.</span></div>
+    <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escreva o produto: a categoria é escolhida pelo que você digitar (dá para trocar).</span></div>
       <div id="editor-itens"></div>
       <div class="grade g4" style="margin-top:14px">
         <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" id="np-desc" value="0"></label>
@@ -1535,15 +1599,14 @@ rota('novo', async (_p, el) => {
         <div></div><div class="totais" style="margin:0"><span class="muted small">Total do pedido</span><b class="num" id="np-total">R$ 0,00</b></div>
       </div>
     </div>
-    <div class="painel"><div class="painel-cab"><h2>Entrega e condições</h2></div>
+    <div class="painel" id="np-ent-painel"><div class="painel-cab"><h2>Entrega</h2></div>
       <form id="f-np" class="grade g3">
         ${gestor ? `<label class="campo">Vendedor<select name="vendedor_id">${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === S.usuario.id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : ''}
         <label class="campo">Número do pedido<input type="text" name="numero" placeholder="Automático"></label>
-        <label class="campo">Forma de entrega<select name="forma_entrega" id="np-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label>
         <label class="campo" id="np-prev-box">Previsão de entrega *<input type="date" name="data_prevista_entrega" id="np-prev" required></label>
         <label class="campo hidden" id="np-val-box">Validade do orçamento<input type="date" id="np-validade"></label>
-        <label class="campo" style="grid-column:1/-1" id="np-end-box">Endereço de entrega<input type="text" name="endereco_entrega" id="np-end"></label>
-        <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes"></textarea></label>
+        ${htmlEntrega()}
+        <label class="campo" style="grid-column:1/-1">Observações da entrega<textarea name="observacoes"></textarea></label>
       </form>
     </div>
     <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Forma de Pagamento *</h2><span class="small muted">Como ficou combinado com o cliente. Comprovante e link podem ser enviados agora ou depois, na tela do pedido.</span></div>
@@ -1567,8 +1630,9 @@ rota('novo', async (_p, el) => {
       <span class="muted">${esc(fmtDoc(c.cpf_cnpj))} ${esc(fmtTel(c.whatsapp || c.telefone))}</span></div>
       ${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}`;
     $('#busca-cli').value = ''; $('#np-cli-nome').value = ''; $('#np-cli-nome-box').classList.add('hidden');
-    const end = enderecoCliente(c); if (end && !$('#np-end').value) $('#np-end').value = end;
+    entrega.definirCliente(c);
   };
+  const entrega = ligarEntrega($('#f-np'));
   ligarBuscaCliente($('#busca-cli'), escolher);
   if ($('#novo-cli')) $('#novo-cli').onclick = () => modalCliente(null, escolher);
   $('#np-pag').innerHTML = htmlFormaPagamento({ autorizar: true });
@@ -1584,7 +1648,8 @@ rota('novo', async (_p, el) => {
     $('#np-cli-nome-box').classList.toggle('hidden', !o || !!cliente);
     ['#np-prev-box', '#np-parc-painel'].forEach(s => $(s).classList.toggle('hidden', o));
     $('#np-val-box').classList.toggle('hidden', !o);
-    $$('#f-np [name=numero], #f-np [name=forma_entrega], #f-np [name=endereco_entrega], #f-np [name=vendedor_id]').forEach(i => i.closest('label').classList.toggle('hidden', o));
+    $$('#f-np [name=numero], #f-np [name=vendedor_id]').forEach(i => i.closest('label').classList.toggle('hidden', o));
+    $('#f-np [data-ent]').classList.toggle('hidden', o);
     pegarItens.definirStatus(!o);
     $('#np-salvar').textContent = o ? 'Salvar orçamento' : 'Criar pedido';
   };
@@ -1701,22 +1766,23 @@ rota('orcamento', async (id, el) => {
   if ($('#o-salvar')) $('#o-salvar').onclick = async () => { const r = await salvar(); if (novo) { descartarVista('orcamento/novo'); location.hash = '#/orcamento/' + r.id; } else renderVista(S.vistaAtual); };
   const abrirConversao = () => {
     const totalOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
-    let coletar;
+    let coletar, ent;
     const m = abrirModal({ titulo: 'Transformar em pedido', largo: true, corpo: `<p style="margin:0 0 12px">Os itens entram no pedido como "Arte · À fazer". Total: <b>${brl(totalOrc())}</b></p>
       <div class="grade g2">
       <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required></label>
-      <label class="campo">Forma de entrega<select id="conv-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label></div>
+      </div><div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega(cliente ? { forma_entrega: 'retirada' } : {})}</div>
       <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
       rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
       aoAbrir: el => { coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value);
-        el.querySelector('#conv-prev').onchange = () => coletar.atualizar(); } });
+        el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
+        ent = ligarEntrega(el.querySelector('#conv-ent')); if (cliente) ent.definirCliente(cliente); } });
     m.el.querySelector('[data-v]').onclick = m.fechar;
     m.el.querySelector('[data-s]').onclick = async () => {
       const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
       let pag; try { pag = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
       if (!travado) await salvar();
-      const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: $('#conv-forma', m.el).value,
-        endereco_entrega: cliente ? enderecoCliente(cliente) : '', recebimentos: pag.recebimentos,
+      const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: ent.forma(),
+        endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
         forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
         autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
       m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
