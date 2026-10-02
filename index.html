@@ -289,7 +289,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -680,7 +680,7 @@ rota('pedido', async (id, el) => {
         <div><div class="small muted">Previsão para o cliente</div>${data(p.data_prevista_entrega)}</div>
         <div><div class="small muted">Criado em</div>${dataHora(p.created_at)}</div>
       </div>
-      ${p.condicoes_pagamento ? `<div style="margin-top:12px"><span class="small muted">Condições de pagamento:</span> ${esc(p.condicoes_pagamento)}</div>` : ''}
+      ${p.forma_pagamento || p.condicoes_pagamento ? `<div style="margin-top:12px"><span class="small muted">Forma de pagamento:</span> ${esc(FORMAS_COMB[p.forma_pagamento] || '')}${p.condicoes_pagamento && p.condicoes_pagamento !== FORMAS_COMB[p.forma_pagamento] ? `${p.forma_pagamento ? ' · ' : ''}${esc(p.condicoes_pagamento)}` : ''}</div>` : ''}
       ${p.observacoes ? `<div style="margin-top:6px"><span class="small muted">Observações:</span> ${esc(p.observacoes)}</div>` : ''}
     </div>
 
@@ -726,7 +726,10 @@ rota('pedido', async (id, el) => {
     ${pode('ve_financeiro') ? `
     <div class="painel">
       <div class="painel-cab"><h2>Financeiro</h2>
-        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado ? `<button class="btn" onclick="modalParcelas()">Lançar pagamento</button>` : ''}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado && !(p.recebimentos || []).some(r => r.situacao === 'pago') ? `<button class="btn" onclick="modalTrocarForma()">Trocar forma de pagamento</button>` : ''}
+        ${(pode('edita_financeiro') || pode('cria_pedidos')) && !cancelado && (p.recebimentos || []).filter(r => r.situacao !== 'cancelado').reduce((s, r) => s + Number(r.valor), 0) < Number(p.valor_total) - 0.009 ? `<button class="btn" onclick="modalParcelas()">Lançar pagamento da diferença</button>` : ''}</div></div>
+      ${alertaPagamentoPedido(p, cancelado)}
       <div class="grade g3" style="margin-bottom:14px">
         <div><div class="small muted">Total do pedido</div><b class="num">${brl(p.valor_total)}</b></div>
         <div><div class="small muted">Recebido</div><b class="num" style="color:var(--verde)">${brl(p.valor_pago)}</b></div>
@@ -816,7 +819,6 @@ function modalEditarPedido() {
       <label class="campo" style="grid-column:1/-1">Endereço de entrega<input type="text" name="endereco_entrega" value="${esc(p.endereco_entrega || '')}"></label>
       <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" name="desconto" value="${esc(p.desconto)}"></label>
       <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" name="frete" value="${esc(p.frete)}"></label>
-      <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(p.condicoes_pagamento || '')}"></label>
       <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
     </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
@@ -1004,11 +1006,14 @@ function tabelaParcelas(lista, comPedido) {
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
       <td class="num">${data(r.vencimento)}</td>
       <td class="dir num">${brl(r.valor)}</td>
-      <td>${esc(FORMAS[r.forma_pagamento] || '—')}</td>
+      <td>${esc(FORMAS[r.forma_pagamento] || '—')}${urlSegura(r.link_pagamento) ? `<div><a class="small" href="${esc(urlSegura(r.link_pagamento))}" target="_blank" rel="noopener">Link de pagamento</a></div>` : ''}
+        ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${acoes ? `<td class="dir" style="white-space:nowrap">
         ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
+        ${r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? `<button class="btn link peq" onclick="modalLinkPagamento('${r.id}')">${r.link_pagamento ? 'Trocar link' : 'Colar link'}</button>` : ''}
+        ${r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
@@ -1020,6 +1025,7 @@ function modalBaixa(id, conferir) {
       <label class="campo">Data do pagamento<input type="date" name="pago_em" value="${hoje()}" required></label>
       <label class="campo">Forma *<select name="forma_pagamento">${opcoesForma(r.forma)}</select></label>
       <label class="campo">Valor recebido (R$)<input type="number" step="0.01" min="0.01" name="valor" value="${r.valor}"></label>
+      <label class="campo" style="grid-column:1/-1">Comprovante <span class="muted small">(Pix e transferência; opcional)</span><input type="file" id="baixa-comp" accept="${EXT_COMP}"></label>
     </form><p class="small muted" style="margin:0">A comissão do vendedor é calculada automaticamente sobre o valor recebido, no mês do pagamento.
     ${conferir ? '' : '<br><b>O pagamento vai para a conferência do financeiro.</b>'}</p>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Confirmar pagamento</button>` });
@@ -1027,6 +1033,8 @@ function modalBaixa(id, conferir) {
   m.el.querySelector('[data-s]').onclick = async () => {
     const f = formDados($('#f-baixa', m.el));
     if (!f.forma_pagamento) return toast('Informe a forma de pagamento.', true);
+    const a = $('#baixa-comp', m.el).files[0];
+    if (a) { try { f.comprovante_path = await enviarComprovante(a, r.id); } catch { return; } }
     await api('baixar_recebimento', { id: r.id, ...f, conferir: !!conferir }); m.fechar(); toast('Pagamento registrado.'); recarregar();
   };
 }
@@ -1087,101 +1095,210 @@ function ligarGerador(el, onChange) {
   desenhar();
   return () => parcelas;
 }
-/* ---------- PAGAMENTO (Pago / Não pago) — novo pedido e pedido aberto ---------- */
-const FORMAS_PED = { pix:'Pix', cartao_credito:'Cartão de crédito', boleto:'Boleto', transferencia:'Transferência' };
-const opcoesFormaPed = (sel = '', vazio = 'Escolha…') => `<option value="">${vazio}</option>` + Object.entries(FORMAS_PED).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
-function htmlPagamento(prev) {
-  return `<div id="pagamento">
-    <div class="chips" data-pg="sit"><button type="button" class="chip" data-v="pago">Pago</button><button type="button" class="chip" data-v="nao">Não pago</button></div>
-    <div data-box="pago" class="hidden" style="margin-top:12px">
-      <div class="grade g3"><label class="campo">Forma de pagamento *<select data-pg-f="forma_pago">${opcoesFormaPed()}</select></label></div>
-      <p class="small muted" style="margin:6px 0 0">O valor total entra como pago hoje e vai para a conferência do financeiro.</p>
-    </div>
-    <div data-box="nao" class="hidden" style="margin-top:12px">
-      <div class="small muted" style="margin-bottom:6px">Como foi combinado?</div>
-      <div class="chips" data-pg="modo"><button type="button" class="chip" data-v="entrega">Paga na entrega / retirada</button><button type="button" class="chip" data-v="sinal">Sinal + restante</button><button type="button" class="chip" data-v="parcelado">Parcelado</button></div>
-      <div data-box="entrega" class="hidden" style="margin-top:12px">
-        <div class="grade g3"><label class="campo">Forma prevista<select data-pg-f="forma_entrega">${opcoesFormaPed('', 'A combinar')}</select></label></div>
-        <p class="small muted" style="margin:6px 0 0">Vence na previsão de entrega.</p>
-      </div>
-      <div data-box="sinal" class="hidden" style="margin-top:12px">
-        <div class="grade g3">
-          <label class="campo">Valor do sinal (R$) *<input type="number" step="0.01" min="0.01" data-pg-f="sinal"></label>
-          <label class="campo">Forma do sinal<select data-pg-f="forma_sinal">${opcoesFormaPed('', 'A combinar')}</select></label>
-          <label class="campo">Forma prevista do restante<select data-pg-f="forma_restante">${opcoesFormaPed('', 'A combinar')}</select></label>
-        </div>
-        <label class="check" style="margin-top:8px"><input type="checkbox" data-pg-f="sinal_pago"> O sinal já foi pago <span class="small muted">(vai para a conferência do financeiro)</span></label>
-        <p class="small muted" style="margin:6px 0 0">O restante vence na previsão de entrega.</p>
-      </div>
-      <div data-box="parcelado" class="hidden" style="margin-top:12px"></div>
-    </div>
+/* ---------- FORMA DE PAGAMENTO (V4) — novo pedido, conversão de orçamento, troca de forma e lançamento ---------- */
+const FORMAS_COMB = { pix:'Pix', transferencia:'Transferência', cartao_credito:'Cartão de crédito', boleto:'Boleto', retirada:'Paga na retirada', sinal_restante:'Sinal + restante', outros:'Outros' };
+const FORMAS_LIBERAM = ['boleto', 'retirada'];   // liberam a pré-impressão sem pagamento (V11)
+const EXT_COMP = '.pdf,.png,.jpg,.jpeg,.webp,.heic,.heif';
+const urlSegura = u => /^https?:\/\//i.test(String(u || '').trim()) ? String(u).trim() : '';
+async function enviarComprovante(arquivo, recebimentoId) {
+  if (arquivo.size > 10 * 1024 * 1024) { toast('O comprovante passa de 10 MB.', true); throw new Error('tamanho'); }
+  const r = await api('comprovante_arquivo', { op: 'upload', id: recebimentoId || '', nome_arquivo: arquivo.name });
+  const fd = new FormData(); fd.append('cacheControl', '3600'); fd.append('', arquivo);
+  const up = await fetch(r.url, { method: 'PUT', body: fd, headers: { 'x-upsert': 'true' } });
+  if (!up.ok) { toast('Falha ao enviar o comprovante.', true); throw new Error('upload'); }
+  return r.path;
+}
+async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
+function htmlFormaPagamento(op = {}) {
+  const arq = (nome, rot) => `<label class="campo">${rot} <span class="muted small">(pode enviar depois)</span><input type="file" accept="${EXT_COMP}" data-fp-f="${nome}"></label>`;
+  const nota = t => `<p class="small muted" style="margin:6px 0 0">${t}</p>`;
+  return `<div class="forma-pag">
+    <div class="chips" data-fp="forma">${Object.entries(FORMAS_COMB).map(([k, v]) => `<button type="button" class="chip" data-v="${k}">${v}</button>`).join('')}</div>
+    <div data-box="pix" class="hidden" style="margin-top:12px"><div class="grade g2">${arq('comp_pix', 'Comprovante do Pix')}</div>
+      ${nota('Com o comprovante, o pagamento já conta como pago e vai para a conferência do financeiro.')}</div>
+    <div data-box="transferencia" class="hidden" style="margin-top:12px"><div class="grade g2">${arq('comp_transf', 'Comprovante da transferência')}</div>
+      ${nota('Com o comprovante, o pagamento já conta como pago e vai para a conferência do financeiro.')}</div>
+    <div data-box="cartao_credito" class="hidden" style="margin-top:12px"><div class="grade g2"><label class="campo">Link de pagamento (Cielo)<input type="url" data-fp-f="link" placeholder="Cole aqui o link enviado ao cliente"></label></div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" data-fp-f="cartao_pago"> O cliente já pagou</label>
+      ${nota('Quando o cliente pagar o link, o vendedor ou o financeiro marca como pago na tela do pedido.')}</div>
+    <div data-box="boleto" class="hidden" style="margin-top:12px"><div class="grade g3">
+      <label class="campo">Quantidade de boletos<input type="number" min="1" max="24" value="1" data-fp-f="qtd"></label>
+      <label class="campo">1º vencimento<input type="date" data-fp-f="venc1"></label>
+      <label class="campo">Dias entre os boletos<input type="number" min="1" value="30" data-fp-f="intervalo"></label></div>
+      <div data-fp-parc style="margin-top:10px"></div>${nota('O financeiro marca cada boleto como pago.')}</div>
+    <div data-box="retirada" class="hidden" style="margin-top:12px">${nota('O valor vence na previsão de entrega. Na entrega, o financeiro registra como o cliente pagou.')}</div>
+    <div data-box="sinal_restante" class="hidden" style="margin-top:12px"><div class="grade g3">
+      <label class="campo">Valor do sinal (R$) *<input type="number" step="0.01" min="0.01" data-fp-f="sinal"><span class="small muted" data-fp-sug></span></label>
+      <label class="campo">Sinal pago em<select data-fp-f="forma_sinal"><option value="pix">Pix</option><option value="transferencia">Transferência</option></select></label>
+      ${arq('comp_sinal', 'Comprovante do sinal')}</div>
+      <div class="grade g3" style="margin-top:8px">
+        <label class="campo">Restante (depois da entrega) em<select data-fp-f="forma_restante"><option value="pix">Pix</option><option value="cartao_credito">Cartão de crédito</option></select></label>
+        <label class="campo hidden" data-fp-linkrest>Link do restante (Cielo)<input type="url" data-fp-f="link_rest"></label></div>
+      ${nota('O restante vence na previsão de entrega; o comprovante dele é enviado depois, na tela do pedido.')}</div>
+    <div data-box="outros" class="hidden" style="margin-top:12px"><div class="grade g2"><label class="campo">Como será o pagamento? *<input type="text" data-fp-f="obs" placeholder="Ex.: permuta, crédito do cliente, a combinar"></label></div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" data-fp-f="outros_pago"> Já foi pago</label></div>
+    ${op.autorizar ? `<label class="check hidden" data-fp-aut style="margin-top:14px"><input type="checkbox" data-fp-f="autoriza"> <b>Autorizo produzir sem pagamento</b> <span class="small muted">(sem isso, a arte só vai para a pré-impressão depois do pagamento)</span></label>` : ''}
   </div>`;
 }
-/* liga o componente; total() e prev() leem os valores atuais. Devolve coletar() → { recebimentos, resumo } ou lança Error */
-function ligarPagamento(el, total, prev) {
-  const st = { sit: '', modo: '' }; let pegarParcelas = null;
+/* liga o componente. Devolve coletar() assíncrono → { forma_pagamento, forma_pagamento_obs, recebimentos, resumo, autoriza_sem_pagamento } ou lança Error.
+   coletar.atualizar() recalcula boletos e sugestão do sinal quando o total ou a previsão mudam. */
+function ligarFormaPagamento(el, total, prev) {
+  let forma = '', sinalManual = false, parcelas = [];
+  const enviados = new Map();
+  const f = n => el.querySelector(`[data-fp-f="${n}"]`);
   const box = n => el.querySelector(`[data-box="${n}"]`);
-  const f = n => el.querySelector(`[data-pg-f="${n}"]`);
-  const marcar = (grupo, v) => {
-    st[grupo] = v;
-    el.querySelectorAll(`[data-pg="${grupo}"] .chip`).forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
-    if (grupo === 'sit') { box('pago').classList.toggle('hidden', v !== 'pago'); box('nao').classList.toggle('hidden', v !== 'nao'); }
-    else ['entrega', 'sinal', 'parcelado'].forEach(k => box(k).classList.toggle('hidden', k !== v));
-    if (v === 'parcelado' && !pegarParcelas) { box('parcelado').innerHTML = htmlGeradorParcelas(total(), prev()); pegarParcelas = ligarGerador(box('parcelado')); }
-  };
-  el.querySelectorAll('[data-pg] .chip').forEach(b => b.onclick = () => marcar(b.closest('[data-pg]').dataset.pg, b.dataset.v));
+  const t2 = () => Math.round(total() * 100) / 100;
   const brlTxt = v => brl(v).replace(/\s/g, ' ');
-  return () => {
-    const t = Math.round(total() * 100) / 100, p = prev();
-    if (!(t > 0)) throw new Error('O total precisa ser maior que zero para lançar o pagamento.');
-    if (!st.sit) throw new Error('Informe se o pagamento já foi feito: Pago ou Não pago.');
-    if (st.sit === 'pago') {
-      const forma = f('forma_pago').value;
-      if (!forma) throw new Error('Informe a forma de pagamento.');
-      return { recebimentos: [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), pago: true, forma_pagamento: forma }],
-               resumo: `Pago (${FORMAS_PED[forma]})` };
-    }
-    if (!st.modo) throw new Error('Escolha como o pagamento foi combinado.');
-    if (st.modo === 'entrega') {
-      const forma = f('forma_entrega').value || null;
-      return { recebimentos: [{ tipo: 'restante', valor: t.toFixed(2), vencimento: p || hoje(), forma_pagamento: forma }],
-               resumo: 'Pagamento na entrega' + (forma ? ` (${FORMAS_PED[forma]})` : '') };
-    }
-    if (st.modo === 'sinal') {
-      const sinal = Math.round(Number(f('sinal').value || 0) * 100) / 100, pago = f('sinal_pago').checked, fs = f('forma_sinal').value || null;
-      if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
-      if (sinal >= t) throw new Error('O sinal precisa ser menor que o total. Se o cliente pagou tudo, escolha "Pago".');
-      if (pago && !fs) throw new Error('Informe a forma em que o sinal foi pago.');
-      const fr = f('forma_restante').value || null;
-      return { recebimentos: [
-          { tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), pago, forma_pagamento: fs },
-          { tipo: 'restante', valor: (t - sinal).toFixed(2), vencimento: p || hoje(), forma_pagamento: fr }],
-        resumo: `Sinal de ${brlTxt(sinal)}${pago ? ' (pago)' : ''} + restante na entrega` };
-    }
-    const parcelas = pegarParcelas ? pegarParcelas() : [];
-    if (!parcelas.length) throw new Error('Gere as parcelas antes de salvar.');
-    const soma = parcelas.reduce((s, x) => s + Number(x.valor), 0);
-    if (Math.abs(soma - t) > 0.01) throw new Error(`A soma das parcelas (${brlTxt(soma)}) precisa ser igual ao total (${brlTxt(t)}).`);
-    const n = parcelas.filter(x => x.tipo !== 'sinal').length, fp = parcelas.find(x => x.tipo !== 'sinal')?.forma_pagamento;
-    return { recebimentos: parcelas, resumo: `Parcelado em ${n}x` + (fp ? ` (${FORMAS[fp] || fp})` : '') };
+  const renderParc = () => {
+    const alvo = el.querySelector('[data-fp-parc]');
+    alvo.innerHTML = `<table><thead><tr><th>Boleto</th><th>Vencimento</th><th class="dir">Valor</th></tr></thead><tbody>${parcelas.map((p, k) => `<tr>
+      <td>${p.parcela_num ? p.parcela_num + '/' + p.parcelas_total : 'Único'}</td>
+      <td><input type="date" value="${p.vencimento}" data-pk="${k}" data-pc="vencimento"></td>
+      <td class="dir"><input type="number" step="0.01" value="${p.valor}" data-pk="${k}" data-pc="valor" style="max-width:130px;text-align:right"></td></tr>`).join('')}</tbody></table>
+      <p class="small muted">Soma: <b>${brl(parcelas.reduce((s, p) => s + Number(p.valor), 0))}</b></p>`;
+    alvo.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { parcelas[i.dataset.pk][i.dataset.pc] = i.value; renderParc(); });
   };
+  const gerarParc = () => {
+    const qtd = Math.min(24, Math.max(1, Number(f('qtd').value || 1)));
+    const v1 = f('venc1').value || prev() || somaDias(hoje(), 30), iv = Math.max(1, Number(f('intervalo').value || 30));
+    const cents = Math.round(t2() * 100), base = Math.floor(cents / qtd);
+    parcelas = Array.from({ length: qtd }, (_, k) => ({ tipo: 'boleto', forma_pagamento: 'boleto',
+      parcela_num: qtd > 1 ? k + 1 : null, parcelas_total: qtd > 1 ? qtd : null, vencimento: somaDias(v1, iv * k),
+      valor: ((k === qtd - 1 ? cents - base * (qtd - 1) : base) / 100).toFixed(2) }));
+    renderParc();
+  };
+  const sugerirSinal = () => {
+    const s = Math.round(t2() * 50) / 100;
+    el.querySelector('[data-fp-sug]').textContent = t2() > 0 ? `Sugestão (50%): ${brlTxt(s)}` : '';
+    if (!sinalManual) f('sinal').value = s > 0 ? s.toFixed(2) : '';
+  };
+  const marcar = v => {
+    forma = v;
+    el.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
+    Object.keys(FORMAS_COMB).forEach(k => box(k).classList.toggle('hidden', k !== v));
+    const aut = el.querySelector('[data-fp-aut]'); if (aut) aut.classList.toggle('hidden', FORMAS_LIBERAM.includes(v));
+    if (v === 'boleto') gerarParc();
+    if (v === 'sinal_restante') sugerirSinal();
+  };
+  el.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.onclick = () => marcar(b.dataset.v));
+  f('sinal').oninput = () => { sinalManual = true; };
+  ['qtd', 'venc1', 'intervalo'].forEach(n => f(n).onchange = gerarParc);
+  f('forma_restante').onchange = () => el.querySelector('[data-fp-linkrest]').classList.toggle('hidden', f('forma_restante').value !== 'cartao_credito');
+  const subir = async a => { if (!enviados.has(a)) enviados.set(a, await enviarComprovante(a)); return enviados.get(a); };
+  const coletar = async () => {
+    const t = t2(), p = prev();
+    if (!(t > 0)) throw new Error('O total precisa ser maior que zero.');
+    if (!forma) throw new Error('Escolha a forma de pagamento.');
+    const arq = n => f(n)?.files?.[0] || null;
+    let rec = [], resumo = FORMAS_COMB[forma], obs = null;
+    if (forma === 'pix' || forma === 'transferencia') {
+      const a = arq(forma === 'pix' ? 'comp_pix' : 'comp_transf');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: forma, _arq: a }];
+      if (a) resumo += ' (pago)';
+    } else if (forma === 'cartao_credito') {
+      const pago = f('cartao_pago').checked, link = f('link').value.trim();
+      if (link && !urlSegura(link)) throw new Error('O link de pagamento precisa começar com https://');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'cartao_credito', link_pagamento: link || null, pago }];
+      if (pago) resumo += ' (pago)';
+    } else if (forma === 'boleto') {
+      if (!parcelas.length) gerarParc();
+      const soma = parcelas.reduce((s, x) => s + Number(x.valor), 0);
+      if (Math.abs(soma - t) > 0.01) throw new Error(`A soma dos boletos (${brlTxt(soma)}) precisa ser igual ao total (${brlTxt(t)}).`);
+      if (parcelas.some(x => !x.vencimento)) throw new Error('Informe o vencimento de cada boleto.');
+      rec = parcelas.map(x => ({ ...x }));
+      resumo = parcelas.length > 1 ? `Boleto em ${parcelas.length}x` : 'Boleto';
+    } else if (forma === 'retirada') {
+      rec = [{ tipo: 'restante', valor: t.toFixed(2), vencimento: p || hoje(), forma_pagamento: null }];
+    } else if (forma === 'sinal_restante') {
+      const sinal = Math.round(Number(f('sinal').value || 0) * 100) / 100, a = arq('comp_sinal'), fr = f('forma_restante').value;
+      if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
+      if (sinal >= t) throw new Error('O sinal precisa ser menor que o total. Se o cliente pagou tudo, escolha Pix ou Transferência.');
+      const linkR = fr === 'cartao_credito' ? f('link_rest').value.trim() : '';
+      if (linkR && !urlSegura(linkR)) throw new Error('O link de pagamento precisa começar com https://');
+      rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: f('forma_sinal').value, _arq: a },
+             { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: fr, link_pagamento: linkR || null }];
+      resumo = `Sinal de ${brlTxt(sinal)}${a ? ' (pago)' : ''} + restante na entrega (${FORMAS_COMB[fr]})`;
+    } else {
+      obs = f('obs').value.trim();
+      if (!obs) throw new Error('Descreva como será o pagamento em "Outros".');
+      const pago = f('outros_pago').checked;
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago }];
+      resumo = 'Outros: ' + obs + (pago ? ' (pago)' : '');
+    }
+    for (const r of rec) { if (r._arq) r.comprovante_path = await subir(r._arq); delete r._arq; }
+    const aut = f('autoriza');
+    return { forma_pagamento: forma, forma_pagamento_obs: obs, recebimentos: rec, resumo,
+             autoriza_sem_pagamento: !!(aut && !FORMAS_LIBERAM.includes(forma) && aut.checked) };
+  };
+  coletar.atualizar = () => { if (forma === 'boleto') gerarParc(); if (forma === 'sinal_restante') sugerirSinal(); };
+  return coletar;
 }
 function modalParcelas() {
   const p = S.vistaAtual.dados;
-  const aberto = Number(p.valor_em_aberto ?? p.valor_total);
   const lancado = (p.recebimentos || []).filter(r => r.situacao !== 'cancelado').reduce((s, r) => s + Number(r.valor), 0);
   const falta = Math.round((Number(p.valor_total) - lancado) * 100) / 100;
-  if (falta <= 0) return toast('Todo o valor do pedido já tem pagamento lançado. Para mudar, desfaça ou exclua um pagamento antes.', true);
+  if (falta <= 0) return toast('Todo o valor do pedido já tem pagamento lançado.', true);
   let coletar;
-  const m = abrirModal({ titulo: 'Lançar pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Valor ainda sem pagamento lançado: <b>${brl(falta)}</b></p>${htmlPagamento()}`,
+  const m = abrirModal({ titulo: 'Lançar pagamento da diferença', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Valor ainda sem pagamento lançado: <b>${brl(falta)}</b> (por exemplo, quando o pedido aumentou depois de criado).</p>${htmlFormaPagamento()}`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar pagamento</button>`,
-    aoAbrir: el => { coletar = ligarPagamento(el, () => falta, () => p.data_prevista_entrega); } });
+    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => falta, () => p.data_prevista_entrega); } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    let r; try { r = coletar(); } catch (e) { return toast(e.message, true); }
+    let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
     await api('salvar_recebimentos', { pedido_id: p.id, parcelas: r.recebimentos }); m.fechar(); toast('Pagamento lançado.'); recarregar();
   };
 }
+function modalTrocarForma() {
+  const p = S.vistaAtual.dados;
+  let coletar;
+  const m = abrirModal({ titulo: 'Trocar forma de pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Forma atual: <b>${esc(FORMAS_COMB[p.forma_pagamento] || '—')}</b>. Os pagamentos em aberto são substituídos pela nova forma, sobre o total de <b>${brl(p.valor_total)}</b>. A troca fica no histórico do pedido.</p>${htmlFormaPagamento()}`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Trocar forma</button>`,
+    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => Number(p.valor_total), () => p.data_prevista_entrega); } });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
+    await api('trocar_forma_pagamento', { pedido_id: p.id, forma_pagamento: r.forma_pagamento, forma_pagamento_obs: r.forma_pagamento_obs,
+      recebimentos: r.recebimentos, condicoes_pagamento: r.resumo });
+    m.fechar(); toast('Forma de pagamento trocada.'); recarregar();
+  };
+}
+async function autorizarSemPagamento(autorizar) {
+  const p = S.vistaAtual.dados;
+  const msg = autorizar ? 'Autorizar produzir sem pagamento? A arte deste pedido poderá ir para a pré-impressão antes do pagamento, com a etiqueta "Falta pagamento".'
+                        : 'Retirar a autorização? Itens que ainda estão na arte só vão para a pré-impressão depois do pagamento.';
+  if (!await confirmar(msg, autorizar ? 'Autorizar' : 'Retirar autorização')) return;
+  await api('autorizar_sem_pagamento', { pedido_id: p.id, autorizar }); toast(autorizar ? 'Autorizado produzir sem pagamento.' : 'Autorização retirada.'); recarregar();
+}
+function alertaPagamentoPedido(p, cancelado) {
+  if (cancelado || !p.forma_pagamento || !p.sem_pagamento) return '';
+  const meu = ['diretor','administrador'].includes(S.usuario.perfil) || (pode('cria_pedidos') && (p.vendedor_id === S.usuario.id || p.criado_por === S.usuario.id));
+  if (FORMAS_LIBERAM.includes(p.forma_pagamento)) return `<div class="alerta" style="margin-bottom:12px">Ainda sem pagamento. Como a forma é <b>${esc(FORMAS_COMB[p.forma_pagamento])}</b>, os itens podem seguir para a pré-impressão (com a etiqueta "Falta pagamento").</div>`;
+  if (p.autoriza_sem_pagamento) return `<div class="alerta" style="margin-bottom:12px"><b>Autorizado produzir sem pagamento</b>${p.autorizado_por_nome ? ' por ' + esc(p.autorizado_por_nome) : ''}${p.autorizado_em ? ' em ' + dataHora(p.autorizado_em) : ''}.
+    ${meu ? `<button class="btn link peq" onclick="autorizarSemPagamento(false)">Retirar autorização</button>` : ''}</div>`;
+  return `<div class="alerta erro" style="margin-bottom:12px"><b>Sem pagamento:</b> a arte só vai para a pré-impressão depois do pagamento ou com autorização do vendedor.
+    ${meu ? `<button class="btn peq" style="margin-left:8px" onclick="autorizarSemPagamento(true)">Autorizar produzir sem pagamento</button>` : ''}</div>`;
+}
+function trocarComprovante(id) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = EXT_COMP;
+  inp.onchange = async () => {
+    const a = inp.files[0]; if (!a) return;
+    const path = await enviarComprovante(a, id);
+    await api('receb_anexo', { id, comprovante_path: path }); toast('Comprovante trocado.'); recarregar();
+  };
+  inp.click();
+}
+function modalLinkPagamento(id) {
+  const r = S.parcelas[id];
+  const m = abrirModal({ titulo: 'Link de pagamento', corpo: `<label class="campo">Link (Cielo)<input type="url" id="lk-url" value="${esc(r.link_pagamento || '')}" placeholder="https://"></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar link</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const v = $('#lk-url', m.el).value.trim();
+    if (v && !urlSegura(v)) return toast('O link precisa começar com https://', true);
+    await api('receb_anexo', { id, link_pagamento: v }); m.fechar(); toast('Link salvo.'); recarregar();
+  };
+}
+const etqPag = i => i.pedido_sem_pagamento ? ' ' + badge('Falta pagamento', 'b-vermelho') : '';
 
 /* ---------- CLIENTE (seletor + cadastro rápido) ---------- */
 function ligarBuscaCliente(input, aoEscolher) {
@@ -1397,11 +1514,10 @@ rota('novo', async (_p, el) => {
         <label class="campo" id="np-prev-box">Previsão de entrega *<input type="date" name="data_prevista_entrega" id="np-prev" required></label>
         <label class="campo hidden" id="np-val-box">Validade do orçamento<input type="date" id="np-validade"></label>
         <label class="campo" style="grid-column:1/-1" id="np-end-box">Endereço de entrega<input type="text" name="endereco_entrega" id="np-end"></label>
-        <label class="campo" style="grid-column:1/-1">Condições de pagamento combinadas<input type="text" name="condicoes_pagamento" id="np-cond" placeholder="Preenchido pelo pagamento abaixo; escreva aqui se quiser detalhar"></label>
         <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes"></textarea></label>
       </form>
     </div>
-    <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Pagamento *</h2><span class="small muted">O vendedor pode mudar depois, na tela do pedido.</span></div>
+    <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Forma de Pagamento *</h2><span class="small muted">Como ficou combinado com o cliente. Comprovante e link podem ser enviados agora ou depois, na tela do pedido.</span></div>
       <div id="np-pag"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
@@ -1412,7 +1528,7 @@ rota('novo', async (_p, el) => {
     const itens = pegarItens ? pegarItens() : [];
     return itens.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#np-desc').value || 0) + Number($('#np-frete').value || 0);
   };
-  const atualizarTotal = () => { $('#np-total').textContent = brl(total()); const g = $('#gerador [data-g=total]'); if (g) g.value = total().toFixed(2); };
+  const atualizarTotal = () => { $('#np-total').textContent = brl(total()); coletarPagamento && coletarPagamento.atualizar(); };
   pegarItens = editorItens($('#editor-itens'), [], { comStatus: true, aoMudar: atualizarTotal });
   $('#np-desc').oninput = $('#np-frete').oninput = atualizarTotal;
 
@@ -1426,11 +1542,10 @@ rota('novo', async (_p, el) => {
   };
   ligarBuscaCliente($('#busca-cli'), escolher);
   if ($('#novo-cli')) $('#novo-cli').onclick = () => modalCliente(null, escolher);
-  $('#np-pag').innerHTML = htmlPagamento();
-  coletarPagamento = ligarPagamento($('#np-pag'), total, () => $('#np-prev').value);
-  // 1º vencimento acompanha a previsão de entrega (até a pessoa mudar à mão)
-  $('#np-prev').onchange = e => { const v1 = $('#gerador [data-g=venc1]'); if (v1 && (!v1.dataset.manual)) v1.value = e.target.value; };
-  el.addEventListener('input', e => { if (e.target.matches('#gerador [data-g=venc1]')) e.target.dataset.manual = '1'; });
+  $('#np-pag').innerHTML = htmlFormaPagamento({ autorizar: true });
+  coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
+  // 1º boleto e restante acompanham a previsão de entrega
+  $('#np-prev').onchange = () => coletarPagamento.atualizar();
 
   $('#np-validade').value = somaDias(hoje(), 7);
   const modoOrc = () => $('#np-orc').checked;
@@ -1457,7 +1572,7 @@ rota('novo', async (_p, el) => {
       if (!cliente && !nomeCli) return toast('Escolha um cliente ou informe o nome dele.', true);
       const f = formDados($('#f-np'));
       const d = { cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : nomeCli, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
-        validade: $('#np-validade').value, condicoes_pagamento: f.condicoes_pagamento, observacoes: f.observacoes };
+        validade: $('#np-validade').value, observacoes: f.observacoes };
       $('#np-salvar').disabled = true;
       try { const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); descartarVista('novo'); location.hash = '#/orcamento/' + r.id; }
       finally { $('#np-salvar').disabled = false; }
@@ -1465,10 +1580,11 @@ rota('novo', async (_p, el) => {
     }
     if (!cliente) return toast('Pedido exige cliente cadastrado. Escolha ou cadastre o cliente.', true);
     if (!$('#np-prev').value) { $('#np-prev').focus(); return toast('Informe a previsão de entrega.', true); }
-    let pag; try { pag = coletarPagamento(); } catch (e) { $('#np-parc-painel').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast(e.message, true); }
-    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value, recebimentos: pag.recebimentos };
-    if (!d.condicoes_pagamento) d.condicoes_pagamento = pag.resumo;
     $('#np-salvar').disabled = true;
+    let pag; try { pag = await coletarPagamento(); } catch (e) { $('#np-salvar').disabled = false; if (e.message === 'upload' || e.message === 'tamanho') return; $('#np-parc-painel').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast(e.message, true); }
+    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
+      recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
+      autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
     try { const r = await api('criar_pedido', d); toast(`Pedido ${r.numero} criado.`); descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
     finally { $('#np-salvar').disabled = false; }
   };
@@ -1561,17 +1677,19 @@ rota('orcamento', async (id, el) => {
       <div class="grade g2">
       <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required></label>
       <label class="campo">Forma de entrega<select id="conv-forma"><option value="retirada">Cliente retira no balcão</option><option value="entrega">Entregar no cliente</option></select></label></div>
-      <h3 style="margin:16px 0 8px">Pagamento *</h3><div id="conv-pag">${htmlPagamento()}</div>`,
+      <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
       rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
-      aoAbrir: el => { coletar = ligarPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value); } });
+      aoAbrir: el => { coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value);
+        el.querySelector('#conv-prev').onchange = () => coletar.atualizar(); } });
     m.el.querySelector('[data-v]').onclick = m.fechar;
     m.el.querySelector('[data-s]').onclick = async () => {
       const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
-      let pag; try { pag = coletar(); } catch (e) { return toast(e.message, true); }
+      let pag; try { pag = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
       if (!travado) await salvar();
       const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: $('#conv-forma', m.el).value,
         endereco_entrega: cliente ? enderecoCliente(cliente) : '', recebimentos: pag.recebimentos,
-        ...(o.condicoes_pagamento ? {} : { condicoes_pagamento: pag.resumo }) });
+        forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
+        autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
       m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
     };
   };
@@ -2002,7 +2120,7 @@ rota('arte', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th>Status</th><th>Arte</th><th>Parado há</th><th></th></tr></thead>
       <tbody>${lista.map(i => `<tr>
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
+        <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
         <td>${badgeItem(i.status)}</td>
         <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Arquivo</button>` : ''}</td>
         <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
@@ -2054,7 +2172,7 @@ rota('producao', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+        <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
         <td><div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opForn(i.fornecedor_id)}</select>
@@ -2081,7 +2199,7 @@ rota('producao', async (_p, el) => {
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}<div class="small muted">${num(i.quantidade)} un</div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+          <td>${esc(i.descricao)}${etqPag(i)}<div class="small muted">${num(i.quantidade)} un</div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${data(i.data_prevista_entrega)}</td>
@@ -2248,7 +2366,7 @@ rota('conciliacao', async (_p, el) => {
           <td>${esc(x.vendedor_nome || '—')}</td>
           <td>${esc(TIPOS_PARC[x.tipo] || x.tipo)}${x.parcela_num ? ` ${x.parcela_num}${x.parcelas_total ? '/' + x.parcelas_total : ''}` : ''}</td>
           <td class="num">${data(pend ? x.pago_em : (x.conferido_em || '').slice(0, 10))}</td>
-          <td>${esc(FORMAS[x.forma_pagamento] || '—')}</td>
+          <td>${esc(FORMAS[x.forma_pagamento] || '—')}${x.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${x.id}')">Ver comprovante</button></div>` : ''}</td>
           <td class="dir num">${brl(x.valor)}</td>
           <td>${pend ? esc(x.baixado_por_nome || '—')
               : f.filtro === 'devolvidos' ? `${badge('Devolvido', 'b-vermelho')}<div class="small muted">${esc(x.motivo_devolucao || '')} · ${esc(x.conferido_por_nome || '')}</div>`
