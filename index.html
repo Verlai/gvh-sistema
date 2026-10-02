@@ -1110,127 +1110,156 @@ async function enviarComprovante(arquivo, recebimentoId) {
 }
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
 function htmlFormaPagamento(op = {}) {
-  const arq = (nome, rot) => `<label class="campo">${rot} <span class="muted small">(pode enviar depois)</span><input type="file" accept="${EXT_COMP}" data-fp-f="${nome}"></label>`;
-  const nota = t => `<p class="small muted" style="margin:6px 0 0">${t}</p>`;
-  return `<div class="forma-pag">
+  return `<div class="forma-pag" data-fp-raiz ${op.autorizar ? 'data-fp-autorizar' : ''}>
     <div class="chips" data-fp="forma">${Object.entries(FORMAS_COMB).map(([k, v]) => `<button type="button" class="chip" data-v="${k}">${v}</button>`).join('')}</div>
-    <div data-box="pix" class="hidden" style="margin-top:12px"><div class="grade g2">${arq('comp_pix', 'Comprovante do Pix')}</div>
-      ${nota('Com o comprovante, o pagamento já conta como pago e vai para a conferência do financeiro.')}</div>
-    <div data-box="transferencia" class="hidden" style="margin-top:12px"><div class="grade g2">${arq('comp_transf', 'Comprovante da transferência')}</div>
-      ${nota('Com o comprovante, o pagamento já conta como pago e vai para a conferência do financeiro.')}</div>
-    <div data-box="cartao_credito" class="hidden" style="margin-top:12px"><div class="grade g2"><label class="campo">Link de pagamento (Cielo)<input type="url" data-fp-f="link" placeholder="Cole aqui o link enviado ao cliente"></label></div>
-      <label class="check" style="margin-top:8px"><input type="checkbox" data-fp-f="cartao_pago"> O cliente já pagou</label>
-      ${nota('Quando o cliente pagar o link, o vendedor ou o financeiro marca como pago na tela do pedido.')}</div>
-    <div data-box="boleto" class="hidden" style="margin-top:12px"><div class="grade g3">
-      <label class="campo">Quantidade de boletos<input type="number" min="1" max="24" value="1" data-fp-f="qtd"></label>
-      <label class="campo">1º vencimento<input type="date" data-fp-f="venc1"></label>
-      <label class="campo">Dias entre os boletos<input type="number" min="1" value="30" data-fp-f="intervalo"></label></div>
-      <div data-fp-parc style="margin-top:10px"></div>${nota('O financeiro marca cada boleto como pago.')}</div>
-    <div data-box="retirada" class="hidden" style="margin-top:12px">${nota('O valor vence na previsão de entrega. Na entrega, o financeiro registra como o cliente pagou.')}</div>
-    <div data-box="sinal_restante" class="hidden" style="margin-top:12px"><div class="grade g3">
-      <label class="campo">Valor do sinal (R$) *<input type="number" step="0.01" min="0.01" data-fp-f="sinal"><span class="small muted" data-fp-sug></span></label>
-      <label class="campo">Sinal pago em<select data-fp-f="forma_sinal"><option value="pix">Pix</option><option value="transferencia">Transferência</option></select></label>
-      ${arq('comp_sinal', 'Comprovante do sinal')}</div>
-      <div class="grade g3" style="margin-top:8px">
-        <label class="campo">Restante (depois da entrega) em<select data-fp-f="forma_restante"><option value="pix">Pix</option><option value="cartao_credito">Cartão de crédito</option></select></label>
-        <label class="campo hidden" data-fp-linkrest>Link do restante (Cielo)<input type="url" data-fp-f="link_rest"></label></div>
-      ${nota('O restante vence na previsão de entrega; o comprovante dele é enviado depois, na tela do pedido.')}</div>
-    <div data-box="outros" class="hidden" style="margin-top:12px"><div class="grade g2"><label class="campo">Como será o pagamento? *<input type="text" data-fp-f="obs" placeholder="Ex.: permuta, crédito do cliente, a combinar"></label></div>
-      <label class="check" style="margin-top:8px"><input type="checkbox" data-fp-f="outros_pago"> Já foi pago</label></div>
-    ${op.autorizar ? `<label class="check hidden" data-fp-aut style="margin-top:14px"><input type="checkbox" data-fp-f="autoriza"> <b>Autorizo produzir sem pagamento</b> <span class="small muted">(sem isso, a arte só vai para a pré-impressão depois do pagamento)</span></label>` : ''}
+    <div data-fp-corpo></div>
   </div>`;
 }
-/* liga o componente. Devolve coletar() assíncrono → { forma_pagamento, forma_pagamento_obs, recebimentos, resumo, autoriza_sem_pagamento } ou lança Error.
+/* Componente que evolui conforme os cliques. Devolve coletar() assíncrono → { forma_pagamento, forma_pagamento_obs, recebimentos, resumo, autoriza_sem_pagamento }.
    coletar.atualizar() recalcula boletos e sugestão do sinal quando o total ou a previsão mudam. */
 function ligarFormaPagamento(el, total, prev) {
-  let forma = '', sinalManual = false, parcelas = [];
+  const raiz = el.matches('[data-fp-raiz]') ? el : el.querySelector('[data-fp-raiz]');
+  const podeAutorizar = raiz.hasAttribute('data-fp-autorizar');
+  const corpo = raiz.querySelector('[data-fp-corpo]');
+  const st = { forma: '', pago: null, comp: null, link: '', qtd: 1, outraQtd: false, parcelas: [], parcManual: false,
+               sinal: '', sinalManual: false, sinalPago: null, formaSinal: 'pix', compSinal: null, restante: 'pix', linkRest: '', obs: '', autoriza: null };
   const enviados = new Map();
-  const f = n => el.querySelector(`[data-fp-f="${n}"]`);
-  const box = n => el.querySelector(`[data-box="${n}"]`);
   const t2 = () => Math.round(total() * 100) / 100;
   const brlTxt = v => brl(v).replace(/\s/g, ' ');
-  const renderParc = () => {
-    const alvo = el.querySelector('[data-fp-parc]');
-    alvo.innerHTML = `<table><thead><tr><th>Boleto</th><th>Vencimento</th><th class="dir">Valor</th></tr></thead><tbody>${parcelas.map((p, k) => `<tr>
-      <td>${p.parcela_num ? p.parcela_num + '/' + p.parcelas_total : 'Único'}</td>
-      <td><input type="date" value="${p.vencimento}" data-pk="${k}" data-pc="vencimento"></td>
-      <td class="dir"><input type="number" step="0.01" value="${p.valor}" data-pk="${k}" data-pc="valor" style="max-width:130px;text-align:right"></td></tr>`).join('')}</tbody></table>
-      <p class="small muted">Soma: <b>${brl(parcelas.reduce((s, p) => s + Number(p.valor), 0))}</b></p>`;
-    alvo.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { parcelas[i.dataset.pk][i.dataset.pc] = i.value; renderParc(); });
-  };
+  const chips = (grupo, opcoes, valor) => `<div class="chips" data-g="${grupo}">${opcoes.map(([v, r]) => `<button type="button" class="chip ${String(valor) === String(v) ? 'ativo' : ''}" data-v="${v}">${r}</button>`).join('')}</div>`;
+  const pergunta = (txt, html) => `<div style="margin-top:12px"><div class="small" style="margin-bottom:6px">${txt}</div>${html}</div>`;
+  const campo = (rot, k, tipo = 'text', extra = '') => `<label class="campo" style="margin-top:12px;max-width:420px">${rot}<input type="${tipo}" data-k="${k}" value="${esc(st[k])}" ${extra}></label>`;
+  const arquivo = (k, rot) => `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="btn peq" data-arq="${k}">${st[k] ? 'Trocar arquivo' : rot}</button>
+    ${st[k] ? `<span class="small">${esc(st[k].name)} ✓</span>` : '<span class="small muted">PDF ou imagem</span>'}</div>`;
+  const simNao = (k, txt) => pergunta(txt, chips(k, [['true', 'Sim'], ['false', 'Ainda não']], st[k]));
   const gerarParc = () => {
-    const qtd = Math.min(24, Math.max(1, Number(f('qtd').value || 1)));
-    const v1 = f('venc1').value || prev() || somaDias(hoje(), 30), iv = Math.max(1, Number(f('intervalo').value || 30));
+    const qtd = Math.min(24, Math.max(1, Number(st.qtd) || 1)), v1 = prev() || somaDias(hoje(), 30);
     const cents = Math.round(t2() * 100), base = Math.floor(cents / qtd);
-    parcelas = Array.from({ length: qtd }, (_, k) => ({ tipo: 'boleto', forma_pagamento: 'boleto',
-      parcela_num: qtd > 1 ? k + 1 : null, parcelas_total: qtd > 1 ? qtd : null, vencimento: somaDias(v1, iv * k),
+    st.parcelas = Array.from({ length: qtd }, (_, k) => ({ tipo: 'boleto', forma_pagamento: 'boleto',
+      parcela_num: qtd > 1 ? k + 1 : null, parcelas_total: qtd > 1 ? qtd : null, vencimento: somaDias(v1, 30 * k),
       valor: ((k === qtd - 1 ? cents - base * (qtd - 1) : base) / 100).toFixed(2) }));
-    renderParc();
+    st.parcManual = false;
   };
-  const sugerirSinal = () => {
-    const s = Math.round(t2() * 50) / 100;
-    el.querySelector('[data-fp-sug]').textContent = t2() > 0 ? `Sugestão (50%): ${brlTxt(s)}` : '';
-    if (!sinalManual) f('sinal').value = s > 0 ? s.toFixed(2) : '';
+  const sugerirSinal = () => { if (!st.sinalManual) { const s = Math.round(t2() * 50) / 100; st.sinal = s > 0 ? s.toFixed(2) : ''; } };
+  const nadaPago = () => (st.forma === 'sinal_restante' ? st.sinalPago === false : st.pago === false);
+  const mostraAut = () => podeAutorizar && st.forma && !FORMAS_LIBERAM.includes(st.forma) && nadaPago();
+  const resumo = () => {
+    const f = st.forma, pg = st.pago === true ? ' (pago)' : '';
+    if (f === 'pix' || f === 'transferencia' || f === 'cartao_credito') return FORMAS_COMB[f] + pg;
+    if (f === 'boleto') return st.parcelas.length > 1 ? `Boleto em ${st.parcelas.length}x` : 'Boleto';
+    if (f === 'retirada') return 'Paga na retirada';
+    if (f === 'sinal_restante') return `Sinal de ${brlTxt(Number(st.sinal || 0))}${st.sinalPago === true ? ' (pago)' : ''} + restante na entrega (${FORMAS_COMB[st.restante]})`;
+    if (f === 'outros') return 'Outros' + (st.obs ? ': ' + st.obs : '') + pg;
+    return '';
   };
-  const marcar = v => {
-    forma = v;
-    el.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === v));
-    Object.keys(FORMAS_COMB).forEach(k => box(k).classList.toggle('hidden', k !== v));
-    const aut = el.querySelector('[data-fp-aut]'); if (aut) aut.classList.toggle('hidden', FORMAS_LIBERAM.includes(v));
-    if (v === 'boleto') gerarParc();
-    if (v === 'sinal_restante') sugerirSinal();
+  const render = () => {
+    raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === st.forma));
+    const f = st.forma; let h = '';
+    if (f === 'pix' || f === 'transferencia') {
+      h += simNao('pago', 'O cliente já pagou?');
+      if (st.pago === true) h += arquivo('comp', 'Anexar comprovante');
+    } else if (f === 'cartao_credito') {
+      h += campo('Link de pagamento (Cielo) <span class="muted small">— opcional</span>', 'link', 'url', 'placeholder="https://"');
+      h += simNao('pago', 'O cliente já pagou?');
+    } else if (f === 'boleto') {
+      h += pergunta('Quantos boletos?', chips('qtd', [1, 2, 3, 4, 5, 6].map(n => [n, n + 'x']).concat([['outro', 'Outro']]), st.outraQtd ? 'outro' : st.qtd));
+      if (st.outraQtd) h += campo('Quantidade de boletos', 'qtd', 'number', 'min="1" max="24" style="max-width:120px"');
+      h += `<div style="margin-top:10px">${st.parcelas.map((p, k) => `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <span class="small muted" style="min-width:42px">${p.parcela_num ? p.parcela_num + '/' + p.parcelas_total : 'Único'}</span>
+          <input type="date" value="${p.vencimento}" data-pk="${k}" data-pc="vencimento" style="max-width:170px">
+          <input type="number" step="0.01" value="${p.valor}" data-pk="${k}" data-pc="valor" style="max-width:130px;text-align:right"></div>`).join('')}</div>`;
+    } else if (f === 'sinal_restante') {
+      h += campo(`Valor do sinal (R$) <span class="muted small">— sugestão: 50%</span>`, 'sinal', 'number', 'step="0.01" min="0.01" style="max-width:160px"');
+      h += simNao('sinalPago', 'O sinal já foi pago?');
+      if (st.sinalPago === true) {
+        h += pergunta('Pago em', chips('formaSinal', [['pix', 'Pix'], ['transferencia', 'Transferência']], st.formaSinal));
+        h += arquivo('compSinal', 'Anexar comprovante do sinal');
+      }
+      h += pergunta('Restante, depois da entrega, em', chips('restante', [['pix', 'Pix'], ['cartao_credito', 'Cartão de crédito']], st.restante));
+      if (st.restante === 'cartao_credito') h += campo('Link do restante (Cielo) <span class="muted small">— opcional</span>', 'linkRest', 'url', 'placeholder="https://"');
+    } else if (f === 'outros') {
+      h += campo('Como será o pagamento? *', 'obs', 'text', 'placeholder="Ex.: permuta, crédito do cliente, a combinar"');
+      h += simNao('pago', 'Já foi pago?');
+    }
+    if (mostraAut()) h += pergunta('Pode ir para a produção antes do pagamento?', chips('autoriza', [['true', 'Sim, autorizo'], ['false', 'Não']], st.autoriza ?? 'false'));
+    if (f) h += `<div class="small muted" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--borda, #e5e5e5)" data-fp-resumo>Resumo: <b>${esc(resumo())}</b></div>`;
+    corpo.innerHTML = h;
+    ligar();
   };
-  el.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.onclick = () => marcar(b.dataset.v));
-  f('sinal').oninput = () => { sinalManual = true; };
-  ['qtd', 'venc1', 'intervalo'].forEach(n => f(n).onchange = gerarParc);
-  f('forma_restante').onchange = () => el.querySelector('[data-fp-linkrest]').classList.toggle('hidden', f('forma_restante').value !== 'cartao_credito');
+  const atualizarResumo = () => { const r = corpo.querySelector('[data-fp-resumo] b'); if (r) r.textContent = resumo(); };
+  const ligar = () => {
+    corpo.querySelectorAll('[data-g]').forEach(g => g.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+      const k = g.dataset.g, v = b.dataset.v;
+      if (k === 'qtd') { if (v === 'outro') { st.outraQtd = true; } else { st.outraQtd = false; st.qtd = Number(v); gerarParc(); } }
+      else st[k] = v === 'true' ? true : v === 'false' ? false : v;
+      render();
+    }));
+    corpo.querySelectorAll('[data-k]').forEach(i => i.oninput = () => {
+      st[i.dataset.k] = i.value;
+      if (i.dataset.k === 'sinal') st.sinalManual = true;
+      if (i.dataset.k === 'qtd') { gerarParc(); render(); const n = corpo.querySelector('[data-k=qtd]'); n.focus(); return; }
+      atualizarResumo();
+    });
+    corpo.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { st.parcelas[i.dataset.pk][i.dataset.pc] = i.value; st.parcManual = true; });
+    corpo.querySelectorAll('[data-arq]').forEach(b => b.onclick = () => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = EXT_COMP;
+      inp.onchange = () => { if (inp.files[0]) { st[b.dataset.arq] = inp.files[0]; render(); } };
+      inp.click();
+    });
+  };
+  raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.onclick = () => {
+    st.forma = b.dataset.v; st.pago = null;
+    if (st.forma === 'boleto' && !st.parcelas.length) gerarParc();
+    if (st.forma === 'sinal_restante') sugerirSinal();
+    render();
+  });
   const subir = async a => { if (!enviados.has(a)) enviados.set(a, await enviarComprovante(a)); return enviados.get(a); };
   const coletar = async () => {
-    const t = t2(), p = prev();
+    const t = t2(), p = prev(), f = st.forma;
     if (!(t > 0)) throw new Error('O total precisa ser maior que zero.');
-    if (!forma) throw new Error('Escolha a forma de pagamento.');
-    const arq = n => f(n)?.files?.[0] || null;
-    let rec = [], resumo = FORMAS_COMB[forma], obs = null;
-    if (forma === 'pix' || forma === 'transferencia') {
-      const a = arq(forma === 'pix' ? 'comp_pix' : 'comp_transf');
-      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: forma, _arq: a }];
-      if (a) resumo += ' (pago)';
-    } else if (forma === 'cartao_credito') {
-      const pago = f('cartao_pago').checked, link = f('link').value.trim();
-      if (link && !urlSegura(link)) throw new Error('O link de pagamento precisa começar com https://');
-      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'cartao_credito', link_pagamento: link || null, pago }];
-      if (pago) resumo += ' (pago)';
-    } else if (forma === 'boleto') {
-      if (!parcelas.length) gerarParc();
-      const soma = parcelas.reduce((s, x) => s + Number(x.valor), 0);
+    if (!f) throw new Error('Escolha a forma de pagamento.');
+    let rec = [], obs = null;
+    if (f === 'pix' || f === 'transferencia') {
+      if (st.pago === null) throw new Error('Informe se o cliente já pagou.');
+      if (st.pago && !st.comp) throw new Error('Anexe o comprovante ou marque "Ainda não".');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: f, _arq: st.pago ? st.comp : null }];
+    } else if (f === 'cartao_credito') {
+      if (st.link && !urlSegura(st.link)) throw new Error('O link de pagamento precisa começar com https://');
+      if (st.pago === null) throw new Error('Informe se o cliente já pagou.');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'cartao_credito', link_pagamento: st.link.trim() || null, pago: st.pago }];
+    } else if (f === 'boleto') {
+      if (!st.parcelas.length) gerarParc();
+      const soma = st.parcelas.reduce((s, x) => s + Number(x.valor), 0);
       if (Math.abs(soma - t) > 0.01) throw new Error(`A soma dos boletos (${brlTxt(soma)}) precisa ser igual ao total (${brlTxt(t)}).`);
-      if (parcelas.some(x => !x.vencimento)) throw new Error('Informe o vencimento de cada boleto.');
-      rec = parcelas.map(x => ({ ...x }));
-      resumo = parcelas.length > 1 ? `Boleto em ${parcelas.length}x` : 'Boleto';
-    } else if (forma === 'retirada') {
+      if (st.parcelas.some(x => !x.vencimento)) throw new Error('Informe o vencimento de cada boleto.');
+      rec = st.parcelas.map(x => ({ ...x }));
+    } else if (f === 'retirada') {
       rec = [{ tipo: 'restante', valor: t.toFixed(2), vencimento: p || hoje(), forma_pagamento: null }];
-    } else if (forma === 'sinal_restante') {
-      const sinal = Math.round(Number(f('sinal').value || 0) * 100) / 100, a = arq('comp_sinal'), fr = f('forma_restante').value;
+    } else if (f === 'sinal_restante') {
+      const sinal = Math.round(Number(st.sinal || 0) * 100) / 100;
       if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
       if (sinal >= t) throw new Error('O sinal precisa ser menor que o total. Se o cliente pagou tudo, escolha Pix ou Transferência.');
-      const linkR = fr === 'cartao_credito' ? f('link_rest').value.trim() : '';
+      if (st.sinalPago === null) throw new Error('Informe se o sinal já foi pago.');
+      if (st.sinalPago && !st.compSinal) throw new Error('Anexe o comprovante do sinal ou marque "Ainda não".');
+      const linkR = st.restante === 'cartao_credito' ? st.linkRest.trim() : '';
       if (linkR && !urlSegura(linkR)) throw new Error('O link de pagamento precisa começar com https://');
-      rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: f('forma_sinal').value, _arq: a },
-             { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: fr, link_pagamento: linkR || null }];
-      resumo = `Sinal de ${brlTxt(sinal)}${a ? ' (pago)' : ''} + restante na entrega (${FORMAS_COMB[fr]})`;
+      rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: st.formaSinal, _arq: st.sinalPago ? st.compSinal : null },
+             { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: st.restante, link_pagamento: linkR || null }];
     } else {
-      obs = f('obs').value.trim();
+      obs = st.obs.trim();
       if (!obs) throw new Error('Descreva como será o pagamento em "Outros".');
-      const pago = f('outros_pago').checked;
-      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago }];
-      resumo = 'Outros: ' + obs + (pago ? ' (pago)' : '');
+      if (st.pago === null) throw new Error('Informe se já foi pago.');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago: st.pago }];
     }
     for (const r of rec) { if (r._arq) r.comprovante_path = await subir(r._arq); delete r._arq; }
-    const aut = f('autoriza');
-    return { forma_pagamento: forma, forma_pagamento_obs: obs, recebimentos: rec, resumo,
-             autoriza_sem_pagamento: !!(aut && !FORMAS_LIBERAM.includes(forma) && aut.checked) };
+    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, resumo: resumo(),
+             autoriza_sem_pagamento: !!(mostraAut() && st.autoriza === true) };
   };
-  coletar.atualizar = () => { if (forma === 'boleto') gerarParc(); if (forma === 'sinal_restante') sugerirSinal(); };
+  coletar.atualizar = () => {
+    if (st.forma === 'boleto' && !st.parcManual) gerarParc();
+    if (st.forma === 'sinal_restante') sugerirSinal();
+    if (st.forma) render();
+  };
   return coletar;
 }
 function modalParcelas() {
