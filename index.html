@@ -1111,16 +1111,17 @@ async function enviarComprovante(arquivo, recebimentoId) {
 }
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
 function htmlFormaPagamento(op = {}) {
-  return `<div class="forma-pag" data-fp-raiz ${op.autorizar ? 'data-fp-autorizar' : ''}>
+  return `<div class="forma-pag" data-fp-raiz ${op.autorizar ? 'data-fp-autorizar' : ''} ${op.orcamento ? 'data-fp-orc' : ''}>
     <div class="chips" data-fp="forma">${Object.entries(FORMAS_COMB).map(([k, v]) => `<button type="button" class="chip" data-v="${k}">${v}</button>`).join('')}</div>
     <div data-fp-corpo></div>
   </div>`;
 }
 /* Componente que evolui conforme os cliques. Devolve coletar() assíncrono → { forma_pagamento, forma_pagamento_obs, recebimentos, resumo, autoriza_sem_pagamento }.
    coletar.atualizar() recalcula boletos e sugestão do sinal quando o total ou a previsão mudam. */
-function ligarFormaPagamento(el, total, prev) {
+function ligarFormaPagamento(el, total, prev, inicial) {
   const raiz = el.matches('[data-fp-raiz]') ? el : el.querySelector('[data-fp-raiz]');
   const podeAutorizar = raiz.hasAttribute('data-fp-autorizar');
+  const orc = raiz.hasAttribute('data-fp-orc');   // orçamento: só o combinado, sem "já pagou", comprovante ou link
   const corpo = raiz.querySelector('[data-fp-corpo]');
   const st = { forma: '', pago: null, comp: null, link: '', qtd: 1, outraQtd: false, parcelas: [], parcManual: false,
                sinal: '', sinalManual: false, sinalPago: null, formaSinal: 'pix', compSinal: null, restante: 'pix', linkRest: '', obs: '', autoriza: null };
@@ -1143,7 +1144,7 @@ function ligarFormaPagamento(el, total, prev) {
   };
   const sugerirSinal = () => { if (!st.sinalManual) { const s = Math.round(t2() * 50) / 100; st.sinal = s > 0 ? s.toFixed(2) : ''; } };
   const nadaPago = () => (st.forma === 'sinal_restante' ? st.sinalPago === false : st.pago === false);
-  const mostraAut = () => podeAutorizar && st.forma && !FORMAS_LIBERAM.includes(st.forma) && nadaPago();
+  const mostraAut = () => !orc && podeAutorizar && st.forma && !FORMAS_LIBERAM.includes(st.forma) && nadaPago();
   const resumo = () => {
     const f = st.forma, pg = st.pago === true ? ' (pago)' : '';
     if (f === 'pix' || f === 'transferencia' || f === 'cartao_credito') return FORMAS_COMB[f] + pg;
@@ -1156,7 +1157,17 @@ function ligarFormaPagamento(el, total, prev) {
   const render = () => {
     raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === st.forma));
     const f = st.forma; let h = '';
-    if (f === 'pix' || f === 'transferencia') {
+    if (orc && f === 'boleto') {
+      h += pergunta('Quantos boletos?', chips('qtd', [1, 2, 3, 4, 5, 6].map(n => [n, n + 'x']).concat([['outro', 'Outro']]), st.outraQtd ? 'outro' : st.qtd));
+      if (st.outraQtd) h += campo('Quantidade de boletos', 'qtd', 'number', 'min="1" max="24" style="max-width:120px"');
+    } else if (orc && f === 'sinal_restante') {
+      h += campo(`Valor do sinal (R$) <span class="muted small">— sugestão: 50%</span>`, 'sinal', 'number', 'step="0.01" min="0.01" style="max-width:160px"');
+      h += pergunta('Restante, depois da entrega, em', chips('restante', [['pix', 'Pix'], ['cartao_credito', 'Cartão de crédito']], st.restante));
+    } else if (orc && f === 'outros') {
+      h += campo('Como será o pagamento? *', 'obs', 'text', 'placeholder="Ex.: permuta, crédito do cliente, a combinar"');
+    } else if (orc) {
+      // pix, transferência, cartão e retirada: no orçamento basta a forma
+    } else if (f === 'pix' || f === 'transferencia') {
       h += simNao('pago', 'O cliente já pagou?');
       if (st.pago === true) h += arquivo('comp', 'Anexar comprovante');
     } else if (f === 'cartao_credito') {
@@ -1215,7 +1226,20 @@ function ligarFormaPagamento(el, total, prev) {
     render();
   });
   const subir = async a => { if (!enviados.has(a)) enviados.set(a, await enviarComprovante(a)); return enviados.get(a); };
+  const coletarOrc = () => {
+    const f = st.forma; if (!f) return null;
+    let obs = null;
+    if (f === 'sinal_restante') {
+      const sinal = Math.round(Number(st.sinal || 0) * 100) / 100;
+      if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
+      if (t2() > 0 && sinal >= t2()) throw new Error('O sinal precisa ser menor que o total.');
+    }
+    if (f === 'outros') { obs = st.obs.trim(); if (!obs) throw new Error('Descreva como será o pagamento em "Outros".'); }
+    return { forma_pagamento: f, forma_pagamento_obs: obs, resumo: resumo(),
+             pagamento_detalhe: f === 'boleto' ? { qtd: Number(st.qtd) || 1 } : f === 'sinal_restante' ? { sinal: Number(st.sinal), restante: st.restante } : null };
+  };
   const coletar = async () => {
+    if (orc) return coletarOrc();
     const t = t2(), p = prev(), f = st.forma;
     if (!(t > 0)) throw new Error('O total precisa ser maior que zero.');
     if (!f) throw new Error('Escolha a forma de pagamento.');
@@ -1261,6 +1285,17 @@ function ligarFormaPagamento(el, total, prev) {
     if (st.forma === 'sinal_restante') sugerirSinal();
     if (st.forma) render();
   };
+  // estado inicial (orçamento salvo ou orçamento sendo transformado em pedido)
+  if (inicial && inicial.forma) {
+    const det = inicial.detalhe || {};
+    st.forma = inicial.forma; st.obs = inicial.obs || '';
+    if (det.qtd) { st.qtd = Number(det.qtd); st.outraQtd = ![1, 2, 3, 4, 5, 6].includes(st.qtd); }
+    if (det.sinal) { st.sinal = Number(det.sinal).toFixed(2); st.sinalManual = true; }
+    if (det.restante) st.restante = det.restante;
+    if (st.forma === 'boleto') gerarParc();
+    if (st.forma === 'sinal_restante') sugerirSinal();
+    render();
+  }
   return coletar;
 }
 function modalParcelas() {
@@ -1562,6 +1597,16 @@ function ligarEntrega(el) {
     definirCliente: c => { if (manual) return; endEntrega = c ? enderecoCliente(c) : ''; cepInfo = null; render(); }
   };
 }
+const somaDiasUteis = (d, n) => { const x = new Date(d + 'T12:00:00'); let k = 0; while (k < n) { x.setDate(x.getDate() + 1); if (x.getDay() % 6) k++; } return x.toISOString().slice(0, 10); };
+const textoPrazo = n => n ? `${n} ${Number(n) === 1 ? 'dia útil' : 'dias úteis'} após a aprovação da arte` : '';
+const freteGratis = o => o.frete_gratis ?? (o.forma_entrega === 'entrega' && !Number(o.frete));
+const SELO_FRETE = `<div style="display:inline-block;margin-top:10px;padding:6px 16px;border:2px solid #00a986;color:#00a986;border-radius:6px;font-weight:700;letter-spacing:1.5px;font-size:12pt;transform:rotate(-2deg)">FRETE GRÁTIS</div>`;
+function blocosProposta(o) {
+  const ent = o.forma_entrega === 'entrega' ? `Entrega no endereço: ${o.endereco_entrega || 'a combinar'}`
+            : o.forma_entrega === 'retirada' ? `Retirada no balcão: ${EMPRESA.endereco}` : '';
+  return `${o.prazo_dias_uteis ? `<div class="bloco"><div class="rot">Prazo</div><p>${esc(textoPrazo(o.prazo_dias_uteis))}</p></div>` : ''}
+    ${ent ? `<div class="bloco"><div class="rot">Entrega</div><p>${esc(ent)}</p></div>` : ''}`;
+}
 const saiuParaEntrega = p => (p.itens || []).some(i => ['em_transporte', 'entregue'].includes(i.status));
 function modalAlterarEntrega() {
   const p = S.vistaAtual.dados;
@@ -1605,6 +1650,7 @@ rota('novo', async (_p, el) => {
         <label class="campo">Número do pedido<input type="text" name="numero" placeholder="Automático"></label>
         <label class="campo" id="np-prev-box">Previsão de entrega *<input type="date" name="data_prevista_entrega" id="np-prev" required></label>
         <label class="campo hidden" id="np-val-box">Validade do orçamento<input type="date" id="np-validade"></label>
+        <label class="campo hidden" id="np-prazo-box">Prazo (dias úteis) <span class="muted small">— opcional</span><input type="number" min="1" max="365" id="np-prazo" placeholder="Ex.: 5"></label>
         ${htmlEntrega()}
         <label class="campo" style="grid-column:1/-1">Observações da entrega<textarea name="observacoes"></textarea></label>
       </form>
@@ -1646,10 +1692,12 @@ rota('novo', async (_p, el) => {
     const o = modoOrc();
     definirTopo(o ? 'Novo orçamento' : 'Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
     $('#np-cli-nome-box').classList.toggle('hidden', !o || !!cliente);
-    ['#np-prev-box', '#np-parc-painel'].forEach(s => $(s).classList.toggle('hidden', o));
-    $('#np-val-box').classList.toggle('hidden', !o);
+    $('#np-prev-box').classList.toggle('hidden', o);
+    ['#np-val-box', '#np-prazo-box'].forEach(s => $(s).classList.toggle('hidden', !o));
     $$('#f-np [name=numero], #f-np [name=vendedor_id]').forEach(i => i.closest('label').classList.toggle('hidden', o));
-    $('#f-np [data-ent]').classList.toggle('hidden', o);
+    $('#np-parc-painel h2').textContent = o ? 'Forma de Pagamento' : 'Forma de Pagamento *';
+    $('#np-pag').innerHTML = htmlFormaPagamento(o ? { orcamento: true } : { autorizar: true });
+    coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
     pegarItens.definirStatus(!o);
     $('#np-salvar').textContent = o ? 'Salvar orçamento' : 'Criar pedido';
   };
@@ -1665,8 +1713,11 @@ rota('novo', async (_p, el) => {
       const nomeCli = $('#np-cli-nome').value.trim();
       if (!cliente && !nomeCli) return toast('Escolha um cliente ou informe o nome dele.', true);
       const f = formDados($('#f-np'));
+      let pag; try { pag = await coletarPagamento(); } catch (e) { return toast(e.message, true); }
       const d = { cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : nomeCli, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
-        validade: $('#np-validade').value, observacoes: f.observacoes };
+        validade: $('#np-validade').value, observacoes: f.observacoes, forma_entrega: f.forma_entrega, endereco_entrega: f.endereco_entrega,
+        prazo_dias_uteis: $('#np-prazo').value, forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '',
+        pagamento_detalhe: pag?.pagamento_detalhe || null, condicoes_pagamento: pag ? pag.resumo : '' };
       $('#np-salvar').disabled = true;
       try { const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); descartarVista('novo'); location.hash = '#/orcamento/' + r.id; }
       finally { $('#np-salvar').disabled = false; }
@@ -1739,23 +1790,32 @@ rota('orcamento', async (id, el) => {
     <div class="painel"><form id="f-orc" class="grade g3">
       <label class="campo">Validade<input type="date" name="validade" value="${esc(o.validade || '')}"></label>
       <label class="campo">Situação<select name="status" ${travado ? 'disabled' : ''}>${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${convertido ? '<option value="aprovado" selected>Virou pedido</option>' : ''}${aceito && !liberado ? '<option value="aceito" selected>Aprovado pelo cliente</option>' : ''}</select></label>
-      <div></div>
-      <label class="campo" style="grid-column:1/-1">Condições de pagamento<input type="text" name="condicoes_pagamento" value="${esc(o.condicoes_pagamento || '')}"></label>
+      <label class="campo">Prazo (dias úteis) <span class="muted small">— opcional</span><input type="number" min="1" max="365" name="prazo_dias_uteis" value="${esc(o.prazo_dias_uteis || '')}" placeholder="Ex.: 5"></label>
+      <div class="small muted" style="grid-column:1/-1;margin-top:4px"><b>Entrega</b></div>
+      ${htmlEntrega(o)}
       <label class="campo" style="grid-column:1/-1">Observações <span class="muted">(aparecem no orçamento do cliente)</span><textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
     </form></div>
+    <div class="painel"><div class="painel-cab"><h2>Forma de Pagamento</h2><span class="small muted">Opcional no orçamento${o.condicoes_pagamento && !o.forma_pagamento ? ` · antes: ${esc(o.condicoes_pagamento)}` : ''}</span></div>
+      <div id="o-pag">${htmlFormaPagamento({ orcamento: true })}</div></div>
     ${!travado ? `<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn prim" id="o-salvar">Salvar orçamento</button></div>` : ''}`;
-  const mostrarCli = c => { cliente = c; $('#o-cli-esc').innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(fmtDoc(c.cpf_cnpj))}</span>${!travado ? ' <button type="button" class="btn link peq" id="o-cli-limpar">Trocar</button>' : ''}${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}` : '<span class="muted small">Nenhum cliente cadastrado escolhido.</span>'; $('#o-cli').value = '';
+  const entOrc = ligarEntrega($('#f-orc'));
+  const mostrarCli = c => { cliente = c; if (c && !travado) entOrc.definirCliente(c); $('#o-cli-esc').innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(fmtDoc(c.cpf_cnpj))}</span>${!travado ? ' <button type="button" class="btn link peq" id="o-cli-limpar">Trocar</button>' : ''}${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}` : '<span class="muted small">Nenhum cliente cadastrado escolhido.</span>'; $('#o-cli').value = '';
     $('#o-cli-nome-box').classList.toggle('hidden', !!c); if (c) $('#o-cli-nome').value = '';
     const lp = $('#o-cli-limpar'); if (lp) lp.onclick = () => mostrarCli(null); };
   mostrarCli(cliente); ligarBuscaCliente($('#o-cli'), mostrarCli);
   const tot = () => { const its = pegarItens ? pegarItens() : o.itens; $('#o-total').textContent = brl(its.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0)); };
   pegarItens = editorItens($('#o-itens'), o.itens, { aoMudar: tot });
-  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #o-desc, #o-frete, #o-cli, #o-cli-nome').forEach(e => e.disabled = true);
+  const totOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
+  const pagOrc = ligarFormaPagamento($('#o-pag'), totOrc, () => '', { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe });
+  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #f-orc button, #o-pag input, #o-pag button, #o-desc, #o-frete, #o-cli, #o-cli-nome').forEach(e => e.disabled = true);
   if ($('#o-editar-aceito')) $('#o-editar-aceito').onclick = () => { (S.cache.editarAceito ||= {})[o.id] = true; renderVista(S.vistaAtual); };
   $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
   const salvar = async () => {
     if (pegarItens.incompletos()) { toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
-    const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value };
+    let pag; try { pag = await pagOrc(); } catch (e) { toast(e.message, true); throw e; }
+    const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value,
+      forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '', pagamento_detalhe: pag?.pagamento_detalhe || null,
+      condicoes_pagamento: pag ? pag.resumo : '' };
     if (!novo) d.id = o.id;
     if (d.status === 'aceito') d.status = 'aberto';
     const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`);
@@ -1764,18 +1824,21 @@ rota('orcamento', async (id, el) => {
   };
   if (travado && $('#o-salvar')) $('#o-salvar').remove();
   if ($('#o-salvar')) $('#o-salvar').onclick = async () => { const r = await salvar(); if (novo) { descartarVista('orcamento/novo'); location.hash = '#/orcamento/' + r.id; } else renderVista(S.vistaAtual); };
-  const abrirConversao = () => {
+  const abrirConversao = async () => {
+    let convInicial = null;
+    try { const po = await pagOrc(); if (po) convInicial = { forma: po.forma_pagamento, obs: po.forma_pagamento_obs, detalhe: po.pagamento_detalhe }; } catch {}
     const totalOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
     let coletar, ent;
     const m = abrirModal({ titulo: 'Transformar em pedido', largo: true, corpo: `<p style="margin:0 0 12px">Os itens entram no pedido como "Arte · À fazer". Total: <b>${brl(totalOrc())}</b></p>
       <div class="grade g2">
-      <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required></label>
-      </div><div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega(cliente ? { forma_entrega: 'retirada' } : {})}</div>
+      <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required value="${o.prazo_dias_uteis || formDados($('#f-orc')).prazo_dias_uteis ? somaDiasUteis(hoje(), Number(formDados($('#f-orc')).prazo_dias_uteis || o.prazo_dias_uteis)) : ''}">
+        ${formDados($('#f-orc')).prazo_dias_uteis ? `<span class="small muted">Prazo do orçamento: ${esc(textoPrazo(formDados($('#f-orc')).prazo_dias_uteis))}. Confira a data.</span>` : ''}</label>
+      </div><div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega({ forma_entrega: formDados($('#f-orc')).forma_entrega, endereco_entrega: formDados($('#f-orc')).endereco_entrega })}</div>
       <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
       rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
-      aoAbrir: el => { coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value);
+      aoAbrir: el => { coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value, convInicial);
         el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
-        ent = ligarEntrega(el.querySelector('#conv-ent')); if (cliente) ent.definirCliente(cliente); } });
+        ent = ligarEntrega(el.querySelector('#conv-ent')); } });
     m.el.querySelector('[data-v]').onclick = m.fechar;
     m.el.querySelector('[data-s]').onclick = async () => {
       const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
@@ -1896,7 +1959,9 @@ async function paginaPublicaOrcamento(chave) {
           ${Number(o.desconto) ? `<div><span>Desconto</span><span>- ${din(o.desconto)}</span></div>` : ''}
           ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
           <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div></div>
-        ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Condições de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
+        ${freteGratis(o) ? `<div style="text-align:right">${SELO_FRETE}</div>` : ''}
+        ${blocosProposta(o)}
+        ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Forma de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
         ${o.observacoes ? `<div class="bloco"><div class="rot">Observações</div><p>${esc(o.observacoes)}</p></div>` : ''}
         ${EMPRESA.condicoes_gerais ? `<div class="bloco"><div class="rot">Condições gerais</div><p>${esc(EMPRESA.condicoes_gerais)}</p></div>` : ''}
         ${rodapeAprov}
@@ -2183,7 +2248,9 @@ function imprimirOrcamento(o) {
     ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
     <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div>
   </div>
-  ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Condições de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
+  ${freteGratis(o) ? `<div style="text-align:right">${SELO_FRETE}</div>` : ''}
+  ${blocosProposta(o)}
+  ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Forma de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
   ${o.observacoes ? `<div class="bloco"><div class="rot">Observações</div><p>${esc(o.observacoes)}</p></div>` : ''}
   ${EMPRESA.condicoes_gerais ? `<div class="bloco"><div class="rot">Condições gerais</div><p>${esc(EMPRESA.condicoes_gerais)}</p></div>` : ''}
   <div class="rodape"><span>${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</span><span>Orçamento nº ${esc(o.numero)}</span></div>
