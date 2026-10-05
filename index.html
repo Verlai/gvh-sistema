@@ -448,22 +448,50 @@ const VISTAS = new Map();   // chave da rota -> { el, nome, param, form, sujo, e
 const MAX_VISTAS = 12;
 
 function chaveRota() { return (location.hash || '#/inicio').replace(/^#\/?/, '') || 'inicio'; }
-function definirTopo(titulo, acoes = '') {
-  const v = S.vistaEmRender || S.vistaAtual;
-  if (v) v.topo = { titulo, acoes };
-  if (!v || v === S.vistaAtual) aplicarTopo({ titulo, acoes });
+// vista dona de um elemento de tela (cada desenho sabe a que tela pertence, mesmo com outro desenho acontecendo ao mesmo tempo)
+function vistaDoEl(el) { for (const v of VISTAS.values()) if (v.el === el) return v; return { el, descartada: true }; }
+function definirTopoEm(el, titulo, acoes = '') {
+  const v = vistaDoEl(el); if (v.descartada) return;
+  const caixa = document.createElement('div'); caixa.innerHTML = acoes;
+  const t = { titulo, acoes, nos: [...caixa.childNodes] };
+  v.topo = t;
+  if (v === S.vistaAtual) aplicarTopo(t);
 }
-function aplicarTopo(t) { $('#titulo', document).textContent = t.titulo; $('#topo-acoes', document).innerHTML = t.acoes; document.title = (t.titulo || 'Sistema') + ' · GVH'; }
+function definirTopo(titulo, acoes = '') {
+  const v = vistaRender();
+  // guarda os próprios botões (e não só o HTML): ao voltar para a tela, os cliques ligados por código continuam funcionando
+  const caixa = document.createElement('div'); caixa.innerHTML = acoes;
+  const t = { titulo, acoes, nos: [...caixa.childNodes] };
+  if (v) v.topo = t;
+  if (!v || v === S.vistaAtual) aplicarTopo(t);
+}
+function aplicarTopo(t) {
+  $('#titulo', document).textContent = t.titulo;
+  const box = $('#topo-acoes', document);
+  if (t.nos) box.replaceChildren(...t.nos); else box.innerHTML = t.acoes || '';
+  document.title = (t.titulo || 'Sistema') + ' · GVH';
+}
+// vista que está sendo desenhada agora (ou a atual, se nenhuma)
+const vistaRender = () => S.vistaEmRender || S.vistaAtual;
 
 async function renderVista(v) {
-  S.vistaEmRender = v;
-  v.sujo = false; v.editando = false; v.el.innerHTML = '';
-  esconderAvisoNovidades();
-  const fn = ROTAS[v.nome] || ROTAS.inicio;
-  try { await fn(v.param, v.el); }
-  catch (e) { v.el.innerHTML = `<div class="alerta erro">${esc(e.message)}</div>`; }
-  finally { if (S.vistaEmRender === v) S.vistaEmRender = null; }
+  // nunca desenha a mesma tela duas vezes ao mesmo tempo (o aviso do Realtime chegava no meio e quebrava a tela)
+  if (v.renderizando) { v.renderDeNovo = true; return v.renderizando; }
+  v.renderizando = (async () => {
+    do {
+      v.renderDeNovo = false;
+      S.vistaEmRender = v;
+      v.sujo = false; v.editando = false; v.el.innerHTML = '';
+      esconderAvisoNovidades();
+      const fn = ROTAS[v.nome] || ROTAS.inicio;
+      try { await fn(v.param, v.el); }
+      catch (e) { v.el.innerHTML = `<div class="alerta erro">${esc(e.message)}</div>`; }
+      finally { if (S.vistaEmRender === v) S.vistaEmRender = null; }
+    } while (v.renderDeNovo && VISTAS.get(chaveDe(v)) === v);
+  })();
+  try { await v.renderizando; } finally { v.renderizando = null; }
 }
+const chaveDe = v => { for (const [k, x] of VISTAS) if (x === v) return k; return null; };
 function limparVistasAntigas() {
   if (VISTAS.size <= MAX_VISTAS) return;
   for (const [k, v] of VISTAS) {
@@ -555,7 +583,7 @@ function iniciarAtualizacaoAutomatica() {
 
 /* ---------- INÍCIO ---------- */
 rota('inicio', async (_p, el) => {
-  definirTopo(`Olá, ${S.usuario.nome.split(' ')[0]}`, `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, `Olá, ${S.usuario.nome.split(' ')[0]}`, `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const r = await api('resumo');
   const ps = r.por_status || {};
   const qtd = k => k === 'saida' ? (ps.em_transporte || 0) + (ps.aguardando_retirada || 0) : (ps[k] || 0);
@@ -584,7 +612,7 @@ function irPedidos(etapa) { zerarLista('pedidos'); S.cache.filtroPedidos = { ...
 
 /* ---------- LISTA DE PEDIDOS ---------- */
 rota('pedidos', async (_p, el) => {
-  definirTopo('Pedidos', `${pode('cria_pedidos') ? '<a class="btn prim" href="#/novo">Novo pedido</a>' : ''}<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Pedidos', `${pode('cria_pedidos') ? '<a class="btn prim" href="#/novo">Novo pedido</a>' : ''}<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroPedidos || (S.cache.filtroPedidos = { etapa: '', busca: '', fin: '', vendedor: '', finalizados: false });
   el.innerHTML = `
     <div class="painel filtros">
@@ -649,10 +677,10 @@ function desenharListaPedidos(lista, total = lista.length) {
 /* ---------- DETALHE DO PEDIDO ---------- */
 rota('pedido', async (id, el) => {
   const r = await api('obter_pedido', { id });
-  const p = r.pedido; S.vistaEmRender.dados = p;
+  const p = r.pedido; vistaDoEl(el).dados = p;
   const cancelado = p.status === 'cancelado';
   const excluido = !!p.excluido_em;
-  definirTopo(`Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
+  definirTopoEm(el, `Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
     <a class="btn" href="#/pedidos">Voltar</a>
     ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
     ${!pode('cria_pedidos') && pode('edita_financeiro') && !cancelado && !saiuParaEntrega(p) ? `<button class="btn" onclick="modalAlterarEntrega()">Alterar entrega</button>` : ''}
@@ -682,7 +710,8 @@ rota('pedido', async (id, el) => {
         <div><div class="small muted">Criado em</div>${dataHora(p.created_at)}</div>
       </div>
       ${p.forma_pagamento || p.condicoes_pagamento ? `<div style="margin-top:12px"><span class="small muted">Forma de pagamento:</span> ${esc(FORMAS_COMB[p.forma_pagamento] || '')}${p.condicoes_pagamento && p.condicoes_pagamento !== FORMAS_COMB[p.forma_pagamento] ? `${p.forma_pagamento ? ' · ' : ''}${esc(p.condicoes_pagamento)}` : ''}</div>` : ''}
-      ${p.observacoes ? `<div style="margin-top:6px"><span class="small muted">Observações:</span> ${esc(p.observacoes)}</div>` : ''}
+      ${p.observacoes ? `<div style="margin-top:6px"><span class="small muted">Observações da entrega:</span> ${esc(p.observacoes)}</div>` : ''}
+      ${p.observacao_geral ? `<div style="margin-top:6px"><span class="small muted">Observação geral (cliente):</span> ${esc(p.observacao_geral)}</div>` : ''}
     </div>
 
     <div class="painel">
@@ -820,6 +849,7 @@ function modalEditarPedido() {
       <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" name="desconto" value="${esc(p.desconto)}"></label>
       <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" name="frete" value="${esc(p.frete)}"></label>
       <label class="campo" style="grid-column:1/-1">Observações da entrega<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
+      <label class="campo" style="grid-column:1/-1">Observação geral <span class="muted">(aparece para o cliente)</span><textarea name="observacao_geral">${esc(p.observacao_geral || '')}</textarea></label>
     </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>`,
     aoAbrir: el => { if (!saiuParaEntrega(p)) { const e = ligarEntrega(el); if (p.forma_entrega !== 'entrega' && p.cliente) e.definirCliente(p.cliente); } } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
@@ -1605,7 +1635,7 @@ function blocosProposta(o) {
   const ent = o.forma_entrega === 'entrega' ? `Entrega no endereço: ${o.endereco_entrega || 'a combinar'}`
             : o.forma_entrega === 'retirada' ? `Retirada no balcão: ${EMPRESA.endereco}` : '';
   return `${o.prazo_dias_uteis ? `<div class="bloco"><div class="rot">Prazo</div><p>${esc(textoPrazo(o.prazo_dias_uteis))}</p></div>` : ''}
-    ${ent ? `<div class="bloco"><div class="rot">Entrega</div><p>${esc(ent)}</p></div>` : ''}`;
+    ${ent || o.observacoes_entrega ? `<div class="bloco"><div class="rot">Entrega</div>${ent ? `<p>${esc(ent)}</p>` : ''}${o.observacoes_entrega ? `<p style="margin-top:4px">${esc(o.observacoes_entrega)}</p>` : ''}</div>` : ''}`;
 }
 const saiuParaEntrega = p => (p.itens || []).some(i => ['em_transporte', 'entregue'].includes(i.status));
 function modalAlterarEntrega() {
@@ -1623,7 +1653,7 @@ function modalAlterarEntrega() {
 /* ---------- NOVO PEDIDO ---------- */
 rota('novo', async (_p, el) => {
   if (!pode('cria_pedidos')) throw new Error('Seu perfil não cria pedidos.');
-  definirTopo('Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
+  definirTopoEm(el, 'Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
   const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
   let cliente = null, pegarItens, coletarPagamento;
   el.innerHTML = `
@@ -1658,6 +1688,7 @@ rota('novo', async (_p, el) => {
     <div class="painel" id="np-parc-painel"><div class="painel-cab"><h2>Forma de Pagamento *</h2><span class="small muted">Como ficou combinado com o cliente. Comprovante e link podem ser enviados agora ou depois, na tela do pedido.</span></div>
       <div id="np-pag"></div>
     </div>
+    <div class="painel"><label class="campo">Observação geral <span class="muted small">(aparece para o cliente)</span><textarea id="np-obs-geral"></textarea></label></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
       <button class="btn" type="button" id="np-descartar">Descartar pedido</button><button class="btn prim" id="np-salvar">Criar pedido</button>
     </div>`;
@@ -1690,7 +1721,7 @@ rota('novo', async (_p, el) => {
   const modoOrc = () => $('#np-orc').checked;
   $('#np-orc').onchange = () => {
     const o = modoOrc();
-    definirTopo(o ? 'Novo orçamento' : 'Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
+    definirTopoEm(el, o ? 'Novo orçamento' : 'Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
     $('#np-cli-nome-box').classList.toggle('hidden', !o || !!cliente);
     $('#np-prev-box').classList.toggle('hidden', o);
     ['#np-val-box', '#np-prazo-box'].forEach(s => $(s).classList.toggle('hidden', !o));
@@ -1715,11 +1746,11 @@ rota('novo', async (_p, el) => {
       const f = formDados($('#f-np'));
       let pag; try { pag = await coletarPagamento(); } catch (e) { return toast(e.message, true); }
       const d = { cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : nomeCli, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
-        validade: $('#np-validade').value, observacoes: f.observacoes, forma_entrega: f.forma_entrega, endereco_entrega: f.endereco_entrega,
+        validade: $('#np-validade').value, observacoes: $('#np-obs-geral').value, observacoes_entrega: f.observacoes, forma_entrega: f.forma_entrega, endereco_entrega: f.endereco_entrega,
         prazo_dias_uteis: $('#np-prazo').value, forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '',
         pagamento_detalhe: pag?.pagamento_detalhe || null, condicoes_pagamento: pag ? pag.resumo : '' };
       $('#np-salvar').disabled = true;
-      try { const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); descartarVista('novo'); location.hash = '#/orcamento/' + r.id; }
+      try { const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`); descartarVista('novo'); location.hash = '#/orcamentos'; }
       finally { $('#np-salvar').disabled = false; }
       return;
     }
@@ -1727,7 +1758,7 @@ rota('novo', async (_p, el) => {
     if (!$('#np-prev').value) { $('#np-prev').focus(); return toast('Informe a previsão de entrega.', true); }
     $('#np-salvar').disabled = true;
     let pag; try { pag = await coletarPagamento(); } catch (e) { $('#np-salvar').disabled = false; if (e.message === 'upload' || e.message === 'tamanho') return; $('#np-parc-painel').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast(e.message, true); }
-    const d = { ...formDados($('#f-np')), cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
+    const d = { ...formDados($('#f-np')), observacao_geral: $('#np-obs-geral').value, cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
       recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
       autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
     try { const r = await api('criar_pedido', d); toast(`Pedido ${r.numero} criado.`); descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
@@ -1736,39 +1767,125 @@ rota('novo', async (_p, el) => {
 });
 
 /* ---------- ORÇAMENTOS ---------- */
+const ORC_NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aceito:['Aprovado pelo cliente','b-verde'], aprovado:['Virou pedido','b-azul'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
+const podeExcluirOrc = o => o && o.criado_por === S.usuario.id && !o.pedido_id;
+
+// ações usadas na lista e na tela do orçamento (sempre com os dados salvos no banco)
+async function linkOrcamento(id) { const o = (await api('obter_orcamento', { id })).orcamento; if (!o) return toast('Orçamento não encontrado.', true); modalLinkOrcamento(o, o.cliente); }
+async function imprimirOrcamentoId(id) { const o = (await api('obter_orcamento', { id })).orcamento; if (!o) return toast('Orçamento não encontrado.', true); imprimirOrcamento(o); }
+async function excluirOrcamento(id, numero) {
+  if (!await confirmar(`Excluir o orçamento ${numero}? Ele some das listas e o link do cliente deixa de funcionar. O número não é reaproveitado.`, 'Excluir orçamento', true)) return false;
+  await api('excluir_orcamento', { id }); toast(`Orçamento ${numero} excluído.`);
+  descartarVista('orcamento/' + id);
+  return true;
+}
+async function converterOrcamento(id) {
+  const o = (await api('obter_orcamento', { id })).orcamento;
+  if (!o) return toast('Orçamento não encontrado.', true);
+  if (o.pedido_id) return toast('Este orçamento já virou pedido.', true);
+  if (o.cliente_id) return modalConversao(o, o.cliente);
+  if (!pode('cadastra_clientes')) return toast('Pedido exige cliente cadastrado. Peça a quem cadastra clientes.', true);
+  if (!await confirmar('Pedido exige cliente cadastrado. Vamos cadastrar este cliente agora e depois criar o pedido.', 'Cadastrar cliente')) return;
+  modalCliente(null, c => modalConversao(o, c), o.cliente_nome || '');
+}
+function modalConversao(o, cliente) {
+  const itens = o.itens || [];
+  let coletar, ent;
+  const prev0 = o.prazo_dias_uteis ? somaDiasUteis(hoje(), Number(o.prazo_dias_uteis)) : '';
+  const m = abrirModal({ titulo: `Transformar o orçamento ${o.numero} em pedido`, largo: true, corpo: `
+    <p style="margin:0 0 12px">Cliente: <b>${esc(cliente.nome_fantasia || cliente.nome)}</b> · Total: <b>${brl(o.valor_total)}</b></p>
+    <h3 style="margin:0 0 8px">Status inicial de cada item</h3>
+    <div class="tabela-wrap"><table><thead><tr><th>Produto</th><th class="dir">Qtd.</th><th class="dir">Total</th><th style="min-width:170px">Status inicial</th></tr></thead><tbody>
+      ${itens.map((i, k) => `<tr><td><b>${esc(i.descricao || '')}</b>${i.observacao ? `<div class="small muted">${esc(i.observacao)}</div>` : ''}</td><td class="dir num">${num(i.quantidade)}</td><td class="dir num">${brl(i.valor_total)}</td>
+        <td><select data-st="${k}">${opcoesStatusInicial('arte_a_fazer')}</select></td></tr>`).join('')}</tbody></table></div>
+    <div class="small muted" style="margin-top:4px">Item que já começa na Pré-impressão precisa de pagamento, de forma Boleto / Paga na retirada ou da autorização "produzir sem pagamento".</div>
+    <div class="grade g2" style="margin-top:14px">
+      <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required value="${prev0}">
+        ${o.prazo_dias_uteis ? `<span class="small muted">Prazo do orçamento: ${esc(textoPrazo(o.prazo_dias_uteis))}. Confira a data.</span>` : ''}</label>
+    </div>
+    <div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega({ forma_entrega: o.forma_entrega, endereco_entrega: o.endereco_entrega })}</div>
+    ${o.observacoes_entrega ? `<div class="small" style="margin-top:6px"><span class="muted">Observações da entrega:</span> ${esc(o.observacoes_entrega)}</div>` : ''}
+    ${o.observacoes ? `<div class="small" style="margin-top:4px"><span class="muted">Observação geral:</span> ${esc(o.observacoes)}</div>` : ''}
+    <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
+    aoAbrir: el => {
+      const inicial = o.forma_pagamento ? { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe } : null;
+      coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), () => Number(o.valor_total || 0), () => el.querySelector('#conv-prev').value, inicial);
+      el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
+      ent = ligarEntrega(el.querySelector('#conv-ent'));
+      if (!o.forma_entrega) ent.definirCliente(cliente);
+    } });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bt = m.el.querySelector('[data-s]');
+  bt.onclick = async () => {
+    const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
+    let pag; try { pag = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
+    const status_itens = itens.map((_, k) => m.el.querySelector(`[data-st="${k}"]`).value);
+    bt.disabled = true;
+    try {
+      const r = await api('converter_orcamento', { id: o.id, cliente_id: o.cliente_id ? undefined : cliente.id, status_itens,
+        data_prevista_entrega: prev, forma_entrega: ent.forma(), endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
+        forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
+        autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
+      m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
+    } finally { bt.disabled = false; }
+  };
+}
+
 rota('orcamentos', async (_p, el) => {
-  definirTopo('Orçamentos', `<a class="btn prim" href="#/orcamento/novo">Novo orçamento</a>`);
+  definirTopoEm(el, 'Orçamentos', `<a class="btn prim" href="#/orcamento/novo">Novo orçamento</a>`);
   el.innerHTML = `<div class="painel filtros"><div class="linha-form">
       <label class="campo" style="flex:2">Buscar<input type="search" id="o-busca" placeholder="Número ou cliente"></label>
       <label class="campo">Situação<select id="o-status"><option value="">Todas</option><option value="aberto">Em elaboração</option><option value="enviado">Enviado</option><option value="aceito">Aprovado pelo cliente</option><option value="aprovado">Virou pedido</option><option value="recusado">Recusado</option><option value="expirado">Expirado</option></select></label>
     </div></div><div class="painel" id="o-lista"></div>`;
-  const NOMES = { aberto:['Em elaboração','b-cinza'], enviado:['Enviado','b-azul'], aceito:['Aprovado pelo cliente','b-verde'], aprovado:['Virou pedido','b-azul'], recusado:['Recusado','b-vermelho'], expirado:['Expirado','b-ambar'] };
+  const lista = {};
+  const botoes = o => o.pedido_id
+    ? `<a class="btn peq" href="#/pedido/${o.pedido_id}">Ver pedido${o.pedido_numero ? ' ' + esc(o.pedido_numero) : ''}</a> <button class="btn peq" data-acao="imprimir" data-id="${o.id}">Imprimir</button>`
+    : `<button class="btn peq" data-acao="link" data-id="${o.id}">Link para o cliente</button>
+       <button class="btn peq" data-acao="imprimir" data-id="${o.id}">Imprimir</button>
+       <button class="btn peq escuro" data-acao="converter" data-id="${o.id}">Transformar em pedido</button>
+       ${podeExcluirOrc(o) ? `<button class="btn peq perigo" data-acao="excluir" data-id="${o.id}">Excluir</button>` : ''}`;
   const buscar = async () => {
-    const r = await api('listar_orcamentos', { busca: $('#o-busca').value, status: $('#o-status').value, limite: limLista('orcamentos') });
-    $('#o-lista').innerHTML = r.orcamentos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Vendedor</th><th>Validade</th><th>Situação</th><th class="dir">Total</th></tr></thead><tbody>
-      ${r.orcamentos.map(o => `<tr class="clicavel" onclick="location.hash='#/orcamento/${o.id}'"><td><b>${esc(o.numero)}</b><div class="small muted">${data(o.created_at)}</div></td>
+    const r = await api('listar_orcamentos', { busca: $('#o-busca', el).value, status: $('#o-status', el).value, limite: limLista('orcamentos') });
+    r.orcamentos.forEach(o => lista[o.id] = o);
+    $('#o-lista', el).innerHTML = r.orcamentos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Orçamento</th><th>Cliente</th><th>Vendedor</th><th>Validade</th><th>Situação</th><th class="dir">Total</th><th>Ações</th></tr></thead><tbody>
+      ${r.orcamentos.map(o => `<tr class="clicavel" data-abrir="${o.id}"><td><b>${esc(o.numero)}</b><div class="small muted">${data(o.created_at)}</div></td>
         <td>${esc(o.cliente_nome || '—')}${o.cliente_generico ? ' ' + badge('Sem cadastro', 'b-ambar') : ''}</td><td>${esc(o.vendedor_nome || '')}</td><td>${data(o.validade)}</td>
-        <td>${badge(...NOMES[o.status])}</td><td class="dir num">${brl(o.valor_total)}</td></tr>`).join('')}</tbody></table></div>`
+        <td>${badge(...(ORC_NOMES[o.status] || [o.status, 'b-cinza']))}</td><td class="dir num">${brl(o.valor_total)}</td>
+        <td><div style="display:flex;gap:4px;flex-wrap:wrap;min-width:230px">${botoes(o)}</div></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="vazio">Nenhum orçamento encontrado.</div>';
-    $('#o-lista').insertAdjacentHTML('beforeend', rodapeLista('orcamentos', r.orcamentos.length, r.total, 'orçamento(s)'));
-    ligarMais($('#o-lista'), 'orcamentos', buscar);
+    $('#o-lista', el).insertAdjacentHTML('beforeend', rodapeLista('orcamentos', r.orcamentos.length, r.total, 'orçamento(s)'));
+    ligarMais($('#o-lista', el), 'orcamentos', buscar);
+    $('#o-lista', el).querySelectorAll('[data-abrir]').forEach(tr => tr.onclick = e => { if (!e.target.closest('button,a')) location.hash = '#/orcamento/' + tr.dataset.abrir; });
+    $('#o-lista', el).querySelectorAll('[data-acao]').forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const o = lista[b.dataset.id];
+      b.disabled = true;
+      try {
+        if (b.dataset.acao === 'link') await linkOrcamento(o.id);
+        else if (b.dataset.acao === 'imprimir') await imprimirOrcamentoId(o.id);
+        else if (b.dataset.acao === 'converter') await converterOrcamento(o.id);
+        else if (b.dataset.acao === 'excluir' && await excluirOrcamento(o.id, o.numero)) buscar();
+      } catch {} finally { b.disabled = false; }
+    });
   };
   const filtrar = () => { zerarLista('orcamentos'); buscar(); };
-  let t; $('#o-busca').oninput = () => { clearTimeout(t); t = setTimeout(filtrar, 350); }; $('#o-status').onchange = filtrar;
+  let t; $('#o-busca', el).oninput = () => { clearTimeout(t); t = setTimeout(filtrar, 350); }; $('#o-status', el).onchange = filtrar;
   await buscar();
 });
 
 rota('orcamento', async (id, el) => {
   const novo = id === 'novo';
   const o = novo ? { itens: [], desconto: 0, frete: 0, status: 'aberto', validade: somaDias(hoje(), 7) } : (await api('obter_orcamento', { id })).orcamento;
-  if (!o) throw new Error('Orçamento não encontrado.');
+  if (!o) throw new Error('Orçamento não encontrado (pode ter sido excluído).');
   const convertido = o.status === 'aprovado';
   const aceito = o.status === 'aceito';
   const liberado = aceito && (S.cache.editarAceito || {})[o.id];
   const travado = convertido || (aceito && !liberado);
-  definirTopo(novo ? 'Novo orçamento' : `Orçamento ${o.numero}`, `<a class="btn" href="#/orcamentos">Voltar</a>
+  definirTopoEm(el, novo ? 'Novo orçamento' : `Orçamento ${o.numero}`, `<a class="btn" href="#/orcamentos">Voltar</a>
     ${!novo && !convertido ? `<button class="btn" id="o-link">Link para o cliente</button>` : ''}
     ${!novo ? `<button class="btn" id="o-imprimir">Imprimir orçamento</button>` : ''}
+    ${!novo && podeExcluirOrc(o) ? `<button class="btn perigo" id="o-excluir">Excluir orçamento</button>` : ''}
     ${!novo && !convertido ? `<button class="btn escuro" id="o-converter">Transformar em pedido</button>` : ''}
     ${o.pedido_id ? `<a class="btn" href="#/pedido/${o.pedido_id}">Ver pedido</a>` : ''}`);
   let cliente = o.cliente || null, pegarItens;
@@ -1793,76 +1910,49 @@ rota('orcamento', async (id, el) => {
       <label class="campo">Prazo (dias úteis) <span class="muted small">— opcional</span><input type="number" min="1" max="365" name="prazo_dias_uteis" value="${esc(o.prazo_dias_uteis || '')}" placeholder="Ex.: 5"></label>
       <div class="small muted" style="grid-column:1/-1;margin-top:4px"><b>Entrega</b></div>
       ${htmlEntrega(o)}
-      <label class="campo" style="grid-column:1/-1">Observações <span class="muted">(aparecem no orçamento do cliente)</span><textarea name="observacoes">${esc(o.observacoes || '')}</textarea></label>
+      <label class="campo" style="grid-column:1/-1">Observações da entrega <span class="muted">(aparecem no orçamento do cliente)</span><textarea name="observacoes_entrega">${esc(o.observacoes_entrega || '')}</textarea></label>
     </form></div>
     <div class="painel"><div class="painel-cab"><h2>Forma de Pagamento</h2><span class="small muted">Opcional no orçamento${o.condicoes_pagamento && !o.forma_pagamento ? ` · antes: ${esc(o.condicoes_pagamento)}` : ''}</span></div>
       <div id="o-pag">${htmlFormaPagamento({ orcamento: true })}</div></div>
+    <div class="painel"><label class="campo">Observação geral <span class="muted small">(aparece para o cliente)</span><textarea id="o-obs-geral" ${travado ? 'disabled' : ''}>${esc(o.observacoes || '')}</textarea></label></div>
     ${!travado ? `<div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn prim" id="o-salvar">Salvar orçamento</button></div>` : ''}`;
-  const entOrc = ligarEntrega($('#f-orc'));
-  const mostrarCli = c => { cliente = c; if (c && !travado) entOrc.definirCliente(c); $('#o-cli-esc').innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(fmtDoc(c.cpf_cnpj))}</span>${!travado ? ' <button type="button" class="btn link peq" id="o-cli-limpar">Trocar</button>' : ''}${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}` : '<span class="muted small">Nenhum cliente cadastrado escolhido.</span>'; $('#o-cli').value = '';
-    $('#o-cli-nome-box').classList.toggle('hidden', !!c); if (c) $('#o-cli-nome').value = '';
-    const lp = $('#o-cli-limpar'); if (lp) lp.onclick = () => mostrarCli(null); };
-  mostrarCli(cliente); ligarBuscaCliente($('#o-cli'), mostrarCli);
-  const tot = () => { const its = pegarItens ? pegarItens() : o.itens; $('#o-total').textContent = brl(its.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0)); };
-  pegarItens = editorItens($('#o-itens'), o.itens, { aoMudar: tot });
-  const totOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
-  const pagOrc = ligarFormaPagamento($('#o-pag'), totOrc, () => '', { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe });
-  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #f-orc button, #o-pag input, #o-pag button, #o-desc, #o-frete, #o-cli, #o-cli-nome').forEach(e => e.disabled = true);
-  if ($('#o-editar-aceito')) $('#o-editar-aceito').onclick = () => { (S.cache.editarAceito ||= {})[o.id] = true; renderVista(S.vistaAtual); };
-  $('#o-desc').oninput = $('#o-frete').oninput = tot; tot();
+  const entOrc = ligarEntrega($('#f-orc', el));
+  const mostrarCli = c => { cliente = c; if (c && !travado) entOrc.definirCliente(c); $('#o-cli-esc', el).innerHTML = c ? `<b>${esc(c.nome_fantasia || c.nome)}</b> <span class="muted">${esc(fmtDoc(c.cpf_cnpj))}</span>${!travado ? ' <button type="button" class="btn link peq" id="o-cli-limpar">Trocar</button>' : ''}${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}` : '<span class="muted small">Nenhum cliente cadastrado escolhido.</span>'; $('#o-cli', el).value = '';
+    $('#o-cli-nome-box', el).classList.toggle('hidden', !!c); if (c) $('#o-cli-nome', el).value = '';
+    const lp = $('#o-cli-limpar', el); if (lp) lp.onclick = () => mostrarCli(null); };
+  mostrarCli(cliente); ligarBuscaCliente($('#o-cli', el), mostrarCli);
+  const totOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc', el).value || 0) + Number($('#o-frete', el).value || 0);
+  const tot = () => { $('#o-total', el).textContent = brl(totOrc()); };
+  pegarItens = editorItens($('#o-itens', el), o.itens, { aoMudar: tot });
+  const pagOrc = ligarFormaPagamento($('#o-pag', el), totOrc, () => '', { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe });
+  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #f-orc button, #o-pag input, #o-pag button, #o-desc, #o-frete, #o-cli, #o-cli-nome', el).forEach(e => e.disabled = true);
+  if ($('#o-editar-aceito', el)) $('#o-editar-aceito', el).onclick = () => { (S.cache.editarAceito ||= {})[o.id] = true; renderVista(S.vistaAtual); };
+  $('#o-desc', el).oninput = $('#o-frete', el).oninput = tot; tot();
   const salvar = async () => {
     if (pegarItens.incompletos()) { toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
     let pag; try { pag = await pagOrc(); } catch (e) { toast(e.message, true); throw e; }
-    const d = { ...formDados($('#f-orc')), cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome').value.trim(), itens: pegarItens(), desconto: $('#o-desc').value, frete: $('#o-frete').value,
+    const d = { ...formDados($('#f-orc', el)), observacoes: $('#o-obs-geral', el).value, cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome', el).value.trim(), itens: pegarItens(), desconto: $('#o-desc', el).value, frete: $('#o-frete', el).value,
       forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '', pagamento_detalhe: pag?.pagamento_detalhe || null,
       condicoes_pagamento: pag ? pag.resumo : '' };
+    if (!d.cliente_id && !d.cliente_nome) { toast('Escolha um cliente ou informe o nome dele.', true); throw new Error('cliente'); }
     if (!novo) d.id = o.id;
     if (d.status === 'aceito') d.status = 'aberto';
     const r = await api('salvar_orcamento', d); toast(`Orçamento ${r.numero} salvo.`);
     if (S.cache.editarAceito) delete S.cache.editarAceito[o.id];
     return r;
   };
-  if (travado && $('#o-salvar')) $('#o-salvar').remove();
-  if ($('#o-salvar')) $('#o-salvar').onclick = async () => { const r = await salvar(); if (novo) { descartarVista('orcamento/novo'); location.hash = '#/orcamento/' + r.id; } else renderVista(S.vistaAtual); };
-  const abrirConversao = async () => {
-    let convInicial = null;
-    try { const po = await pagOrc(); if (po) convInicial = { forma: po.forma_pagamento, obs: po.forma_pagamento_obs, detalhe: po.pagamento_detalhe }; } catch {}
-    const totalOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc').value || 0) + Number($('#o-frete').value || 0);
-    let coletar, ent;
-    const m = abrirModal({ titulo: 'Transformar em pedido', largo: true, corpo: `<p style="margin:0 0 12px">Os itens entram no pedido como "Arte · À fazer". Total: <b>${brl(totalOrc())}</b></p>
-      <div class="grade g2">
-      <label class="campo">Previsão de entrega *<input type="date" id="conv-prev" required value="${o.prazo_dias_uteis || formDados($('#f-orc')).prazo_dias_uteis ? somaDiasUteis(hoje(), Number(formDados($('#f-orc')).prazo_dias_uteis || o.prazo_dias_uteis)) : ''}">
-        ${formDados($('#f-orc')).prazo_dias_uteis ? `<span class="small muted">Prazo do orçamento: ${esc(textoPrazo(formDados($('#f-orc')).prazo_dias_uteis))}. Confira a data.</span>` : ''}</label>
-      </div><div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega({ forma_entrega: formDados($('#f-orc')).forma_entrega, endereco_entrega: formDados($('#f-orc')).endereco_entrega })}</div>
-      <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
-      rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
-      aoAbrir: el => { coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), totalOrc, () => el.querySelector('#conv-prev').value, convInicial);
-        el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
-        ent = ligarEntrega(el.querySelector('#conv-ent')); } });
-    m.el.querySelector('[data-v]').onclick = m.fechar;
-    m.el.querySelector('[data-s]').onclick = async () => {
-      const prev = $('#conv-prev', m.el).value; if (!prev) return toast('Informe a previsão de entrega.', true);
-      let pag; try { pag = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
-      if (!travado) await salvar();
-      const r = await api('converter_orcamento', { id: o.id, data_prevista_entrega: prev, forma_entrega: ent.forma(),
-        endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
-        forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
-        autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
-      m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista(chaveRota()); location.hash = '#/pedido/' + r.id;
-    };
+  // botão do topo: liga pelo próprio elemento guardado no topo (funciona mesmo depois de sair e voltar para a tela)
+  const noTopo = sel => (vistaDoEl(el).topo?.nos || []).find(n => n.matches && n.matches(sel));
+  const acao = (sel, fn) => { const b = noTopo(sel); if (b) b.onclick = async () => { b.disabled = true; try { await fn(); } catch {} finally { b.disabled = false; } }; };
+  const salvarSeEditavel = async () => { if (!travado) await salvar(); };
+  if ($('#o-salvar', el)) $('#o-salvar', el).onclick = async () => {
+    const b = $('#o-salvar', el); b.disabled = true;
+    try { await salvar(); descartarVista(chaveDe(vistaDoEl(el)) || chaveRota()); location.hash = '#/orcamentos'; } catch {} finally { b.disabled = false; }
   };
-  if ($('#o-link')) $('#o-link').onclick = async () => { if (!travado && !novo) await salvar(); modalLinkOrcamento(o, cliente); };
-  if ($('#o-imprimir')) $('#o-imprimir').onclick = async () => {
-    if (!travado) await salvar();
-    const r = await api('obter_orcamento', { id: o.id });
-    imprimirOrcamento(r.orcamento);
-  };
-  if ($('#o-converter')) $('#o-converter').onclick = async () => {
-    if (cliente) return abrirConversao();
-    if (!pode('cadastra_clientes')) return toast('Pedido exige cliente cadastrado. Peça a quem cadastra clientes.', true);
-    if (!await confirmar('Pedido exige cliente cadastrado. Vamos cadastrar este cliente agora e depois criar o pedido.', 'Cadastrar cliente')) return;
-    modalCliente(null, async c => { mostrarCli(c); await salvar(); abrirConversao(); }, $('#o-cli-nome').value.trim());
-  };
+  acao('#o-link', async () => { await salvarSeEditavel(); await linkOrcamento(o.id); });
+  acao('#o-imprimir', async () => { await salvarSeEditavel(); await imprimirOrcamentoId(o.id); });
+  acao('#o-converter', async () => { await salvarSeEditavel(); await converterOrcamento(o.id); });
+  acao('#o-excluir', async () => { if (await excluirOrcamento(o.id, o.numero)) location.hash = '#/orcamentos'; });
 });
 
 const dataHoraLonga = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).replace(',', ' às') : '—';
@@ -2270,7 +2360,7 @@ function imprimirOrcamento(o) {
 
 /* ---------- ARTE ---------- */
 rota('arte', async (_p, el) => {
-  definirTopo('Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroArte || (S.cache.filtroArte = 'arte_a_fazer');
   const abas = [['arte_a_fazer','À fazer'],['arte_em_alteracao','Em alteração'],['arte_em_aprovacao','Com o cliente para aprovação']];
   const r = await api('listar_itens', { status: ['arte_a_fazer','arte_em_alteracao','arte_em_aprovacao'] });
@@ -2292,7 +2382,7 @@ rota('arte', async (_p, el) => {
           ${i.status === 'arte_em_aprovacao' && podeStatus('arte_em_alteracao') ? `<button class="btn peq" onclick="moverItem('${i.id}','arte_em_alteracao')">Pediu alteração</button>` : ''}
           ${podeStatus('pre_impressao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','pre_impressao')">Arte aprovada</button>` : ''}
         </td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item nesta etapa.</div>'}</div>`;
-  S.vistaEmRender.dados = r.itens;
+  vistaDoEl(el).dados = r.itens;
 });
 async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
 function modalArte(id) {
@@ -2313,13 +2403,13 @@ function modalArte(id) {
 
 /* ---------- PRÉ-IMPRESSÃO E PRODUÇÃO ---------- */
 rota('producao', async (_p, el) => {
-  definirTopo('Pré-impressão e produção', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Pré-impressão e produção', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const soDespacha = !podeStatus('em_producao');   // ex.: Financeiro — confere a produção e despacha, não envia para produção
   const despacha = podeStatus('despachado');
   const aba = soDespacha ? 'em_producao' : (S.cache.abaProd || (S.cache.abaProd = 'pre_impressao'));
   const fForn = S.cache.fornProd || '';
   const r = await api('listar_itens', { status: ['pre_impressao','em_producao'] });
-  S.vistaEmRender.dados = r.itens;
+  vistaDoEl(el).dados = r.itens;
   const pre = r.itens.filter(i => i.status === 'pre_impressao');
   let prod = r.itens.filter(i => i.status === 'em_producao');
   const atrasados = prod.filter(i => i.producao_atrasada).length;
@@ -2419,7 +2509,7 @@ function modalItemProd(id) {
 
 /* ---------- EXPEDIÇÃO E ENTREGA ---------- */
 rota('expedicao', async (_p, el) => {
-  definirTopo('Expedição e entrega', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Expedição e entrega', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const r = await api('listar_itens', { status: ['despachado','expedicao','em_transporte','aguardando_retirada'] });
   const peds = {};
   r.itens.forEach(i => (peds[i.pedido_id] ||= { id: i.pedido_id, numero: i.pedido_numero, cliente: i.cliente_nome, obs: i.cliente_obs, forma: i.forma_entrega, itens: [] }).itens.push(i));
@@ -2473,9 +2563,9 @@ async function moverItensPedido(ids, status) { await api('mudar_status_itens', {
 /* ---------- CONTAS A RECEBER ---------- */
 rota('financeiro', async (filtroInicial, el) => {
   if (!pode('ve_financeiro')) throw new Error('Seu perfil não acessa o financeiro.');
-  definirTopo('Contas a receber', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Contas a receber', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroFin || (S.cache.filtroFin = { filtro: 'abertos', busca: '', de: '', ate: '' });
-  if (filtroInicial && !S.vistaEmRender.filtroAplicado) { f.filtro = filtroInicial; S.vistaEmRender.filtroAplicado = true; }
+  if (filtroInicial && !vistaDoEl(el).filtroAplicado) { f.filtro = filtroInicial; vistaDoEl(el).filtroAplicado = true; }
   const abas = [['hoje','Vencem hoje'],['atrasados','Atrasadas'],['abertos','Em aberto'],['pagos','Pagas'],['todos','Todas']];
   const r = await api('listar_recebimentos', { ...f, limite: limLista('receber') });
   const rs = r.resumo;
@@ -2508,7 +2598,7 @@ rota('financeiro', async (filtroInicial, el) => {
 /* ---------- CONCILIAÇÃO (Financeiro confere o que foi marcado como pago) ---------- */
 rota('conciliacao', async (_p, el) => {
   if (!pode('edita_financeiro')) throw new Error('Seu perfil não faz a conciliação.');
-  definirTopo('Conciliação de pagamentos', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Conciliação de pagamentos', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroConc || (S.cache.filtroConc = { filtro: 'pendentes' });
   const r = await api('listar_conciliacao', { ...f, limite: limLista('conc') });
   const lista = r.recebimentos; lista.forEach(x => S.parcelas[x.id] = x);
@@ -2573,7 +2663,7 @@ function devolverPagamentos(ids) {
 
 /* ---------- COMISSÕES ---------- */
 rota('comissoes', async (_p, el) => {
-  definirTopo('Comissões', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Comissões', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const visao = S.cache.visaoComissao || 'mes';
   const abasVisao = `<div class="chips" style="margin-bottom:14px"><button class="chip ${visao === 'mes' ? 'ativo' : ''}" data-visao="mes">Por mês</button><button class="chip ${visao === 'pedidos' ? 'ativo' : ''}" data-visao="pedidos">Por pedido</button></div>`;
   const ligarVisao = () => $$('[data-visao]').forEach(b => b.onclick = () => { S.cache.visaoComissao = b.dataset.visao; recarregar(); });
@@ -2658,7 +2748,7 @@ async function pagarComissao(id, desfazer = false) {
 
 /* ---------- CLIENTES ---------- */
 rota('clientes', async (_p, el) => {
-  definirTopo('Clientes', pode('cadastra_clientes') ? `<button class="btn" onclick="modalLinkCadastro()">Link de cadastro</button><button class="btn" onclick="modalCadastrosLink()">Cadastros pelo link</button><button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
+  definirTopoEm(el, 'Clientes', pode('cadastra_clientes') ? `<button class="btn" onclick="modalLinkCadastro()">Link de cadastro</button><button class="btn" onclick="modalCadastrosLink()">Cadastros pelo link</button><button class="btn prim" onclick="modalCliente(null, recarregar)">Novo cliente</button>` : '');
   const pend = pode('cadastra_clientes') ? (await api('listar_cadastros_link', { limite: 1 }).catch(() => ({ pendentes: 0 }))).pendentes : 0;
   el.innerHTML = `${pend ? `<a class="alerta" href="javascript:void(0)" onclick="modalCadastrosLink()" style="display:block;margin-bottom:16px;text-decoration:none;color:inherit"><b>${pend} ${pend > 1 ? 'cadastros enviados' : 'cadastro enviado'} pelo link</b> aguardando conferência. Clique para conferir.</a>` : ''}<div class="painel filtros"><label class="campo">Buscar<input type="search" id="cl-busca" placeholder="Nome, fantasia, CPF/CNPJ ou WhatsApp"></label></div><div class="painel" id="cl-lista"></div>`;
   const buscar = async () => {
@@ -2676,7 +2766,7 @@ rota('clientes', async (_p, el) => {
 
 /* ---------- CATEGORIAS ---------- */
 rota('categorias', async (_p, el) => {
-  definirTopo('Categorias', `<button class="btn prim" onclick="modalCategoria(null)">Nova categoria</button>`);
+  definirTopoEm(el, 'Categorias', `<button class="btn prim" onclick="modalCategoria(null)">Nova categoria</button>`);
   await carregarBase();
   const f = S.cache.filtroCat || '';
   const sug = f ? sugerirCategorias(f, 999) : [];
@@ -2770,7 +2860,7 @@ async function modalAcessoFornecedor(id) {
     try { await navigator.clipboard.writeText(v); toast('Copiado.'); } catch { toast('Não foi possível copiar.', true); } });
 }
 rota('fornecedores', async (_p, el) => {
-  definirTopo('Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null, recarregar)">Novo fornecedor</button>`);
+  definirTopoEm(el, 'Fornecedores', `<button class="btn prim" onclick="modalFornecedor(null, recarregar)">Novo fornecedor</button>`);
   await carregarBase();
   const l = S.base.fornecedores;
   el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Categoria</th><th>Site</th><th>Login</th><th></th></tr></thead><tbody>
@@ -2815,7 +2905,7 @@ function novoFornecedorNaLinha(itemId) {
 
 /* ---------- PRODUTOS ---------- */
 rota('produtos', async (_p, el) => {
-  definirTopo('Produtos', `<button class="btn prim" onclick="modalProduto(null)">Novo produto</button>`);
+  definirTopoEm(el, 'Produtos', `<button class="btn prim" onclick="modalProduto(null)">Novo produto</button>`);
   await carregarBase();
   const l = S.base.produtos; const forn = id => S.base.fornecedores.find(f => f.id === id)?.nome || '—';
   el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Fornecedor padrão</th><th>Faixas de preço</th><th></th></tr></thead><tbody>
@@ -2861,7 +2951,7 @@ function modalProduto(id) {
 
 /* ---------- FERIADOS ---------- */
 rota('feriados', async (_p, el) => {
-  definirTopo('Feriados', '');
+  definirTopoEm(el, 'Feriados', '');
   const r = await api('feriados');
   r.feriados.forEach(f => S.feriados[f.data] = f);
   const TIPO = { nacional:'Nacional', estadual:'Estadual', municipal:'Municipal (Osasco)', facultativo:'Ponto facultativo', emenda:'Emenda' };
@@ -2882,8 +2972,8 @@ async function excluirFeriado(d) { if (!await confirmar('Excluir este feriado?',
 
 /* ---------- USUÁRIOS (diretor) ---------- */
 rota('usuarios', async (_p, el) => {
-  definirTopo('Usuários', `<button class="btn prim" onclick="modalUsuario(null)">Novo usuário</button>`);
-  const r = await api('listar_usuarios'); S.vistaEmRender.dados = r;
+  definirTopoEm(el, 'Usuários', `<button class="btn prim" onclick="modalUsuario(null)">Novo usuário</button>`);
+  const r = await api('listar_usuarios'); vistaDoEl(el).dados = r;
   el.innerHTML = `<div class="painel"><div class="tabela-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Comissão</th><th></th></tr></thead><tbody>
     ${r.usuarios.map(u => `<tr class="clicavel" onclick="modalUsuario('${u.id}')"><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${esc(u.perfil_nome)}</td>
       <td>${u.recebe_comissao ? num(u.percentual_comissao) + '%' : 'Não recebe (economizada)'}</td><td>${u.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
