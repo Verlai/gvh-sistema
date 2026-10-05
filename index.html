@@ -890,7 +890,7 @@ function sugerirCategorias(texto, max = 3) {
   return res.sort((x, y) => y.sc - x.sc).slice(0, max).map(x => x.c);
 }
 const opcoesCategoria = (sel, podeNova) => `<option value="">Selecione a categoria</option>` +
-  (S.base.categorias || []).filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.nome)}</option>`).join('') +
+  (S.base.categorias || []).filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.nome)}${c.servico && !/servi[cç]o/i.test(c.nome) ? ' (serviço)' : ''}</option>`).join('') +
   (podeNova ? '<option value="__nova">+ Cadastrar nova categoria</option>' : '');
 const podeNovaCategoria = () => pode('cadastra_produtos') || pode('gerencia_cadastros');
 
@@ -2784,12 +2784,12 @@ rota('categorias', async (_p, el) => {
   await carregarBase();
   const f = S.cache.filtroCat || '';
   const sug = f ? sugerirCategorias(f, 999) : [];
-  const lista = (S.base.categorias || []).filter(c => !f || sug.includes(c) || normTxt(c.nome + ' ' + c.ncm).includes(normTxt(f)));
+  const lista = (S.base.categorias || []).filter(c => !f || sug.includes(c) || normTxt(c.nome + ' ' + (c.ncm || '') + (c.servico ? ' servico' : '')).includes(normTxt(f)));
   el.innerHTML = `<div class="painel">
     <div class="linha-form" style="margin-bottom:12px"><label class="campo" style="max-width:360px">Buscar (nome, NCM ou apelido)<input type="search" id="f-cat" value="${esc(f)}"></label>
       <span class="small muted" style="padding-bottom:9px">A categoria define o NCM da nota. Os apelidos são o que o vendedor costuma escrever.</span></div>
     <div class="tabela-wrap"><table><thead><tr><th>Categoria</th><th>NCM</th><th>Apelidos</th><th></th></tr></thead><tbody>
-    ${lista.map(c => `<tr class="clicavel" onclick="modalCategoria('${c.id}')"><td><b>${esc(c.nome)}</b></td><td class="num">${esc(c.ncm)}</td>
+    ${lista.map(c => `<tr class="clicavel" onclick="modalCategoria('${c.id}')"><td><b>${esc(c.nome)}</b></td><td class="num">${c.servico ? badge('Serviço · sem NCM', 'b-azul') : esc(c.ncm)}</td>
       <td class="small muted">${esc((c.apelidos || []).slice(0, 8).join(', '))}${(c.apelidos || []).length > 8 ? ` +${c.apelidos.length - 8}` : ''}</td>
       <td>${c.ativo ? '' : badge('Inativa', 'b-cinza')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Nenhuma categoria encontrada.</td></tr>'}
     </tbody></table></div></div>`;
@@ -2800,7 +2800,8 @@ function modalCategoria(id, aoSalvar) {
   const ger = pode('gerencia_cadastros');
   const m = abrirModal({ titulo: id ? c.nome : 'Nova categoria', largo: true, corpo: `<form id="f-cat-m" class="grade g2">
       <label class="campo">Nome da categoria *<input type="text" name="nome" value="${esc(c.nome || '')}" placeholder="Ex.: Impressos publicitários"></label>
-      <label class="campo">NCM * <span class="muted">(8 dígitos)</span><input type="text" name="ncm" value="${esc(c.ncm || '')}" placeholder="0000.00.00" inputmode="numeric"></label>
+      <label class="campo" id="ncm-box">NCM * <span class="muted">(8 dígitos)</span><input type="text" name="ncm" value="${esc(c.ncm || '')}" placeholder="0000.00.00" inputmode="numeric"></label>
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="servico" value="true" ${c.servico ? 'checked' : ''}> <b>É serviço</b> <span class="muted small">(ex.: instalação — não tem NCM; a nota de serviço fica para o módulo de Nota fiscal)</span></label>
       <div class="small" id="ncm-info" style="grid-column:1/-1"></div>
       <label class="campo" style="grid-column:1/-1">Apelidos <span class="muted">(o que o vendedor pode escrever; um por linha ou separados por vírgula)</span>
         <textarea name="apelidos" rows="6">${esc((c.apelidos || []).join('\n'))}</textarea></label>
@@ -2809,12 +2810,13 @@ function modalCategoria(id, aoSalvar) {
     rodape: `<button class="btn" data-v>Voltar</button>${!id || ger ? '<button class="btn prim" data-s>Salvar categoria</button>' : ''}` });
   const f = $('#f-cat-m', m.el); let tmr, capIncomum = '';
   // capítulos que a GVH já usa (categorias ativas, com o NCM salvo); fora deles, só avisa
-  const capsUsados = new Set((S.base.categorias || []).filter(x => x.ativo).map(x => String(x.ncm).slice(0, 2)));
+  const capsUsados = new Set((S.base.categorias || []).filter(x => x.ativo && x.ncm).map(x => String(x.ncm).slice(0, 2)));
+  const ajustarServico = () => { const sv = f.elements.servico.checked; $('#ncm-box', m.el).classList.toggle('hidden', sv); if (sv) { $('#ncm-info', m.el).innerHTML = ''; capIncomum = ''; } };
   const consultar = () => { clearTimeout(tmr); tmr = setTimeout(async () => {
-    const d = f.ncm.value.replace(/\D/g, ''); const box = $('#ncm-info', m.el); capIncomum = '';
+    const d = f.elements.ncm.value.replace(/\D/g, ''); const box = $('#ncm-info', m.el); capIncomum = '';
     if (d.length !== 8) { box.innerHTML = '<span class="muted">Digite os 8 dígitos do NCM.</span>'; return; }
     const r = await api('ncm_consultar', { ncm: d }, true).catch(() => null); if (!r) return;
-    f.ncm.value = r.codigo;
+    f.elements.ncm.value = r.codigo;
     const outras = (r.categorias || []).filter(n => n !== c.nome);
     box.innerHTML = (!r.tabela_carregada ? '<span class="muted">A tabela oficial de NCM ainda não foi carregada; o código não pôde ser conferido.</span>'
       : r.valido ? `<span style="color:var(--verde)">✓ ${esc(r.descricao || 'Código vigente')}</span>` : '<span style="color:var(--vermelho)">Este NCM não existe na tabela oficial vigente.</span>')
@@ -2824,13 +2826,15 @@ function modalCategoria(id, aoSalvar) {
       box.innerHTML += `<div class="alerta small" style="margin-top:6px">Este NCM é de um capítulo que a gráfica não costuma usar: <b>${esc(capIncomum)}</b>. Confira se o código não foi digitado trocado.</div>`;
     }
   }, 400); };
-  f.ncm.oninput = consultar; if (c.ncm) consultar();
+  f.elements.ncm.oninput = consultar; if (c.ncm) consultar();
+  f.elements.servico.onchange = () => { ajustarServico(); if (!f.elements.servico.checked && f.elements.ncm.value) consultar(); }; ajustarServico();
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bs = m.el.querySelector('[data-s]');
   if (bs) bs.onclick = async () => {
     if (capIncomum && !confirm(`O NCM é do capítulo "${capIncomum}", que a gráfica não costuma usar. Salvar mesmo assim?`)) return;
     const d = formDados(f); if (id) d.id = id;
-    if (id && ger) d.ativo = !!f.ativo?.checked; else delete d.ativo;
+    d.servico = f.elements.servico.checked; if (d.servico) d.ncm = '';
+    if (id && ger) d.ativo = !!f.elements.ativo?.checked; else delete d.ativo;
     const r = await api('salvar_categoria', d); await carregarBase(); m.fechar(); toast('Categoria salva.');
     if (aoSalvar) aoSalvar(r.id); else recarregar();
   };
