@@ -390,7 +390,14 @@ function sairLocal() {
   $('#modais', document).innerHTML = '';
   VISTAS.forEach(v => v.el.remove()); VISTAS.clear(); S.vistaAtual = null;
 }
-async function carregarBase() { S.base = (await api('base')); }
+async function carregarBase() { S.base = (await api('base')); atualizarListaSugestoes(); }
+// V2: lista de produtos sugeridos usada pelo campo Produto (datalist do navegador)
+function atualizarListaSugestoes() {
+  let dl = document.getElementById('dl-sugestoes');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'dl-sugestoes'; document.body.appendChild(dl); }
+  dl.innerHTML = (S.base?.sugestoes || []).filter(x => x.ativo).map(x => `<option value="${esc(x.texto)}"></option>`).join('');
+}
+const sugestaoPorTexto = t => (S.base?.sugestoes || []).find(x => x.ativo && x.texto === String(t || '').trim());
 
 $('#form-login').addEventListener('submit', async e => {
   e.preventDefault();
@@ -431,7 +438,9 @@ function itensMenu() {
   if (pode('ve_todas_comissoes') || pode('cria_pedidos')) m.push(['#/comissoes', 'Comissões']);
   m.push(['Cadastros']);
   m.push(['#/clientes', 'Clientes']);
-  if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/categorias', 'Categorias']); m.push(['#/feriados', 'Feriados']); }
+  if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/categorias', 'Categorias']); }
+  if (podeNovaCategoria()) m.push(['#/sugestoes', 'Produtos sugeridos']);
+  if (pode('gerencia_cadastros')) m.push(['#/feriados', 'Feriados']);
   if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
   return m;
 }
@@ -1542,7 +1551,7 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
         <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><input type="text" placeholder="Ex.: Panfleto A5 4x4 couchê 90g" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
+        <td><input type="text" list="dl-sugestoes" autocomplete="off" placeholder="Digite ou escolha: Folheto 10x14…" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"></td>
         <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
@@ -1569,7 +1578,16 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
         it.categoria_id = el.value; it._catManual = true; aoMudar && aoMudar(itens); return;
       }
       it[f] = el.value;
-      if (f === 'descricao') sugerirCat(k);
+      if (f === 'descricao') {
+        const sg = sugestaoPorTexto(el.value);
+        if (sg) {
+          // escolheu um produto sugerido: categoria vem junto; com "…", seleciona para o vendedor digitar a medida
+          it.categoria_id = sg.categoria_id; it._catManual = true;
+          const sel = $(`[data-k="${k}"][data-f=categoria_id]`, alvo); if (sel) sel.value = sg.categoria_id;
+          const box = $(`[data-sug="${k}"]`, alvo); if (box) box.innerHTML = '';
+          const i = el.value.indexOf('…'); if (i >= 0) setTimeout(() => { try { el.focus(); el.setSelectionRange(i, i + 1); } catch {} }, 0);
+        } else sugerirCat(k);
+      }
       if (f === 'quantidade' || f === 'valor_total') atualizarUnit(k);
       aoMudar && aoMudar(itens);
     });
@@ -2968,6 +2986,38 @@ function modalProduto(id) {
 }
 
 /* ---------- FERIADOS ---------- */
+rota('sugestoes', async (_p, el) => {
+  definirTopoEm(el, 'Produtos sugeridos', `<button class="btn prim" onclick="modalSugestao(null)">Novo produto sugerido</button>`);
+  await carregarBase();
+  const cat = id => S.base.categorias.find(c => c.id === id)?.nome || '—';
+  const lista = S.base.sugestoes || [];
+  el.innerHTML = `<div class="painel">
+    <p class="small muted" style="margin-top:0">Ao digitar no Produto (Novo pedido e orçamento), estes textos aparecem como sugestão e a categoria vem junto. <b>Quantidade e total continuam digitados à mão.</b> Use "…" no lugar da medida para modelos (ex.: "Painel em lona …cm"): o vendedor completa e o sistema não deixa salvar com o "…".</p>
+    <div class="tabela-wrap"><table><thead><tr><th style="width:70px">Ordem</th><th>Produto</th><th>Categoria</th><th></th></tr></thead><tbody>
+    ${lista.map(x => `<tr class="clicavel" data-sg="${x.id}"><td class="num">${x.ordem}</td><td><b>${esc(x.texto)}</b></td><td class="small">${esc(cat(x.categoria_id))}</td><td>${x.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('') || '<tr><td colspan="4" class="vazio">Nenhum produto sugerido.</td></tr>'}
+    </tbody></table></div></div>`;
+  el.querySelectorAll('[data-sg]').forEach(tr => tr.onclick = () => modalSugestao(tr.dataset.sg));
+});
+function modalSugestao(id) {
+  const x = id ? S.base.sugestoes.find(s => s.id === id) : { ativo: true, ordem: 100 };
+  const m = abrirModal({ titulo: id ? 'Produto sugerido' : 'Novo produto sugerido', largo: true, corpo: `<form id="f-sg" class="grade g2">
+      <label class="campo" style="grid-column:1/-1">Produto * <span class="muted">(texto que vai para o pedido; use "…" no lugar da medida em modelos)</span><input type="text" name="texto" value="${esc(x.texto || '')}" placeholder="Ex.: Folheto 10x14cm couchê 90g 4x0"></label>
+      <label class="campo">Categoria *<select name="categoria_id">${opcoesCategoria(x.categoria_id, false)}</select></label>
+      <label class="campo">Ordem <span class="muted">(menor aparece primeiro)</span><input type="number" name="ordem" value="${esc(x.ordem)}"></label>
+      ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${x.ativo ? 'checked' : ''}> Ativo (aparece como sugestão)</label>` : ''}
+    </form>`,
+    rodape: `${id ? '<button class="btn perigo" data-x style="margin-right:auto">Excluir</button>' : ''}<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  const f = $('#f-sg', m.el).elements;
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bx = m.el.querySelector('[data-x]');
+  if (bx) bx.onclick = async () => { if (!await confirmar(`Excluir "${x.texto}" das sugestões? Pedidos já feitos não mudam.`, 'Excluir', true)) return;
+    await api('salvar_sugestao', { id, excluir: true }); await carregarBase(); m.fechar(); toast('Produto sugerido excluído.'); recarregar(); };
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = { texto: f.texto.value, categoria_id: f.categoria_id.value, ordem: f.ordem.value }; if (id) { d.id = id; d.ativo = f.ativo.checked; }
+    await api('salvar_sugestao', d); await carregarBase(); m.fechar(); toast('Produto sugerido salvo.'); recarregar();
+  };
+}
+
 rota('feriados', async (_p, el) => {
   definirTopoEm(el, 'Feriados', '');
   const r = await api('feriados');
