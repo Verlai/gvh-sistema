@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://zvcvdfkumjlvwqjdbiiw.supabase.co; connect-src https://gvh-n8n.kjb64n.easypanel.host https://brasilapi.com.br https://zvcvdfkumjlvwqjdbiiw.supabase.co wss://zvcvdfkumjlvwqjdbiiw.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://zvcvdfkumjlvwqjdbiiw.supabase.co; connect-src https://gvh-n8n.kjb64n.easypanel.host https://brasilapi.com.br https://zvcvdfkumjlvwqjdbiiw.supabase.co wss://zvcvdfkumjlvwqjdbiiw.supabase.co https://www.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>GVH · Sistema de Pedidos</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,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">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -763,6 +763,8 @@ rota('pedido', async (id, el) => {
       </div>` : ''}
     </div>
 
+    <div class="painel" id="arquivos-pedido"><div class="painel-cab"><h2>Arquivos</h2></div><p class="small muted" style="margin:0">Carregando arquivos…</p></div>
+
     ${pode('ve_financeiro') ? `
     <div class="painel">
       <div class="painel-cab"><h2>Financeiro</h2>
@@ -797,7 +799,79 @@ rota('pedido', async (id, el) => {
   $$('.sel-item').forEach(c => c.onchange = atualizarSel);
   $('#sel-todos').onchange = e => { $$('.sel-item:not(:disabled)').forEach(c => c.checked = e.target.checked); atualizarSel(); };
   $('#form-obs').onsubmit = async e => { e.preventDefault(); await api('adicionar_observacao', { pedido_id: p.id, texto: e.target.texto.value }); toast('Observação adicionada.'); recarregar(); };
+  carregarArquivosPedido(p, el);
 });
+
+/* ---------- AR0: arquivos do pedido no Google Drive ---------- */
+const TIPOS_ARQ = { arte:'Arte', prova:'Prova', producao:'Arquivo de produção', orcamento:'Orçamento aprovado', comprovante:'Comprovante de pagamento',
+  nota_fiscal:'Nota fiscal', entrega:'Entrega', outro:'Outro' };
+const fmtTam = b => !b ? '' : b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+async function carregarArquivosPedido(p, el) {
+  const alvo = el.querySelector('#arquivos-pedido'); if (!alvo) return;
+  let r;
+  try { r = await api('listar_arquivos', { pedido_id: p.id }, true); }
+  catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar os arquivos: ${esc(e.message)}</p>`; return; }
+  if (!alvo.isConnected) return;
+  const podeTipos = Object.keys(TIPOS_ARQ).filter(t => r.pode_enviar && r.pode_enviar[t]);
+  const arqs = r.arquivos || [];
+  alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${r.pasta_url ? `<a class="btn" href="${esc(r.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
+        ${podeTipos.length ? `<button class="btn" data-enviar-arq>Enviar arquivo</button>` : ''}</div></div>
+    ${arqs.length ? `<div class="tabela-wrap"><table><thead><tr><th>Tipo</th><th>Arquivo</th><th>Item</th><th>Enviado por</th></tr></thead><tbody>
+      ${arqs.map(a => `<tr><td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>
+        <td><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}</div></td>
+        <td class="small">${a.item_descricao ? esc(a.item_descricao) : '<span class="muted">Pedido</span>'}</td>
+        <td class="small">${esc(a.criado_por_nome || '')}<div class="muted">${dataHora(a.created_at)}</div></td></tr>`).join('')}
+      </tbody></table></div>`
+      : `<p class="small muted" style="margin:0">Nenhum arquivo ainda. A pasta do pedido no Drive é criada sozinha quando o primeiro arquivo for enviado.</p>`}`;
+  const b = alvo.querySelector('[data-enviar-arq]');
+  if (b) b.onclick = () => modalEnviarArquivo(p, podeTipos);
+}
+function modalEnviarArquivo(p, podeTipos) {
+  const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
+  const m = abrirModal({ titulo: 'Enviar arquivo ao Drive', corpo: `
+    <form id="f-arq" class="grade">
+      <label class="campo">Tipo *<select name="tipo" required>${podeTipos.map(t => `<option value="${t}">${esc(TIPOS_ARQ[t])}</option>`).join('')}</select></label>
+      <label class="campo">Item<select name="item_id"><option value="">Pedido inteiro</option>${itens.map(i => `<option value="${i.id}">${esc(i.descricao)}</option>`).join('')}</select></label>
+      <label class="campo" style="grid-column:1/-1">Arquivos *<input type="file" name="arquivos" multiple required></label>
+      <div id="arq-prog" class="small muted" style="grid-column:1/-1"></div>
+    </form>`,
+    rodape: `<button class="btn" data-v>Cancelar</button><button class="btn prim" data-c>Enviar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bt = m.el.querySelector('[data-c]');
+  bt.onclick = async () => {
+    const f = m.el.querySelector('#f-arq'); const arqs = [...f.elements.arquivos.files];
+    if (!arqs.length) return toast('Escolha pelo menos um arquivo.', true);
+    bt.disabled = true; const prog = m.el.querySelector('#arq-prog'); let ok = 0;
+    for (const [n, arq] of arqs.entries()) {
+      try {
+        await enviarArquivoDrive(p.id, arq, f.elements.tipo.value, f.elements.item_id.value, frac =>
+          prog.textContent = `Enviando ${n + 1} de ${arqs.length}: ${arq.name} — ${Math.round(frac * 100)}%`);
+        ok++;
+      } catch (e) { toast(`${arq.name}: ${e.message}`, true); }
+    }
+    bt.disabled = false;
+    if (ok) { toast(ok > 1 ? `${ok} arquivos enviados ao Drive.` : 'Arquivo enviado ao Drive.'); m.fechar(); recarregar(); }
+  };
+}
+async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, aoProgresso) {
+  const mime = arquivo.type || 'application/octet-stream';
+  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, tipo, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size }, true);
+  if (!r.upload_url) throw new Error('O Drive não devolveu o endereço de envio.');
+  const resp = await new Promise((ok, falha) => {
+    const x = new XMLHttpRequest();
+    x.open('PUT', r.upload_url);
+    x.setRequestHeader('Content-Type', mime);
+    x.upload.onprogress = e => { if (e.lengthComputable && aoProgresso) aoProgresso(e.loaded / e.total); };
+    x.onload = () => { if (x.status >= 200 && x.status < 300) { try { ok(JSON.parse(x.responseText || '{}')); } catch { falha(new Error('Resposta inválida do Drive.')); } }
+                       else falha(new Error(`O Drive recusou o envio (${x.status}).`)); };
+    x.onerror = () => falha(new Error('Falha de conexão ao enviar para o Drive.'));
+    x.send(arquivo);
+  });
+  if (!resp.id) throw new Error('O Drive não confirmou o arquivo.');
+  await api('arquivo_confirmar', { id: r.arquivo_id, drive_file_id: resp.id }, true);
+}
 
 function descHistorico(h) {
   if (h.tipo === 'status_item') return h.de ? `${esc(h.descricao)}: ${esc(nomeStatusItem(h.de))} → <b>${esc(nomeStatusItem(h.para))}</b>` : `${esc(h.descricao)} (${esc(nomeStatusItem(h.para))})`;
@@ -817,7 +891,7 @@ async function moverSelecionados() {
 
 async function cancelarPedido(excluir = false) {
   const p = S.vistaAtual.dados;
-  const r = await api('previa_cancelamento', { id: p.id });
+  const r = await api('previa_cancelamento', { id: p.id, excluir });
   const avisos = r.avisos || [];
   const acao = excluir ? 'Excluir' : 'Cancelar';
   const m = abrirModal({ titulo: `${acao} pedido ${p.numero}`, corpo: `
