@@ -742,8 +742,7 @@ rota('pedido', async (id, el) => {
                 ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prev. produção ${data(i.prazo_producao)}</div>` : ''}</td>
             <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a><br>` : ''}
                 ${i.arte_drive_url ? `<a href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Drive</a><br>` : ''}
-                ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arquivo</button>` : ''}
-                ${!i.arte_url && !i.arte_drive_url && !i.arte_storage_path ? '<span class="muted">—</span>' : ''}</td>
+                ${!i.arte_url && !i.arte_drive_url ? '<span class="muted">—</span>' : ''}</td>
             ${pode('ve_valores') ? `<td class="dir num">${brl(i.valor_total)}<div class="small muted">${unitario(i.valor_total, i.quantidade)} un</div></td>` : ''}
             ${pode('ve_custo') ? `<td class="dir num">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
             <td class="dir"><button class="btn peq" onclick="modalItem('${i.id}')">Editar</button></td>
@@ -763,7 +762,7 @@ rota('pedido', async (id, el) => {
       </div>` : ''}
     </div>
 
-    <div class="painel" id="arquivos-pedido"><div class="painel-cab"><h2>Arquivos</h2></div><p class="small muted" style="margin:0">Carregando arquivos…</p></div>
+    <div class="painel" id="arquivos-pedido"><div class="painel-cab"><h2>Arquivos de arte</h2></div><p class="small muted" style="margin:0">Carregando arquivos…</p></div>
 
     ${pode('ve_financeiro') ? `
     <div class="painel">
@@ -778,6 +777,7 @@ rota('pedido', async (id, el) => {
         <div><div class="small muted">Em aberto</div><b class="num">${brl(p.valor_em_aberto)}</b></div>
       </div>
       ${tabelaParcelas(p.recebimentos || [], false)}
+      <div id="docs-financeiro"></div>
     </div>` : ''}
 
     <div class="grade g2" style="margin-top:16px">
@@ -806,33 +806,53 @@ rota('pedido', async (id, el) => {
 const TIPOS_ARQ = { arte:'Material do cliente', prova:'Prova', producao:'Arte final (produção)', orcamento:'Orçamento aprovado', comprovante:'Comprovante de pagamento',
   nota_fiscal:'Nota fiscal', entrega:'Entrega', outro:'Outro' };
 const fmtTam = b => !b ? '' : b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+const GRUPO_ARQ = t => ['arte', 'prova', 'producao'].includes(t) ? 'artes' : ['orcamento', 'comprovante', 'nota_fiscal'].includes(t) ? 'financeiro' : 'outros';
 async function carregarArquivosPedido(p, el) {
   const alvo = el.querySelector('#arquivos-pedido'); if (!alvo) return;
+  const docs = el.querySelector('#docs-financeiro');
   let r;
   try { r = await api('listar_arquivos', { pedido_id: p.id }, true); }
-  catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar os arquivos: ${esc(e.message)}</p>`; return; }
+  catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos de arte</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar os arquivos: ${esc(e.message)}</p>`; return; }
   if (!alvo.isConnected) return;
-  // só estes são escolhidos na mão; os demais tipos são preenchidos pelo próprio sistema em cada etapa
-  const podeTipos = ['producao', 'arte', 'outro'].filter(t => r.pode_enviar && r.pode_enviar[t]);
-  const arqs = r.arquivos || [];
-  const linhaArq = a => `<tr><td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>
+  const pe = r.pode_enviar || {};
+  const todos = r.arquivos || [];
+  const linhaArq = (a, comTipo = true) => `<tr>${comTipo ? `<td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>` : ''}
         <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}copiado do ${esc(a.origem)}` : ''}</div></td>
         <td class="small">${esc(a.criado_por_nome || '')}<div class="muted">${dataHora(a.created_at)}</div></td>
-        <td class="dir">${r.pode_enviar && r.pode_enviar[a.tipo] ? `<button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>` : ''}</td></tr>`;
+        <td class="dir">${pe[a.tipo] && !a.em_uso ? `<button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>` : a.em_uso ? '<span class="small muted">em uso no pagamento</span>' : ''}</td></tr>`;
+
+  // bloco "Arquivos de arte": só material do cliente, provas e artes finais
+  const arqs = todos.filter(a => GRUPO_ARQ(a.tipo) === 'artes');
+  const tiposArte = ['producao', 'arte'].filter(t => pe[t]);
   const grupos = [...(p.itens || []).map(i => ({ titulo: i.descricao, lista: arqs.filter(a => a.item_id === i.id) })),
                   { titulo: 'Pedido inteiro', lista: arqs.filter(a => !a.item_id || !(p.itens || []).some(i => i.id === a.item_id)) }]
                  .filter(g => g.lista.length);
-  alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos</h2>
+  alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos de arte</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${r.pasta_url ? `<a class="btn" href="${esc(r.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
-        ${r.pode_enviar && r.pode_enviar.producao && (p.itens || []).length ? `<button class="btn" data-trazer-arte>Trazer arte de outro pedido</button>` : ''}
-        ${podeTipos.length ? `<button class="btn" data-enviar-arq>Enviar arquivo</button>` : ''}</div></div>
+        ${pe.producao && (p.itens || []).length ? `<button class="btn" data-trazer-arte>Trazer arte de outro pedido</button>` : ''}
+        ${tiposArte.length ? `<button class="btn" data-enviar-arq>Enviar arquivo</button>` : ''}</div></div>
     ${grupos.length ? grupos.map(g => `<h3 style="font-size:14px;margin:14px 0 6px">${esc(g.titulo)}</h3>
       <div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:90px"></th></tr></thead>
-      <tbody>${g.lista.map(linhaArq).join('')}</tbody></table></div>`).join('')
-      : `<p class="small muted" style="margin:0">Nenhum arquivo ainda. A pasta do pedido no Drive é criada sozinha quando o primeiro arquivo for enviado.</p>`}`;
+      <tbody>${g.lista.map(a => linhaArq(a)).join('')}</tbody></table></div>`).join('')
+      : `<p class="small muted" style="margin:0">Nenhum arquivo de arte ainda. A pasta do pedido no Drive é criada sozinha quando o primeiro arquivo for enviado.</p>`}`;
+
+  // documentos do bloco Financeiro: orçamento aprovado (automático), comprovantes e notas fiscais guardados no Drive
+  if (docs) {
+    const fin = todos.filter(a => GRUPO_ARQ(a.tipo) === 'financeiro');
+    docs.innerHTML = !fin.length && !pe.nota_fiscal ? '' : `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:18px 0 6px">
+        <h3 style="font-size:14px;margin:0">Documentos</h3>
+        ${pe.nota_fiscal ? `<button class="btn peq" data-enviar-nf>Enviar nota fiscal</button>` : ''}</div>
+      ${fin.length ? `<div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:90px"></th></tr></thead>
+        <tbody>${fin.map(a => linhaArq(a)).join('')}</tbody></table></div>`
+        : `<p class="small muted" style="margin:0">Nenhuma nota fiscal enviada.</p>`}`;
+    const bnf = docs.querySelector('[data-enviar-nf]'); if (bnf) bnf.onclick = () => modalEnviarArquivo(p, ['nota_fiscal']);
+  }
+
   const b = alvo.querySelector('[data-enviar-arq]');
-  if (b) b.onclick = () => modalEnviarArquivo(p, podeTipos);
+  if (b) b.onclick = () => modalEnviarArquivo(p, tiposArte);
+  el.querySelectorAll('[data-excluir-arq]').forEach(bx => bx.onclick = () => modalExcluirArquivo(todos.find(a => a.id === bx.dataset.excluirArq)));
   const bt = alvo.querySelector('[data-trazer-arte]'); if (bt) bt.onclick = () => modalTrazerArte(p);
   // pedido recém-criado pelo "Repetir pedido": oferece trazer as artes finais do pedido original
   const rp = S.cache.trazerArtes;
@@ -840,104 +860,15 @@ async function carregarArquivosPedido(p, el) {
     S.cache.trazerArtes = null;
     try { const o = await api('listar_artes_pedido', { numero: rp.numero }, true); if ((o.arquivos || []).length) modalTrazerArte(p, o); } catch {}
   }
-  alvo.querySelectorAll('[data-excluir-arq]').forEach(bt => bt.onclick = () => modalExcluirArquivo(arqs.find(a => a.id === bt.dataset.excluirArq)));
-}
-// AR0: copia artes finais de outro pedido (ou de um link do Drive) para a pasta deste pedido
-function modalTrazerArte(p, origemPronta = null) {
-  const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
-  const norm = t => String(t || '').trim().toLowerCase();
-  const opItens = (sel = '') => `<option value="">Escolha o material…</option>${itens.map(i => `<option value="${i.id}" ${i.id === sel ? 'selected' : ''}>${esc(i.descricao)}</option>`).join('')}`;
-  const sugerir = desc => (itens.find(i => norm(i.descricao) === norm(desc)) || (itens.length === 1 ? itens[0] : {})).id || '';
-  const m = abrirModal({ titulo: 'Trazer arte de outro pedido', largo: true, corpo: `
-    <div class="chips" style="margin-bottom:12px">
-      <button type="button" class="chip ativo" data-modo="pedido">Pedido do sistema</button>
-      <button type="button" class="chip" data-modo="link">Link do Drive (pedido antigo)</button></div>
-    <div data-bloco="pedido">
-      <div class="linha-form"><label class="campo" style="max-width:220px">Número do pedido<input type="text" id="ta-num" value="${esc(origemPronta ? origemPronta.numero : '')}"></label>
-        <button type="button" class="btn" id="ta-buscar" style="flex:0">Buscar</button></div>
-      <div id="ta-lista" style="margin-top:12px"></div></div>
-    <div data-bloco="link" class="hidden">
-      <p class="small muted" style="margin-top:0">Abra o arquivo no Drive (pasta 01_CLIENTES, JOB-Nuvem…), copie o link do <b>arquivo</b> e cole aqui. O sistema faz uma cópia na pasta deste pedido.</p>
-      <div class="grade g2">
-        <label class="campo" style="grid-column:1/-1">Link do arquivo *<input type="url" id="ta-link" placeholder="https://drive.google.com/file/d/…"></label>
-        <label class="campo">Material (item) *<select id="ta-link-item">${opItens(itens.length === 1 ? itens[0].id : '')}</select></label>
-        <label class="campo">Identificação <span class="muted">(opcional)</span><input type="text" id="ta-link-rot" maxlength="40" placeholder="Ex.: Frente"></label></div></div>
-    <div id="ta-prog" class="small muted" style="margin-top:10px"></div>`,
-    rodape: `<button class="btn" data-v>Cancelar</button><button class="btn prim" data-c>Trazer para este pedido</button>` });
-  let modo = 'pedido', origem = null;
-  m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelectorAll('[data-modo]').forEach(c => c.onclick = () => { modo = c.dataset.modo;
-    m.el.querySelectorAll('[data-modo]').forEach(x => x.classList.toggle('ativo', x === c));
-    m.el.querySelectorAll('[data-bloco]').forEach(x => x.classList.toggle('hidden', x.dataset.bloco !== modo)); });
-  const lista = m.el.querySelector('#ta-lista');
-  const mostrar = o => { origem = o;
-    lista.innerHTML = !(o.arquivos || []).length
-      ? `<p class="small muted">O pedido ${esc(o.numero)} não tem arte final cadastrada no sistema. Se a arte estiver na pasta dele, use a opção de colar o link do Drive.</p>`
-      : `<p class="small" style="margin:0 0 8px">Pedido <b>${esc(o.numero)}</b>${o.cliente ? ' · ' + esc(o.cliente) : ''}. Marque as artes e escolha em qual material deste pedido cada uma entra.</p>
-        <div class="tabela-wrap"><table><thead><tr><th style="width:28px"></th><th>Arte final do pedido ${esc(o.numero)}</th><th>Vai para o material</th></tr></thead><tbody>
-        ${o.arquivos.map(a => `<tr><td><input type="checkbox" data-ta="${a.id}" checked aria-label="Trazer"></td>
-          <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${esc(a.item_descricao || '')}</div></td>
-          <td><select data-ta-item="${a.id}">${opItens(sugerir(a.item_descricao))}</select></td></tr>`).join('')}</tbody></table></div>`; };
-  m.el.querySelector('#ta-buscar').onclick = async () => {
-    const n = m.el.querySelector('#ta-num').value.trim(); if (!n) return toast('Informe o número do pedido.', true);
-    lista.innerHTML = '<p class="small muted">Buscando…</p>';
-    try { mostrar(await api('listar_artes_pedido', { numero: n }, true)); } catch (e) { lista.innerHTML = `<p class="small" style="color:var(--vermelho)">${esc(e.message)}</p>`; }
-  };
-  m.el.querySelector('#ta-num').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); m.el.querySelector('#ta-buscar').click(); } };
-  if (origemPronta) mostrar(origemPronta);
-  const bt = m.el.querySelector('[data-c]'), prog = m.el.querySelector('#ta-prog');
-  bt.onclick = async () => {
-    let pedidos = [];
-    if (modo === 'link') {
-      const link = m.el.querySelector('#ta-link').value.trim(), item = m.el.querySelector('#ta-link-item').value;
-      if (!link) return toast('Cole o link do arquivo.', true);
-      if (!item) return toast('Escolha o material que vai receber a arte.', true);
-      pedidos = [{ pedido_id: p.id, item_id: item, link, rotulo: m.el.querySelector('#ta-link-rot').value.trim() || null, _nome: 'arquivo do link' }];
-    } else {
-      if (!origem) return toast('Busque o pedido de origem.', true);
-      const marcados = [...m.el.querySelectorAll('[data-ta]:checked')].map(c => c.dataset.ta);
-      if (!marcados.length) return toast('Marque pelo menos uma arte.', true);
-      for (const id of marcados) {
-        const item = m.el.querySelector(`[data-ta-item="${id}"]`).value;
-        if (!item) return toast('Escolha o material de cada arte marcada.', true);
-        pedidos.push({ pedido_id: p.id, item_id: item, arquivo_id: id, _nome: (origem.arquivos.find(a => a.id === id) || {}).nome });
-      }
-    }
-    bt.disabled = true; let ok = 0;
-    for (const [n, d] of pedidos.entries()) {
-      prog.textContent = `Copiando ${n + 1} de ${pedidos.length}: ${d._nome || ''}…`;
-      const { _nome, ...dados } = d;
-      try { await api('arquivo_copiar', dados, true); ok++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
-    }
-    bt.disabled = false; prog.textContent = '';
-    if (ok) { toast(ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.'); m.fechar(); recarregar(); }
-  };
-}
-function modalExcluirArquivo(a) {
-  const fin = ['orcamento', 'comprovante', 'nota_fiscal'].includes(a.tipo);
-  const m = abrirModal({ titulo: 'Excluir arquivo', corpo: `
-    <p style="margin:0 0 10px"><b>${esc(a.nome)}</b> (${esc(TIPOS_ARQ[a.tipo] || a.tipo)})</p>
-    <p class="small muted" style="margin:0 0 12px">${fin
-      ? 'O arquivo sai da pasta do pedido e fica guardado na pasta 99_PEDIDOS EXCLUÍDOS do Drive (orçamentos, comprovantes e notas fiscais nunca são apagados).'
-      : 'O arquivo vai para a lixeira do Drive compartilhado e pode ser recuperado por lá durante 30 dias.'} A exclusão fica registrada no histórico do pedido.</p>
-    <label class="campo">Motivo<input type="text" id="motivo-arq" placeholder="Ex.: arquivo errado, versão antiga"></label>`,
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Excluir arquivo</button>` });
-  m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelector('[data-c]').onclick = async () => {
-    const r = await api('arquivo_excluir', { id: a.id, motivo: m.el.querySelector('#motivo-arq').value.trim() || null });
-    m.fechar();
-    if (r.drive_ok === false) toast('Arquivo retirado do sistema, mas o Drive não respondeu. Confira a pasta do pedido.', true);
-    else toast('Arquivo excluído.');
-    recarregar();
-  };
 }
 function modalEnviarArquivo(p, podeTipos) {
   const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
-  const m = abrirModal({ titulo: 'Enviar arquivo ao Drive', corpo: `
+  const soNF = podeTipos.length === 1 && podeTipos[0] === 'nota_fiscal';
+  const m = abrirModal({ titulo: soNF ? 'Enviar nota fiscal' : 'Enviar arquivo de arte', corpo: `
     <form id="f-arq" class="grade">
-      <label class="campo">Tipo *<select name="tipo" required>${podeTipos.map(t => `<option value="${t}">${esc(TIPOS_ARQ[t])}</option>`).join('')}</select></label>
-      <label class="campo"><span id="rot-item">Material (item)</span><select name="item_id"><option value="">Pedido inteiro</option>${itens.map(i => `<option value="${i.id}">${esc(i.descricao)}</option>`).join('')}</select></label>
-      <label class="campo" style="grid-column:1/-1">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span><input type="text" name="rotulo" maxlength="40"></label>
+      <label class="campo ${soNF ? 'hidden' : ''}">Tipo *<select name="tipo" required>${podeTipos.map(t => `<option value="${t}">${esc(TIPOS_ARQ[t])}</option>`).join('')}</select></label>
+      <label class="campo ${soNF ? 'hidden' : ''}"><span id="rot-item">Material (item)</span><select name="item_id"><option value="">Pedido inteiro</option>${itens.map(i => `<option value="${i.id}">${esc(i.descricao)}</option>`).join('')}</select></label>
+      <label class="campo" style="grid-column:1/-1">Identificação <span class="muted">(opcional — ${soNF ? 'ex.: NF 1234' : 'ex.: Frente, Verso, Faca'})</span><input type="text" name="rotulo" maxlength="40"></label>
       <label class="campo" style="grid-column:1/-1">Arquivos *<input type="file" name="arquivos" multiple required></label>
       <div id="arq-prog" class="small muted" style="grid-column:1/-1"></div>
     </form>`,
@@ -963,9 +894,9 @@ function modalEnviarArquivo(p, podeTipos) {
     if (ok) { toast(ok > 1 ? `${ok} arquivos enviados ao Drive.` : 'Arquivo enviado ao Drive.'); m.fechar(); recarregar(); }
   };
 }
-async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoProgresso) {
+async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoProgresso, recebimentoId) {
   const mime = arquivo.type || 'application/octet-stream';
-  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size }, true);
+  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, recebimento_id: recebimentoId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size }, true);
   if (!r.upload_url) throw new Error('O Drive não devolveu o endereço de envio.');
   const resp = await new Promise((ok, falha) => {
     const x = new XMLHttpRequest();
@@ -979,6 +910,7 @@ async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoPro
   });
   if (!resp.id) throw new Error('O Drive não confirmou o arquivo.');
   await api('arquivo_confirmar', { id: r.arquivo_id, drive_file_id: resp.id }, true);
+  return r.arquivo_id;
 }
 
 function descHistorico(h) {
@@ -1128,8 +1060,7 @@ function modalItem(itemId) {
         <label class="campo" style="grid-column:span 2">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
         <label class="campo" style="grid-column:1/-1">Link da arte no Drive<input type="text" name="arte_drive_url" value="${esc(i.arte_drive_url || '')}"></label>` : ''}
       <label class="campo" style="grid-column:1/-1">Observação do item <span class="muted">(interna — não vai para o cliente)</span><input type="text" name="observacao" value="${esc(i.observacao || '')}"></label>
-      ${arte && itemId ? `<div style="grid-column:1/-1" class="linha-form"><label class="campo">Enviar arquivo de arte<input type="file" id="arq-arte" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
-        <span class="small muted" style="flex:2">${i.arte_storage_path ? 'Já existe um arquivo enviado. Um novo envio substitui o link.' : 'PDF, imagem ou arquivo compactado, até 100 MB.'}</span></div>` : ''}
+      ${arte && itemId ? `<div class="small muted" style="grid-column:1/-1">Arquivos de arte (material do cliente e arte final) são enviados no bloco <b>Arquivos de arte</b> do pedido.</div>` : ''}
     </form>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>${itemId ? 'Salvar item' : 'Adicionar item'}</button>`,
     aoAbrir: el => {
@@ -1158,10 +1089,8 @@ function modalItem(itemId) {
     if (d.categoria_id !== undefined && !d.categoria_id) return toast('Escolha a categoria do item.', true);
     if (d.valor_total === '') return toast('Informe o valor total do item.', true);
     if (!pode('ve_custo')) delete d.custo; else if (d.custo === '' && i.custo == null) delete d.custo;
-    const arq = $('#arq-arte', m.el)?.files?.[0];
     if (itemId) d.id = itemId; else d.pedido_id = p.id;
     await api('salvar_item', d);
-    if (arq) await enviarArte(itemId, arq);
     m.fechar(); toast(itemId ? 'Item atualizado.' : 'Item adicionado.'); recarregar();
   };
 }
@@ -1192,19 +1121,6 @@ function modalProdutoRapido(aoSalvar) {
   };
 }
 
-/* arte no Storage */
-async function enviarArte(itemId, arquivo) {
-  const r = await api('arte_arquivo', { item_id: itemId, op: 'upload', nome_arquivo: arquivo.name });
-  const fd = new FormData(); fd.append('cacheControl', '3600'); fd.append('', arquivo);
-  const up = await fetch(r.url, { method: 'PUT', body: fd, headers: { 'x-upsert': 'true' } });
-  if (!up.ok) { toast('Falha ao enviar o arquivo de arte.', true); throw new Error('upload'); }
-  await api('salvar_item', { id: itemId, arte_storage_path: r.path });
-  toast('Arquivo de arte enviado.');
-}
-async function baixarArte(itemId) {
-  const r = await api('arte_arquivo', { item_id: itemId, op: 'download' });
-  window.open(r.url, '_blank', 'noopener');
-}
 
 /* ---------- PARCELAS ---------- */
 const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vista:'À vista', parcela:'Parcela' };
@@ -1332,13 +1248,22 @@ const FORMAS_COMB = { pix:'Pix', transferencia:'Transferência', cartao_credito:
 const FORMAS_LIBERAM = ['boleto', 'retirada'];   // liberam a pré-impressão sem pagamento (V11)
 const EXT_COMP = '.pdf,.png,.jpg,.jpeg,.webp,.heic,.heif';
 const urlSegura = u => /^https?:\/\//i.test(String(u || '').trim()) ? String(u).trim() : '';
+// comprovante vai para a pasta Financeiro do pedido no Drive, sempre preso a um pagamento já criado
 async function enviarComprovante(arquivo, recebimentoId) {
   if (arquivo.size > 10 * 1024 * 1024) { toast('O comprovante passa de 10 MB.', true); throw new Error('tamanho'); }
-  const r = await api('comprovante_arquivo', { op: 'upload', id: recebimentoId || '', nome_arquivo: arquivo.name });
-  const fd = new FormData(); fd.append('cacheControl', '3600'); fd.append('', arquivo);
-  const up = await fetch(r.url, { method: 'PUT', body: fd, headers: { 'x-upsert': 'true' } });
-  if (!up.ok) { toast('Falha ao enviar o comprovante.', true); throw new Error('upload'); }
-  return r.path;
+  try { return 'drive:' + await enviarArquivoDrive(null, arquivo, 'comprovante', null, null, null, recebimentoId); }
+  catch (e) { toast('Falha ao enviar o comprovante: ' + e.message, true); throw new Error('upload'); }
+}
+// depois de criar os pagamentos, sobe os comprovantes escolhidos e anexa cada um ao seu pagamento
+async function anexarComprovantes(pag, resp) {
+  const pend = Object.entries((pag && pag.comprovantes) || {}); if (!pend.length) return;
+  const ids = (resp && resp.recebimentos_ids) || {}; let falhas = 0;
+  for (const [chave, arq] of pend) {
+    const rid = ids[chave]; if (!rid) { falhas++; continue; }
+    try { const path = await enviarComprovante(arq, rid); await api('receb_anexo', { id: rid, comprovante_path: path }, true); }
+    catch { falhas++; }
+  }
+  if (falhas) toast(`${falhas > 1 ? falhas + ' comprovantes não foram anexados' : 'Um comprovante não foi anexado'}. Anexe pelo pagamento, no bloco Financeiro do pedido.`, true);
 }
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
 function htmlFormaPagamento(op = {}) {
@@ -1507,8 +1432,11 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       if (st.pago === null) throw new Error('Informe se já foi pago.');
       rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago: st.pago }];
     }
-    for (const r of rec) { if (r._arq) r.comprovante_path = await subir(r._arq); delete r._arq; }
-    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, resumo: resumo(),
+    const comprovantes = {};
+    rec.forEach((r, k) => { r._chave = 'c' + k;
+      if (r._arq) { if (r._arq.size > 10 * 1024 * 1024) throw new Error('O comprovante passa de 10 MB.'); comprovantes[r._chave] = r._arq; r.pago = true; }
+      delete r._arq; });
+    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes, resumo: resumo(),
              autoriza_sem_pagamento: !!(mostraAut() && st.autoriza === true) };
   };
   coletar.atualizar = () => {
@@ -1541,7 +1469,8 @@ function modalParcelas() {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
-    await api('salvar_recebimentos', { pedido_id: p.id, parcelas: r.recebimentos }); m.fechar(); toast('Pagamento lançado.'); recarregar();
+    const resp = await api('salvar_recebimentos', { pedido_id: p.id, parcelas: r.recebimentos }); m.fechar();
+    await anexarComprovantes(r, resp); toast('Pagamento lançado.'); recarregar();
   };
 }
 function modalTrocarForma() {
@@ -1553,9 +1482,9 @@ function modalTrocarForma() {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
-    await api('trocar_forma_pagamento', { pedido_id: p.id, forma_pagamento: r.forma_pagamento, forma_pagamento_obs: r.forma_pagamento_obs,
+    const resp = await api('trocar_forma_pagamento', { pedido_id: p.id, forma_pagamento: r.forma_pagamento, forma_pagamento_obs: r.forma_pagamento_obs,
       recebimentos: r.recebimentos, condicoes_pagamento: r.resumo });
-    m.fechar(); toast('Forma de pagamento trocada.'); recarregar();
+    m.fechar(); await anexarComprovantes(r, resp); toast('Forma de pagamento trocada.'); recarregar();
   };
 }
 async function autorizarSemPagamento(autorizar) {
@@ -1974,7 +1903,7 @@ rota('novo', async (_p, el) => {
     const d = { ...formDados($('#f-np')), observacao_geral: $('#np-obs-geral').value, cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
       recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
       autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
-    try { const r = await api('criar_pedido', d); toast(`Pedido ${r.numero} criado.`);
+    try { const r = await api('criar_pedido', d); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`);
       if (rep) S.cache.trazerArtes = { pedido_id: r.id, numero: rep.numero };
       descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
     finally { $('#np-salvar').disabled = false; }
@@ -2042,7 +1971,7 @@ function modalConversao(o, cliente) {
         data_prevista_entrega: prev, forma_entrega: ent.forma(), endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
         forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
         autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
-      m.fechar(); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
+      m.fechar(); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
     } finally { bt.disabled = false; }
   };
 }
@@ -2590,7 +2519,7 @@ rota('arte', async (_p, el) => {
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
         <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
         <td>${badgeItem(i.status)}</td>
-        <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Arquivo</button>` : ''}</td>
+        <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}<div data-arq-item="${i.id}"></div></td>
         <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
         <td class="dir" style="white-space:nowrap">
           <button class="btn peq" onclick="modalArte('${i.id}')">Arte</button>
@@ -2599,6 +2528,7 @@ rota('arte', async (_p, el) => {
           ${podeStatus('pre_impressao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','pre_impressao')">Arte aprovada</button>` : ''}
         </td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item nesta etapa.</div>'}</div>`;
   vistaDoEl(el).dados = r.itens;
+  preencherArtesFinais(el);
 });
 async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
 function modalArte(id) {
@@ -2607,12 +2537,16 @@ function modalArte(id) {
     <form id="f-arte" class="grade">
       <label class="campo">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
       <label class="campo">Link da arte no Drive<input type="text" name="arte_drive_url" value="${esc(i.arte_drive_url || '')}"></label>
-      <label class="campo">Enviar arquivo<input type="file" id="arq" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
+      <label class="campo">Enviar arte final (produção)<input type="file" id="arq" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
+      <label class="campo">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span><input type="text" id="arq-rot" maxlength="40"></label>
     </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     await api('salvar_item', { id, ...formDados($('#f-arte', m.el)) });
-    const arq = $('#arq', m.el).files[0]; if (arq) await enviarArte(id, arq);
+    for (const arq of [...$('#arq', m.el).files]) {
+      try { await enviarArquivoDrive(i.pedido_id, arq, 'producao', id, $('#arq-rot', m.el).value.trim()); }
+      catch (e) { toast(`${arq.name}: ${e.message}`, true); }
+    }
     m.fechar(); toast('Arte atualizada.'); recarregar();
   };
 }
@@ -2641,7 +2575,7 @@ rota('producao', async (_p, el) => {
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
         <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
-            ${i.arte_storage_path ? `<button class="btn link peq" onclick="baixarArte('${i.id}')">Baixar arte</button>` : ''}${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
+            ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             <div data-arq-item="${i.id}"></div>
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
         <td><div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opForn(i.fornecedor_id)}</select>
