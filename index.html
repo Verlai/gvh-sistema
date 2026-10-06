@@ -819,7 +819,9 @@ async function carregarArquivosPedido(p, el) {
   const linhaArq = (a, comTipo = true) => `<tr>${comTipo ? `<td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>` : ''}
         <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}copiado do ${esc(a.origem)}` : ''}</div></td>
         <td class="small">${esc(a.criado_por_nome || '')}<div class="muted">${dataHora(a.created_at)}</div></td>
-        <td class="dir">${pe[a.tipo] && !a.em_uso ? `<button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>` : a.em_uso ? '<span class="small muted">em uso no pagamento</span>' : ''}</td></tr>`;
+        <td class="dir" style="white-space:nowrap">${a.em_uso
+          ? `<button class="btn peq" onclick="trocarComprovante('${a.recebimento_id}')" title="Troca o comprovante deste pagamento">Trocar</button>`
+          : pe[a.tipo] ? `<button class="btn peq" data-trocar-arq="${a.id}" title="Envia um arquivo novo no lugar deste">Trocar</button> <button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>` : ''}</td></tr>`;
 
   // bloco "Arquivos de arte": só material do cliente, provas e artes finais
   const arqs = todos.filter(a => GRUPO_ARQ(a.tipo) === 'artes');
@@ -853,6 +855,7 @@ async function carregarArquivosPedido(p, el) {
   const b = alvo.querySelector('[data-enviar-arq]');
   if (b) b.onclick = () => modalEnviarArquivo(p, tiposArte);
   el.querySelectorAll('[data-excluir-arq]').forEach(bx => bx.onclick = () => modalExcluirArquivo(todos.find(a => a.id === bx.dataset.excluirArq)));
+  el.querySelectorAll('[data-trocar-arq]').forEach(bx => bx.onclick = () => trocarArquivo(p, todos.find(a => a.id === bx.dataset.trocarArq)));
   const bt = alvo.querySelector('[data-trazer-arte]'); if (bt) bt.onclick = () => modalTrazerArte(p);
   // pedido recém-criado pelo "Repetir pedido": oferece trazer as artes finais do pedido original
   const rp = S.cache.trazerArtes;
@@ -860,6 +863,111 @@ async function carregarArquivosPedido(p, el) {
     S.cache.trazerArtes = null;
     try { const o = await api('listar_artes_pedido', { numero: rp.numero }, true); if ((o.arquivos || []).length) modalTrazerArte(p, o); } catch {}
   }
+}
+// AR0: copia artes finais de outro pedido (ou de um link do Drive) para a pasta deste pedido
+function modalTrazerArte(p, origemPronta = null) {
+  const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
+  const norm = t => String(t || '').trim().toLowerCase();
+  const opItens = (sel = '') => `<option value="">Escolha o material…</option>${itens.map(i => `<option value="${i.id}" ${i.id === sel ? 'selected' : ''}>${esc(i.descricao)}</option>`).join('')}`;
+  const sugerir = desc => (itens.find(i => norm(i.descricao) === norm(desc)) || (itens.length === 1 ? itens[0] : {})).id || '';
+  const m = abrirModal({ titulo: 'Trazer arte de outro pedido', largo: true, corpo: `
+    <div class="chips" style="margin-bottom:12px">
+      <button type="button" class="chip ativo" data-modo="pedido">Pedido do sistema</button>
+      <button type="button" class="chip" data-modo="link">Link do Drive (pedido antigo)</button></div>
+    <div data-bloco="pedido">
+      <div class="linha-form"><label class="campo" style="max-width:220px">Número do pedido<input type="text" id="ta-num" value="${esc(origemPronta ? origemPronta.numero : '')}"></label>
+        <button type="button" class="btn" id="ta-buscar" style="flex:0">Buscar</button></div>
+      <div id="ta-lista" style="margin-top:12px"></div></div>
+    <div data-bloco="link" class="hidden">
+      <p class="small muted" style="margin-top:0">Abra o arquivo no Drive (pasta 01_CLIENTES, JOB-Nuvem…), copie o link do <b>arquivo</b> e cole aqui. O sistema faz uma cópia na pasta deste pedido.</p>
+      <div class="grade g2">
+        <label class="campo" style="grid-column:1/-1">Link do arquivo *<input type="url" id="ta-link" placeholder="https://drive.google.com/file/d/…"></label>
+        <label class="campo">Material (item) *<select id="ta-link-item">${opItens(itens.length === 1 ? itens[0].id : '')}</select></label>
+        <label class="campo">Identificação <span class="muted">(opcional)</span><input type="text" id="ta-link-rot" maxlength="40" placeholder="Ex.: Frente"></label></div></div>
+    <div id="ta-prog" class="small muted" style="margin-top:10px"></div>`,
+    rodape: `<button class="btn" data-v>Cancelar</button><button class="btn prim" data-c>Trazer para este pedido</button>` });
+  let modo = 'pedido', origem = null;
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelectorAll('[data-modo]').forEach(c => c.onclick = () => { modo = c.dataset.modo;
+    m.el.querySelectorAll('[data-modo]').forEach(x => x.classList.toggle('ativo', x === c));
+    m.el.querySelectorAll('[data-bloco]').forEach(x => x.classList.toggle('hidden', x.dataset.bloco !== modo)); });
+  const lista = m.el.querySelector('#ta-lista');
+  const mostrar = o => { origem = o;
+    lista.innerHTML = !(o.arquivos || []).length
+      ? `<p class="small muted">O pedido ${esc(o.numero)} não tem arte final cadastrada no sistema. Se a arte estiver na pasta dele, use a opção de colar o link do Drive.</p>`
+      : `<p class="small" style="margin:0 0 8px">Pedido <b>${esc(o.numero)}</b>${o.cliente ? ' · ' + esc(o.cliente) : ''}. Marque as artes e escolha em qual material deste pedido cada uma entra.</p>
+        <div class="tabela-wrap"><table><thead><tr><th style="width:28px"></th><th>Arte final do pedido ${esc(o.numero)}</th><th>Vai para o material</th></tr></thead><tbody>
+        ${o.arquivos.map(a => `<tr><td><input type="checkbox" data-ta="${a.id}" checked aria-label="Trazer"></td>
+          <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${esc(a.item_descricao || '')}</div></td>
+          <td><select data-ta-item="${a.id}">${opItens(sugerir(a.item_descricao))}</select></td></tr>`).join('')}</tbody></table></div>`; };
+  m.el.querySelector('#ta-buscar').onclick = async () => {
+    const n = m.el.querySelector('#ta-num').value.trim(); if (!n) return toast('Informe o número do pedido.', true);
+    lista.innerHTML = '<p class="small muted">Buscando…</p>';
+    try { mostrar(await api('listar_artes_pedido', { numero: n }, true)); } catch (e) { lista.innerHTML = `<p class="small" style="color:var(--vermelho)">${esc(e.message)}</p>`; }
+  };
+  m.el.querySelector('#ta-num').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); m.el.querySelector('#ta-buscar').click(); } };
+  if (origemPronta) mostrar(origemPronta);
+  const bt = m.el.querySelector('[data-c]'), prog = m.el.querySelector('#ta-prog');
+  bt.onclick = async () => {
+    let pedidos = [];
+    if (modo === 'link') {
+      const link = m.el.querySelector('#ta-link').value.trim(), item = m.el.querySelector('#ta-link-item').value;
+      if (!link) return toast('Cole o link do arquivo.', true);
+      if (!item) return toast('Escolha o material que vai receber a arte.', true);
+      pedidos = [{ pedido_id: p.id, item_id: item, link, rotulo: m.el.querySelector('#ta-link-rot').value.trim() || null, _nome: 'arquivo do link' }];
+    } else {
+      if (!origem) return toast('Busque o pedido de origem.', true);
+      const marcados = [...m.el.querySelectorAll('[data-ta]:checked')].map(c => c.dataset.ta);
+      if (!marcados.length) return toast('Marque pelo menos uma arte.', true);
+      for (const id of marcados) {
+        const item = m.el.querySelector(`[data-ta-item="${id}"]`).value;
+        if (!item) return toast('Escolha o material de cada arte marcada.', true);
+        pedidos.push({ pedido_id: p.id, item_id: item, arquivo_id: id, _nome: (origem.arquivos.find(a => a.id === id) || {}).nome });
+      }
+    }
+    bt.disabled = true; let ok = 0;
+    for (const [n, d] of pedidos.entries()) {
+      prog.textContent = `Copiando ${n + 1} de ${pedidos.length}: ${d._nome || ''}…`;
+      const { _nome, ...dados } = d;
+      try { await api('arquivo_copiar', dados, true); ok++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
+    }
+    bt.disabled = false; prog.textContent = '';
+    if (ok) { toast(ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.'); m.fechar(); recarregar(); }
+  };
+}
+// troca: envia o arquivo novo com o mesmo tipo, material e identificação, e tira o antigo da pasta
+function trocarArquivo(p, a) {
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.onchange = async () => {
+    const novo = inp.files[0]; if (!novo) return;
+    toast(`Enviando ${novo.name}…`);
+    try { await enviarArquivoDrive(p.id, novo, a.tipo, a.item_id, a.rotulo); }
+    catch (e) { return toast(`Não foi possível trocar: ${e.message}`, true); }
+    const r = await api('arquivo_excluir', { id: a.id, motivo: 'Substituído por ' + novo.name }).catch(() => null);
+    if (!r) toast('O arquivo novo foi enviado, mas o antigo não saiu da pasta. Exclua o antigo pela lista.', true);
+    else if (r.drive_ok === false) toast('Arquivo trocado no sistema, mas o Drive não respondeu ao tirar o antigo. Confira a pasta do pedido.', true);
+    else toast('Arquivo trocado.');
+    recarregar();
+  };
+  inp.click();
+}
+function modalExcluirArquivo(a) {
+  const fin = ['orcamento', 'comprovante', 'nota_fiscal'].includes(a.tipo);
+  const m = abrirModal({ titulo: 'Excluir arquivo', corpo: `
+    <p style="margin:0 0 10px"><b>${esc(a.nome)}</b> (${esc(TIPOS_ARQ[a.tipo] || a.tipo)})</p>
+    <p class="small muted" style="margin:0 0 12px">${fin
+      ? 'O arquivo sai da pasta do pedido e fica guardado na pasta 99_PEDIDOS EXCLUÍDOS do Drive (orçamentos, comprovantes e notas fiscais nunca são apagados).'
+      : 'O arquivo vai para a lixeira do Drive compartilhado e pode ser recuperado por lá durante 30 dias.'} A exclusão fica registrada no histórico do pedido.</p>
+    <label class="campo">Motivo<input type="text" id="motivo-arq" placeholder="Ex.: arquivo errado, versão antiga"></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Excluir arquivo</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-c]').onclick = async () => {
+    const r = await api('arquivo_excluir', { id: a.id, motivo: m.el.querySelector('#motivo-arq').value.trim() || null });
+    m.fechar();
+    if (r.drive_ok === false) toast('Arquivo retirado do sistema, mas o Drive não respondeu. Confira a pasta do pedido.', true);
+    else toast('Arquivo excluído.');
+    recarregar();
+  };
 }
 function modalEnviarArquivo(p, podeTipos) {
   const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
@@ -1508,7 +1616,9 @@ function trocarComprovante(id) {
   inp.onchange = async () => {
     const a = inp.files[0]; if (!a) return;
     const path = await enviarComprovante(a, id);
-    await api('receb_anexo', { id, comprovante_path: path }); toast('Comprovante trocado.'); recarregar();
+    const r = await api('receb_anexo', { id, comprovante_path: path });
+    toast(r && r.drive_ok === false ? 'Comprovante trocado, mas o Drive não respondeu ao tirar o anterior. Confira a pasta do pedido.' : 'Comprovante trocado.', r && r.drive_ok === false);
+    recarregar();
   };
   inp.click();
 }
