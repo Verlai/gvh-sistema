@@ -716,6 +716,7 @@ rota('pedido', async (id, el) => {
   const excluido = !!p.excluido_em;
   definirTopoEm(el, `Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
     <a class="btn" href="#/pedidos">Voltar</a>
+    ${!excluido ? `<button class="btn" onclick="imprimirResumoPedido()">Imprimir resumo</button>` : ''}
     ${pode('cria_pedidos') ? `<button class="btn" onclick="repetirPedido()">Repetir pedido</button>` : ''}
     ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
     ${!pode('cria_pedidos') && pode('edita_financeiro') && !cancelado && !saiuParaEntrega(p) ? `<button class="btn" onclick="modalAlterarEntrega()">Alterar entrega</button>` : ''}
@@ -775,7 +776,8 @@ rota('pedido', async (id, el) => {
             ${pode('ve_valores') ? `<td class="dir num">${brl(i.valor_total)}<div class="small muted">${unitario(i.valor_total, i.quantidade)} un</div></td>` : ''}
             ${pode('ve_custo') ? `<td class="dir num">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
             <td class="dir" style="white-space:nowrap">${i.status !== 'cancelado' ? `<button class="btn peq" onclick="modalItem('${i.id}')">Editar</button>` : ''}
-              ${podeCancelarItem(p, i) ? `<button class="btn peq perigo" onclick="modalCancelarItem('${i.id}')">Cancelar item</button>` : ''}</td>
+              ${podeCancelarItem(p, i) ? `<button class="btn peq perigo" onclick="modalCancelarItem('${i.id}')">Cancelar item</button>` : ''}
+              ${i.status === 'cancelado' && p.status !== 'cancelado' && (pode('cria_pedidos') || p.confirma_producao) ? `<button class="btn peq" onclick="excluirItemCancelado('${i.id}')">Excluir</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>
       ${!cancelado && podeMover.length ? `
       <div class="barra-acao">
@@ -1145,6 +1147,11 @@ function modalCancelarItem(id) {
     const r = await ocupado(bc, () => api('cancelar_item', { id, motivo })); m.fechar(); resultadoCancelItem(r);
   };
 }
+async function excluirItemCancelado(id) {
+  const i = S.vistaAtual.dados.itens.find(x => x.id === id);
+  if (!await confirmar(`Excluir o item cancelado <b>${esc(i.descricao)}</b>? Ele some da lista do pedido; o cancelamento e o motivo continuam no histórico. Arquivos dele ficam em "Pedido inteiro".`, 'Excluir item', true)) return;
+  await api('excluir_item', { id }); toast('Item excluído.'); recarregar();
+}
 async function decidirCancelItem(id, aceitar) {
   let motivo = null;
   if (aceitar) { if (!await confirmar('Confirmar o cancelamento deste item? Ele sai do pedido e o total é recalculado. Se já foi enviado ao fornecedor, avise o fornecedor.', 'Confirmar cancelamento', true)) return; }
@@ -1166,13 +1173,37 @@ async function reativarPedido() {
 }
 
 // V10: abre o Novo pedido já preenchido (sem previsão e sem forma de pagamento, que o vendedor confere)
-function repetirPedido() {
-  const p = S.vistaAtual.dados;
+function repetirPedido(pedido) {
+  const p = pedido || S.vistaAtual.dados;
   S.cache.repetir = { numero: p.numero, cliente: p.cliente, forma_entrega: p.forma_entrega, endereco_entrega: p.endereco_entrega,
     observacoes: p.observacoes, observacao_geral: p.observacao_geral, desconto: p.desconto, desconto_percentual: p.desconto_percentual, frete: p.frete,
-    itens: (p.itens || []).map(i => ({ descricao: i.descricao, categoria_id: i.categoria_id, observacao: i.observacao, quantidade: i.quantidade,
+    itens: (p.itens || []).filter(i => i.status !== 'cancelado').map(i => ({ descricao: i.descricao, categoria_id: i.categoria_id, observacao: i.observacao, quantidade: i.quantidade,
       valor_total: i.valor_total, status: 'arte_a_fazer', precisa_acabamento: i.precisa_acabamento, acabamento_por: i.acabamento_por })) };
-  descartarVista('novo'); location.hash = '#/novo';
+  descartarVista('novo');
+  if (chaveRota() === 'novo') rotear(); else location.hash = '#/novo';
+}
+// V22: pedidos antigos do cliente escolhido no Novo pedido (com Repetir pedido)
+async function modalPedidosCliente(c) {
+  const m = abrirModal({ titulo: `Pedidos de ${c.nome_fantasia || c.nome}`, largo: true, corpo: '<p class="small muted">Carregando…</p>',
+    rodape: '<button class="btn" data-v>Fechar</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  let r; try { r = await api('listar_pedidos', { cliente_id: c.id, incluir_finalizados: true, limite: 30 }, true); }
+  catch (e) { m.el.querySelector('.modal-corpo').innerHTML = `<p style="color:var(--vermelho)">${esc(e.message)}</p>`; return; }
+  const lista = r.pedidos || [];
+  m.el.querySelector('.modal-corpo').innerHTML = !lista.length ? '<div class="vazio">Este cliente ainda não tem pedidos no sistema.</div>' : `
+    <p class="small muted" style="margin:0 0 10px">${r.total > lista.length ? `Mostrando os ${lista.length} mais recentes de ${r.total}.` : `${lista.length} pedido(s).`} "Repetir" troca o pedido que está sendo montado por uma cópia do escolhido.</p>
+    <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Itens</th>${pode('ve_valores') ? '<th class="dir">Valor</th>' : ''}<th>Situação</th><th></th></tr></thead><tbody>
+    ${lista.map(p => `<tr><td><b>${esc(p.numero)}</b><div class="small muted">${data(p.created_at)}</div></td>
+      <td class="small">${(p.itens || []).filter(i => i.status !== 'cancelado').map(i => `${esc(i.descricao)} <span class="muted">· ${num(i.quantidade)} un${pode('ve_valores') && i.valor_total != null ? ' · ' + brl(i.valor_total) : ''}</span>`).join('<br>') || '<span class="muted">—</span>'}</td>
+      ${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}
+      <td>${badgePed(p.status, p.status_nome)}</td>
+      <td class="dir" style="white-space:nowrap"><a class="btn peq" href="#/pedido/${p.id}" target="_blank" rel="noopener">Abrir</a> <button class="btn peq prim" data-rep="${p.id}">Repetir</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+  m.el.querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
+    if (!await confirmar('Repetir este pedido? O que já foi preenchido no Novo pedido será substituído.', 'Repetir pedido')) return;
+    const p = (await ocupado(b, () => api('obter_pedido', { id: b.dataset.rep }))).pedido;
+    m.fechar(); repetirPedido(p);
+  });
 }
 function modalEditarPedido() {
   let descEP;
@@ -1714,7 +1745,7 @@ function alertaPagamentoPedido(p, cancelado) {
   const meu = ['diretor','administrador'].includes(S.usuario.perfil) || (pode('cria_pedidos') && (p.vendedor_id === S.usuario.id || p.criado_por === S.usuario.id));
   if (FORMAS_LIBERAM.includes(p.forma_pagamento)) return `<div class="alerta" style="margin-bottom:12px">Ainda sem pagamento. Como a forma é <b>${esc(FORMAS_COMB[p.forma_pagamento])}</b>, os itens podem seguir para a pré-impressão (com a etiqueta "Falta pagamento").</div>`;
   if (p.autoriza_sem_pagamento) return `<div class="alerta" style="margin-bottom:12px"><b>Autorizado produzir sem pagamento</b>${p.autorizado_por_nome ? ' por ' + esc(p.autorizado_por_nome) : ''}${p.autorizado_em ? ' em ' + dataHora(p.autorizado_em) : ''}.
-    ${meu ? `<button class="btn link peq" onclick="autorizarSemPagamento(false)">Retirar autorização</button>` : ''}</div>`;
+    ${meu && !(p.itens || []).some(i => ordemStatus(i.status) >= 3 && i.status !== 'cancelado') ? `<button class="btn link peq" onclick="autorizarSemPagamento(false)">Retirar autorização</button>` : ''}</div>`;
   return `<div class="alerta erro" style="margin-bottom:12px"><b>Sem pagamento:</b> a arte só vai para a pré-impressão depois do pagamento ou com autorização do vendedor.
     ${meu ? `<button class="btn peq" style="margin-left:8px" onclick="autorizarSemPagamento(true)">Autorizar produzir sem pagamento</button>` : ''}</div>`;
 }
@@ -1809,10 +1840,15 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
   if (tipo) info(tipo === 'PJ' ? 'Pessoa jurídica' : 'Pessoa física'); else info('Digite o CPF (11 números) ou o CNPJ (14 caracteres).');
   aplicarTipo();
 
-  const preencher = (n, v) => { if (v && f[n] && !f[n].value.trim()) f[n].value = v; };
+  // o que veio da Receita fica marcado; se o documento mudar, sai (o que a pessoa digitou à mão fica)
+  const auto = {}; let cnpjBuscado = null;
+  const preencher = (n, v) => { if (v && f[n] && (!f[n].value.trim() || f[n].value === auto[n])) { f[n].value = v; auto[n] = v; } };
+  const limparAuto = () => { Object.entries(auto).forEach(([n, v]) => { if (f[n] && f[n].value === v) f[n].value = ''; delete auto[n]; }); cnpjBuscado = null; };
   const buscarCnpj = async cnpj => {
     try {
-      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`); if (!r.ok) return; const j = await r.json();
+      cnpjBuscado = cnpj;
+      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`); if (!r.ok || cnpjBuscado !== cnpj) return; const j = await r.json();
+      if (cnpjBuscado !== cnpj) return;
       preencher('nome', j.razao_social); preencher('nome_fantasia', j.nome_fantasia); preencher('cep', j.cep);
       preencher('logradouro', [j.descricao_tipo_de_logradouro, j.logradouro].filter(Boolean).join(' '));
       preencher('numero', j.numero); preencher('complemento', j.complemento); preencher('bairro', j.bairro);
@@ -1824,6 +1860,7 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
   let tmr;
   f.cpf_cnpj.oninput = () => {
     const d = soDoc(f.cpf_cnpj.value); $('#doc-dup', m.el).classList.add('hidden'); clearTimeout(tmr);
+    if (cnpjBuscado && d !== cnpjBuscado) limparAuto();
     if (d.length !== 11 && d.length !== 14) { info('Digite o CPF (11 números) ou o CNPJ (14 caracteres).'); if (s) s.disabled = true; return; }
     tmr = setTimeout(async () => {
       const r = await api('verificar_documento', { cpf_cnpj: d, id }, true).catch(() => null); if (!r) return;
@@ -2098,10 +2135,12 @@ rota('novo', async (_p, el) => {
 
   const escolher = c => {
     cliente = c;
-    $('#cli-escolhido').innerHTML = `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite)"><b>${esc(c.nome_fantasia || c.nome)}</b>
-      <span class="muted">${esc(fmtDoc(c.cpf_cnpj))} ${esc(fmtTel(c.whatsapp || c.telefone))}</span></div>
+    $('#cli-escolhido').innerHTML = `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span><b>${esc(c.nome_fantasia || c.nome)}</b>
+      <span class="muted">${esc(fmtDoc(c.cpf_cnpj))} ${esc(fmtTel(c.whatsapp || c.telefone))}</span></span>
+      <button type="button" class="btn peq" id="np-ped-antigos">Ver pedidos antigos</button></div>
       ${c.observacoes ? `<div class="alerta" style="margin-top:6px"><b>Observação do cliente:</b> ${esc(c.observacoes)}</div>` : ''}`;
     $('#busca-cli').value = ''; $('#np-cli-nome').value = ''; $('#np-cli-nome-box').classList.add('hidden');
+    $('#np-ped-antigos').onclick = () => modalPedidosCliente(c);
     entrega.definirCliente(c);
   };
   const entrega = ligarEntrega($('#f-np'));
@@ -2593,7 +2632,9 @@ function formularioCadastro(alvo, { textoBotao = 'Enviar cadastro', extraHtml = 
       </form>`;
   const f = alvo.querySelector('[data-cad]'); const F = new Proxy({}, { get: (_, n) => f.elements.namedItem(n) }); let tipo = null;
   const dica = (k, t, err) => { const e = alvo.querySelector(`[data-dica="${k}"]`); e.textContent = t; e.classList.toggle('err', !!err); };
-  const preencher = (n, v) => { if (v && F[n] && !F[n].value.trim()) F[n].value = v; };
+  const auto = {}; let cnpjBuscado = null;
+  const preencher = (n, v) => { if (v && F[n] && (!F[n].value.trim() || F[n].value === auto[n])) { F[n].value = v; auto[n] = v; } };
+  const limparAuto = () => { Object.entries(auto).forEach(([n, v]) => { if (F[n] && F[n].value === v) F[n].value = ''; delete auto[n]; }); cnpjBuscado = null; };
   const mostrarTipo = () => {
     alvo.querySelector('[data-resto]').style.display = tipo ? '' : 'none';
     alvo.querySelectorAll('[data-t]').forEach(e => e.style.display = e.dataset.t === tipo ? '' : 'none');
@@ -2602,6 +2643,7 @@ function formularioCadastro(alvo, { textoBotao = 'Enviar cadastro', extraHtml = 
   };
   F.cpf_cnpj.oninput = async () => {
     const d = F.cpf_cnpj.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+    if (cnpjBuscado && d !== cnpjBuscado) limparAuto();
     if (d.length !== 11 && d.length !== 14) { tipo = null; mostrarTipo(); dica('doc', 'Pessoa física: CPF · Empresa: CNPJ'); return; }
     const t = docValido(d);
     if (!t) { tipo = null; mostrarTipo(); dica('doc', 'CPF/CNPJ inválido. Confira o que foi digitado.', true); return; }
@@ -2609,7 +2651,8 @@ function formularioCadastro(alvo, { textoBotao = 'Enviar cadastro', extraHtml = 
     dica('doc', tipo === 'PJ' ? 'Empresa (CNPJ)' : 'Pessoa física (CPF)');
     if (novo) F.nome.focus();
     if (tipo === 'PJ' && /^\d{14}$/.test(d)) {
-      try { const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${d}`); if (r.ok) { const j = await r.json();
+      cnpjBuscado = d;
+      try { const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${d}`); if (r.ok && cnpjBuscado === d) { const j = await r.json(); if (cnpjBuscado !== d) return;
         preencher('nome', j.razao_social); preencher('nome_fantasia', j.nome_fantasia); preencher('cep', j.cep);
         preencher('logradouro', [j.descricao_tipo_de_logradouro, j.logradouro].filter(Boolean).join(' ')); preencher('numero', j.numero);
         preencher('complemento', j.complemento); preencher('bairro', j.bairro); preencher('cidade', j.municipio); preencher('uf', j.uf);
@@ -2727,6 +2770,74 @@ const EMPRESA = {
   site: 'gvh.com.br',
   condicoes_gerais: 'Valores válidos até a data de validade. A produção começa após a aprovação da arte e a confirmação do pagamento combinado. Prazos contados em dias úteis a partir da entrada em produção.'
 };
+// V24: resumo do pedido para mostrar ao cliente (sem custos, fornecedor ou observações internas)
+const ETAPA_CLIENTE = { arte_a_fazer: 'Criação da arte', arte_em_alteracao: 'Ajustes na arte', arte_em_aprovacao: 'Arte com você para aprovação',
+  pre_impressao: 'Preparando para produção', em_producao: 'Em produção', despachado: 'Em produção', expedicao: 'Pronto',
+  em_transporte: 'Saiu para entrega', aguardando_retirada: 'Pronto para retirada', entregue: 'Entregue' };
+function imprimirResumoPedido() {
+  const p = S.vistaAtual.dados, c = p.cliente || {};
+  const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dataBR = iso => iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+  const valores = pode('ve_valores');
+  const itens = (p.itens || []).filter(i => i.status !== 'cancelado');
+  const nomeCli = c.nome_fantasia || c.nome || '';
+  const linhasCli = [c.nome_fantasia ? c.nome : '', c.cpf_cnpj ? `${c.tipo_pessoa === 'PF' ? 'CPF' : 'CNPJ'} ${fmtDoc(c.cpf_cnpj)}` : '',
+    [c.telefone ? fmtTel(c.telefone) : '', c.email].filter(Boolean).join(' · ')].filter(Boolean);
+  const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, p.vendedor_email || EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
+  const ent = p.forma_entrega === 'entrega' ? `Entrega no endereço: ${p.endereco_entrega || 'a combinar'}` : `Retirada no balcão: ${EMPRESA.endereco}`;
+  const pago = Number(p.valor_pago || 0), aberto = Number(p.valor_em_aberto || 0);
+  const logo = $('#logo-gvh', document)?.src || '';
+  const titulo = `Pedido ${p.numero} - ${nomeCli}`.replace(/[\\/:*?"<>|]/g, '');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${esc(titulo)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Sora, Arial, sans-serif; color: #1d262d; font-size: 10.5pt; margin: 0; }
+  .topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 14px; border-bottom: 3px solid #00a986; }
+  .topo img { height: 58px; } .emp { text-align: right; font-size: 8.5pt; color: #5a6770; line-height: 1.5; } .emp b { color: #1d262d; font-size: 10pt; }
+  .titulo { display: flex; justify-content: space-between; align-items: flex-end; margin: 18px 0 14px; }
+  .titulo h1 { margin: 0; font-size: 20pt; font-weight: 700; letter-spacing: .5px; } .titulo h1 span { color: #00a986; }
+  .datas { text-align: right; font-size: 9pt; color: #5a6770; line-height: 1.6; } .datas b { color: #1d262d; }
+  .caixa { background: #f6f6f6; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+  .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; color: #8a959c; margin-bottom: 4px; font-weight: 600; }
+  .cli b { font-size: 11.5pt; } .cli div { font-size: 9pt; color: #5a6770; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; } thead { display: table-header-group; }
+  th { background: #1d262d; color: #fff; font-size: 8pt; text-transform: uppercase; letter-spacing: .6px; text-align: left; padding: 8px 10px; font-weight: 600; }
+  th.n, td.n { text-align: right; white-space: nowrap; } td { padding: 9px 10px; border-bottom: 1px solid #e2e6e8; vertical-align: top; } tr { page-break-inside: avoid; }
+  .etapa { display: inline-block; font-size: 8.5pt; padding: 2px 8px; border-radius: 10px; background: #e3f6f1; color: #00795f; font-weight: 600; white-space: nowrap; }
+  .totais { margin: 12px 0 0 auto; width: 300px; font-size: 10pt; } .totais div { display: flex; justify-content: space-between; padding: 4px 10px; }
+  .totais .final { background: #00a986; color: #fff; border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 9px 10px; margin-top: 6px; }
+  .grade { display: flex; gap: 16px; margin-top: 18px; } .grade > div { flex: 1; }
+  .bloco { margin-top: 18px; page-break-inside: avoid; } .bloco p { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
+  .rodape { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e2e6e8; font-size: 8pt; color: #8a959c; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="topo">${logo ? `<img src="${logo}" alt="GVH">` : `<b>${esc(EMPRESA.nome)}</b>`}
+    <div class="emp"><b>${esc(EMPRESA.nome)}</b>${empresaLinhas.map(l => `<br>${esc(l)}`).join('')}</div></div>
+  <div class="titulo"><h1>PEDIDO <span>Nº ${esc(p.numero)}</span></h1>
+    <div class="datas">Feito em <b>${dataBR(p.created_at)}</b>${p.data_prevista_entrega ? `<br>Previsão de entrega <b>${dataBR(p.data_prevista_entrega)}</b>` : ''}${p.vendedor_nome ? `<br>Atendimento: <b>${esc(p.vendedor_nome)}</b>` : ''}<br>Resumo emitido em ${new Date().toLocaleDateString('pt-BR')}</div></div>
+  <div class="caixa cli"><div class="rot">Cliente</div><b>${esc(nomeCli)}</b>${linhasCli.map(l => `<div>${esc(l)}</div>`).join('')}</div>
+  <table><thead><tr><th style="width:28px">#</th><th>Descrição</th><th class="n" style="width:70px">Qtd.</th>${valores ? '<th class="n" style="width:100px">Unitário</th><th class="n" style="width:110px">Total</th>' : ''}<th style="width:150px">Andamento</th></tr></thead>
+    <tbody>${itens.map((i, k) => `<tr><td>${k + 1}</td><td><b>${esc(i.descricao)}</b></td><td class="n">${num(i.quantidade)}</td>
+      ${valores ? `<td class="n">${unitario(i.valor_total, i.quantidade)}</td><td class="n">${din(i.valor_total)}</td>` : ''}
+      <td><span class="etapa">${esc(ETAPA_CLIENTE[i.status] || nomeStatusItem(i.status))}</span></td></tr>`).join('')}</tbody></table>
+  ${valores ? `<div class="totais">
+    ${Number(p.desconto) || Number(p.frete) || Number(p.desconto_pix_valor) ? `<div><span>Subtotal</span><span>${din(p.valor_itens)}</span></div>` : ''}
+    ${Number(p.desconto) ? `<div><span>${rotDesconto(p)}</span><span>- ${din(p.desconto)}</span></div>` : ''}
+    ${Number(p.desconto_pix_valor) ? `<div><span>Pix à vista (${PIX_PCT}%)</span><span>- ${din(p.desconto_pix_valor)}</span></div>` : ''}
+    ${Number(p.frete) ? `<div><span>Frete</span><span>${din(p.frete)}</span></div>` : ''}
+    <div class="final"><span>Total</span><span>${din(p.valor_total)}</span></div>
+    ${p.valor_pago != null ? `<div><span>Pago</span><span>${din(pago)}</span></div><div><b>Em aberto</b><b>${din(aberto)}</b></div>` : ''}</div>` : ''}
+  <div class="grade">
+    <div class="bloco"><div class="rot">Entrega</div><p>${esc(ent)}</p>${p.observacoes ? `<p style="margin-top:4px">${esc(p.observacoes)}</p>` : ''}</div>
+    ${p.forma_pagamento || p.condicoes_pagamento ? `<div class="bloco"><div class="rot">Forma de pagamento</div><p>${esc(p.condicoes_pagamento || FORMAS_COMB[p.forma_pagamento] || '')}</p></div>` : ''}
+  </div>
+  ${p.observacao_geral ? `<div class="bloco"><div class="rot">Observações</div><p>${esc(p.observacao_geral)}</p></div>` : ''}
+  <div class="bloco"><div class="rot">Importante</div><p>A produção começa após a aprovação da arte e a confirmação do pagamento combinado. A previsão de entrega pode mudar se a arte ou o pagamento atrasarem.</p></div>
+  <div class="rodape"><span>${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</span><span>Pedido nº ${esc(p.numero)}</span></div>
+</body></html>`;
+  abrirImpressao(html, titulo);
+}
 function imprimirOrcamento(o) {
   const c = o.cliente;
   const dataBR = iso => iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '';
@@ -2806,6 +2917,9 @@ function imprimirOrcamento(o) {
   ${EMPRESA.condicoes_gerais ? `<div class="bloco"><div class="rot">Condições gerais</div><p>${esc(EMPRESA.condicoes_gerais)}</p></div>` : ''}
   <div class="rodape"><span>${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</span><span>Orçamento nº ${esc(o.numero)}</span></div>
 </body></html>`;
+  abrirImpressao(html, titulo);
+}
+function abrirImpressao(html, titulo) {
   document.getElementById('frame-impressao')?.remove();
   const fr = document.createElement('iframe'); fr.id = 'frame-impressao';
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
