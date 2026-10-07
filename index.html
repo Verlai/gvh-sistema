@@ -149,6 +149,12 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .toast.erro{background:var(--vermelho)}
 .carregando{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--verde),var(--verde-2));z-index:70;animation:carr 1s linear infinite;background-size:200% 100%}
 @keyframes carr{from{background-position:0 0}to{background-position:200% 0}}
+.btn.ocupado{pointer-events:none;opacity:.85}
+.btn.ocupado::before{content:"";display:inline-block;width:12px;height:12px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:gira .7s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+.aguarde{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;z-index:95}
+.aguarde>div{background:#fff;color:#1d2a26;padding:18px 24px;border-radius:12px;display:flex;gap:12px;align-items:center;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.aguarde .roda{width:20px;height:20px;flex:none;border:3px solid #d8e2de;border-top-color:var(--verde);border-radius:50%;animation:gira .7s linear infinite}
 
 /* ===== Busca de cliente ===== */
 .busca-box{position:relative}
@@ -277,6 +283,19 @@ function toast(msg, erro = false) {
 
 let carregando = 0;
 function setCarregando(d) { carregando += d; $('#carregando').classList.toggle('hidden', carregando <= 0); }
+// mostra que o botão está trabalhando (bolinha girando) até a ação terminar
+async function ocupado(btn, fn) {
+  if (!btn) return fn();
+  btn.classList.add('ocupado'); btn.disabled = true;
+  try { return await fn(); } finally { btn.classList.remove('ocupado'); btn.disabled = false; }
+}
+// aviso no meio da tela para ações sem botão na tela (ex.: escolher arquivo e enviar)
+async function aguarde(texto, fn) {
+  const d = document.createElement('div'); d.className = 'aguarde';
+  d.innerHTML = `<div><span class="roda"></span><span>${esc(texto)}</span></div>`;
+  document.body.appendChild(d);
+  try { return await fn(); } finally { d.remove(); }
+}
 
 async function api(acao, dados = {}, silencioso = false) {
   setCarregando(1);
@@ -925,13 +944,13 @@ function modalTrazerArte(p, origemPronta = null) {
         pedidos.push({ pedido_id: p.id, item_id: item, arquivo_id: id, _nome: (origem.arquivos.find(a => a.id === id) || {}).nome });
       }
     }
-    bt.disabled = true; let ok = 0;
+    bt.disabled = true; bt.classList.add('ocupado'); let ok = 0;
     for (const [n, d] of pedidos.entries()) {
       prog.textContent = `Copiando ${n + 1} de ${pedidos.length}: ${d._nome || ''}…`;
       const { _nome, ...dados } = d;
       try { await api('arquivo_copiar', dados, true); ok++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
     }
-    bt.disabled = false; prog.textContent = '';
+    bt.disabled = false; bt.classList.remove('ocupado'); prog.textContent = '';
     if (ok) { toast(ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.'); m.fechar(); recarregar(); }
   };
 }
@@ -940,10 +959,13 @@ function trocarArquivo(p, a) {
   const inp = document.createElement('input'); inp.type = 'file';
   inp.onchange = async () => {
     const novo = inp.files[0]; if (!novo) return;
-    toast(`Enviando ${novo.name}…`);
-    try { await enviarArquivoDrive(p.id, novo, a.tipo, a.item_id, a.rotulo); }
-    catch (e) { return toast(`Não foi possível trocar: ${e.message}`, true); }
-    const r = await api('arquivo_excluir', { id: a.id, motivo: 'Substituído por ' + novo.name }).catch(() => null);
+    let r;
+    try {
+      r = await aguarde(`Trocando arquivo: ${novo.name}…`, async () => {
+        await enviarArquivoDrive(p.id, novo, a.tipo, a.item_id, a.rotulo);
+        return api('arquivo_excluir', { id: a.id, motivo: 'Substituído por ' + novo.name }).catch(() => null);
+      });
+    } catch (e) { return toast(`Não foi possível trocar: ${e.message}`, true); }
     if (!r) toast('O arquivo novo foi enviado, mas o antigo não saiu da pasta. Exclua o antigo pela lista.', true);
     else if (r.drive_ok === false) toast('Arquivo trocado no sistema, mas o Drive não respondeu ao tirar o antigo. Confira a pasta do pedido.', true);
     else toast('Arquivo trocado.');
@@ -953,16 +975,20 @@ function trocarArquivo(p, a) {
 }
 function modalExcluirArquivo(a) {
   const fin = ['orcamento', 'comprovante', 'nota_fiscal'].includes(a.tipo);
+  const nomeTipo = (TIPOS_ARQ[a.tipo] || 'arquivo').toLowerCase();
   const m = abrirModal({ titulo: 'Excluir arquivo', corpo: `
     <p style="margin:0 0 10px"><b>${esc(a.nome)}</b> (${esc(TIPOS_ARQ[a.tipo] || a.tipo)})</p>
     <p class="small muted" style="margin:0 0 12px">${fin
-      ? 'O arquivo sai da pasta do pedido e fica guardado na pasta 99_PEDIDOS EXCLUÍDOS do Drive (orçamentos, comprovantes e notas fiscais nunca são apagados).'
-      : 'O arquivo vai para a lixeira do Drive compartilhado e pode ser recuperado por lá durante 30 dias.'} A exclusão fica registrada no histórico do pedido.</p>
-    <label class="campo">Motivo<input type="text" id="motivo-arq" placeholder="Ex.: arquivo errado, versão antiga"></label>`,
+      ? `O ${esc(nomeTipo)} será excluído. Informe o motivo para confirmar.`
+      : 'O arquivo vai para a lixeira do Drive compartilhado e pode ser recuperado por lá durante 30 dias. A exclusão fica registrada no histórico do pedido.'}</p>
+    <label class="campo">Motivo${fin ? ' *' : ''}<input type="text" id="motivo-arq" placeholder="Ex.: arquivo errado, versão antiga"></label>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Excluir arquivo</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelector('[data-c]').onclick = async () => {
-    const r = await api('arquivo_excluir', { id: a.id, motivo: m.el.querySelector('#motivo-arq').value.trim() || null });
+  const bc = m.el.querySelector('[data-c]');
+  bc.onclick = async () => {
+    const motivo = m.el.querySelector('#motivo-arq').value.trim();
+    if (fin && !motivo) return toast('Informe o motivo da exclusão.', true);
+    const r = await ocupado(bc, () => api('arquivo_excluir', { id: a.id, motivo: motivo || null }));
     m.fechar();
     if (r.drive_ok === false) toast('Arquivo retirado do sistema, mas o Drive não respondeu. Confira a pasta do pedido.', true);
     else toast('Arquivo excluído.');
@@ -990,7 +1016,7 @@ function modalEnviarArquivo(p, podeTipos) {
     const f = m.el.querySelector('#f-arq'); const arqs = [...f.elements.arquivos.files];
     if (!arqs.length) return toast('Escolha pelo menos um arquivo.', true);
     if (f.elements.tipo.value === 'producao' && !f.elements.item_id.value) return toast('Escolha o material (item) desta arte final.', true);
-    bt.disabled = true; const prog = m.el.querySelector('#arq-prog'); let ok = 0;
+    bt.disabled = true; bt.classList.add('ocupado'); const prog = m.el.querySelector('#arq-prog'); let ok = 0;
     for (const [n, arq] of arqs.entries()) {
       try {
         await enviarArquivoDrive(p.id, arq, f.elements.tipo.value, f.elements.item_id.value, f.elements.rotulo.value.trim(), frac =>
@@ -998,7 +1024,7 @@ function modalEnviarArquivo(p, podeTipos) {
         ok++;
       } catch (e) { toast(`${arq.name}: ${e.message}`, true); }
     }
-    bt.disabled = false;
+    bt.disabled = false; bt.classList.remove('ocupado');
     if (ok) { toast(ok > 1 ? `${ok} arquivos enviados ao Drive.` : 'Arquivo enviado ao Drive.'); m.fechar(); recarregar(); }
   };
 }
@@ -1290,8 +1316,13 @@ function modalBaixa(id, conferir) {
     const f = formDados($('#f-baixa', m.el));
     if (!f.forma_pagamento) return toast('Informe a forma de pagamento.', true);
     const a = $('#baixa-comp', m.el).files[0];
-    if (a) { try { f.comprovante_path = await enviarComprovante(a, r.id); } catch { return; } }
-    await api('baixar_recebimento', { id: r.id, ...f, conferir: !!conferir }); m.fechar(); toast('Pagamento registrado.'); recarregar();
+    try {
+      await ocupado(m.el.querySelector('[data-s]'), async () => {
+        if (a) f.comprovante_path = await enviarComprovante(a, r.id);
+        await api('baixar_recebimento', { id: r.id, ...f, conferir: !!conferir });
+      });
+    } catch { return; }
+    m.fechar(); toast('Pagamento registrado.'); recarregar();
   };
 }
 async function desfazerBaixa(id) {
@@ -1366,11 +1397,13 @@ async function enviarComprovante(arquivo, recebimentoId) {
 async function anexarComprovantes(pag, resp) {
   const pend = Object.entries((pag && pag.comprovantes) || {}); if (!pend.length) return;
   const ids = (resp && resp.recebimentos_ids) || {}; let falhas = 0;
-  for (const [chave, arq] of pend) {
-    const rid = ids[chave]; if (!rid) { falhas++; continue; }
-    try { const path = await enviarComprovante(arq, rid); await api('receb_anexo', { id: rid, comprovante_path: path }, true); }
-    catch { falhas++; }
-  }
+  await aguarde(pend.length > 1 ? 'Anexando comprovantes…' : 'Anexando comprovante…', async () => {
+    for (const [chave, arq] of pend) {
+      const rid = ids[chave]; if (!rid) { falhas++; continue; }
+      try { const path = await enviarComprovante(arq, rid); await api('receb_anexo', { id: rid, comprovante_path: path }, true); }
+      catch { falhas++; }
+    }
+  });
   if (falhas) toast(`${falhas > 1 ? falhas + ' comprovantes não foram anexados' : 'Um comprovante não foi anexado'}. Anexe pelo pagamento, no bloco Financeiro do pedido.`, true);
 }
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
@@ -1615,8 +1648,9 @@ function trocarComprovante(id) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = EXT_COMP;
   inp.onchange = async () => {
     const a = inp.files[0]; if (!a) return;
-    const path = await enviarComprovante(a, id);
-    const r = await api('receb_anexo', { id, comprovante_path: path });
+    let r;
+    try { r = await aguarde('Trocando comprovante…', async () => api('receb_anexo', { id, comprovante_path: await enviarComprovante(a, id) })); }
+    catch { return; }
     toast(r && r.drive_ok === false ? 'Comprovante trocado, mas o Drive não respondeu ao tirar o anterior. Confira a pasta do pedido.' : 'Comprovante trocado.', r && r.drive_ok === false);
     recarregar();
   };
