@@ -1193,11 +1193,11 @@ async function modalPedidosCliente(c) {
   m.el.querySelector('.modal-corpo').innerHTML = !lista.length ? '<div class="vazio">Este cliente ainda não tem pedidos no sistema.</div>' : `
     <p class="small muted" style="margin:0 0 10px">${r.total > lista.length ? `Mostrando os ${lista.length} mais recentes de ${r.total}.` : `${lista.length} pedido(s).`} "Repetir" troca o pedido que está sendo montado por uma cópia do escolhido.</p>
     <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Itens</th>${pode('ve_valores') ? '<th class="dir">Valor</th>' : ''}<th>Situação</th><th></th></tr></thead><tbody>
-    ${lista.map(p => `<tr><td><b>${esc(p.numero)}</b><div class="small muted">${data(p.created_at)}</div></td>
+    ${lista.map(p => `<tr><td><b>${esc(p.numero)}</b><div class="small muted">${data(p.created_at)}</div>${(p.itens || []).some(i => i.status === 'cancelado') && (p.itens || []).some(i => i.status !== 'cancelado') ? '<div class="small muted">itens cancelados não aparecem</div>' : ''}</td>
       <td class="small">${(p.itens || []).filter(i => i.status !== 'cancelado').map(i => `${esc(i.descricao)} <span class="muted">· ${num(i.quantidade)} un${pode('ve_valores') && i.valor_total != null ? ' · ' + brl(i.valor_total) : ''}</span>`).join('<br>') || '<span class="muted">—</span>'}</td>
       ${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}
       <td>${badgePed(p.status, p.status_nome)}</td>
-      <td class="dir" style="white-space:nowrap"><a class="btn peq" href="#/pedido/${p.id}" target="_blank" rel="noopener">Abrir</a> <button class="btn peq prim" data-rep="${p.id}">Repetir</button></td></tr>`).join('')}
+      <td class="dir" style="white-space:nowrap"><a class="btn peq" href="#/pedido/${p.id}" target="_blank" rel="noopener">Abrir</a>${(p.itens || []).some(i => i.status !== 'cancelado') ? ` <button class="btn peq prim" data-rep="${p.id}">Repetir</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>`;
   m.el.querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
     if (!await confirmar('Repetir este pedido? O que já foi preenchido no Novo pedido será substituído.', 'Repetir pedido')) return;
@@ -2151,6 +2151,7 @@ rota('novo', async (_p, el) => {
   coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
   // 1º boleto e restante acompanham a previsão de entrega
   $('#np-prev').onchange = () => coletarPagamento.atualizar();
+  atualizarTotal();   // pedido repetido já chega com itens: calcula o total na abertura
 
   $('#np-validade').value = somaDias(hoje(), 7);
   const modoOrc = () => $('#np-orc').checked;
