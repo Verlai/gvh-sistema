@@ -76,7 +76,7 @@ h3{font-size:14px;font-weight:500}
 .btn.peq{padding:5px 10px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--verde);outline-offset:2px}
-label.campo{display:grid;gap:5px;font-size:12px;color:var(--texto-2);font-weight:500}
+label.campo,div.campo{display:grid;gap:5px;font-size:12px;color:var(--texto-2);font-weight:500}
 input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=month],input[type=search],select,textarea{
   width:100%;border:1px solid var(--linha);border-radius:var(--raio-s);padding:8px 10px;background:#fff;font-size:14px;color:var(--grafite)}
 textarea{min-height:70px;resize:vertical}
@@ -106,6 +106,10 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid var(--linha);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}
 .chip.ativo{background:var(--grafite);color:#fff;border-color:var(--grafite)}
+.desc-tipo{display:inline-flex;margin-left:6px;vertical-align:middle;border:1px solid var(--linha);border-radius:6px;overflow:hidden}
+.desc-tipo button{border:0;background:#fff;font-size:11px;padding:1px 8px;cursor:pointer;color:var(--texto-2)}
+.desc-tipo button.ativo{background:var(--grafite);color:#fff}
+.desc-tipo button:disabled{cursor:default}
 
 .vazio{text-align:center;padding:40px 16px;color:var(--texto-2)}
 .alerta{border-radius:var(--raio-s);padding:10px 14px;font-size:13px;background:var(--ambar-bg);color:#7d520d}
@@ -371,6 +375,7 @@ const COR_STATUS = {
 };
 const COR_FIN = { pago:'b-verde', atrasado:'b-vermelho', boleto:'b-azul', sinal_pago:'b-ambar', aguardando_pagamento:'b-cinza' };
 const nomeStatusItem = c => (S.base?.status_item || []).find(s => s.codigo === c)?.nome || c;
+const ordemStatus = c => Number((S.base?.status_item || []).find(s => s.codigo === c)?.ordem ?? 0);
 const nomeStatusPed = c => (S.base?.status_pedido || []).find(s => s.codigo === c)?.nome || c;
 const badge = (txt, cls) => `<span class="badge ${cls || 'b-cinza'}">${esc(txt)}</span>`;
 const badgeItem = c => badge(nomeStatusItem(c), COR_STATUS[c]);
@@ -621,7 +626,8 @@ rota('inicio', async (_p, el) => {
     <div class="etapas">${ETAPAS.map(([k, n]) => `
       <button class="${qtd(k) ? 'tem' : ''}" onclick="irPedidos('${k}')"><span class="n num">${qtd(k)}</span><span class="t">${esc(n)}</span></button>`).join('')}
     </div>
-    ${(r.orcamentos_aceitos || []).map(o => `<a class="alerta" href="#/orcamento/${o.id}" style="display:block;margin-top:16px;text-decoration:none;color:var(--grafite);background:var(--verde-bg)"><b>Orçamento ${esc(o.numero)} aprovado pelo cliente</b> · ${esc(o.cliente || '')} — aprovado por ${esc(o.aprovado_por || '')} em ${dataHoraLonga(o.aprovado_em)}${o.vendedor ? ` · vendedor ${esc(o.vendedor)}` : ''}. Abra para transformar em pedido.</a>`).join('')}
+    ${(r.orcamentos_aceitos || []).map(o => `<a class="alerta" href="#/orcamento/${o.id}" style="display:block;margin-top:16px;text-decoration:none;color:var(--grafite);background:var(--verde-bg)"><b>Orçamento ${esc(o.numero)} aprovado pelo cliente</b> · ${esc(o.cliente || '')} — aprovado por ${esc(o.aprovado_por || '')} em ${dataHoraLonga(o.aprovado_em)}${o.vendedor ? ` · vendedor ${esc(o.vendedor)}` : ''}. ${o.cadastro_pendente ? 'O cliente enviou o cadastro: confira o cadastro e depois transforme em pedido.' : 'Abra para transformar em pedido.'}</a>`).join('')}
+    ${(r.pendencias_producao || []).map(x => `<a class="alerta" href="#/pedido/${x.pedido_id}" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>${x.tipo === 'cancelamento' ? 'Pedido de cancelamento de item' : 'Troca de arte para confirmar'}</b> · pedido ${esc(x.pedido_numero)} · ${esc(x.item || '')} — pedido por ${esc(x.quem || '')}. Abra o pedido para confirmar ou recusar.</a>`).join('')}
     ${r.cadastros_link ? `<a class="alerta" href="#/clientes" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Cadastros pelo link:</b> ${r.cadastros_link} ${r.cadastros_link > 1 ? 'clientes enviaram' : 'cliente enviou'} o cadastro e ${r.cadastros_link > 1 ? 'aguardam' : 'aguarda'} conferência em Clientes.</a>` : ''}
     ${fin && fin.a_conferir && pode('edita_financeiro') ? `<a class="alerta" href="#/conciliacao" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Conciliação:</b> ${fin.a_conferir} ${fin.a_conferir > 1 ? 'pagamentos marcados como pagos aguardam' : 'pagamento marcado como pago aguarda'} conferência.</a>` : ''}
     ${r.acabamento_chegou && veFornecedor() ? `<a class="alerta" href="#/producao" onclick="S.cache.abaProd='em_producao'" style="display:block;margin-top:16px;text-decoration:none;color:inherit"><b>Chegou para acabamento:</b> ${r.acabamento_chegou} ${r.acabamento_chegou > 1 ? 'itens voltaram' : 'item voltou'} para a produção. Veja em Pré-impressão e produção.</a>` : ''}
@@ -754,7 +760,11 @@ rota('pedido', async (id, el) => {
           <tr>
             <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
             <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
-                ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+                ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}
+                ${i.status === 'cancelado' && i.cancel_motivo ? `<div class="small" style="margin-top:4px;color:var(--vermelho)">Cancelado: ${esc(i.cancel_motivo)}</div>` : ''}
+                ${i.cancel_solicitado_em && i.status !== 'cancelado' ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px"><b>Pedido de cancelamento</b> por ${esc(i.cancel_solicitado_por_nome || '')}: ${esc(i.cancel_motivo || '')}
+                  ${p.confirma_producao ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq perigo" onclick="decidirCancelItem('${i.id}',true)">Confirmar cancelamento</button><button class="btn peq" onclick="decidirCancelItem('${i.id}',false)">Recusar</button></div>` : '<div class="muted">Aguardando a confirmação da pré-impressão.</div>'}</div>` : ''}
+                ${i.troca_arte_pendente ? `<div style="margin-top:4px">${badge('Troca de arte aguardando a pré-impressão', 'b-ambar')}</div>` : ''}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
             <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
                 ${i.codigo_producao ? `<div>Cód. fornecedor ${esc(i.codigo_producao)}</div>` : ''}
@@ -764,18 +774,19 @@ rota('pedido', async (id, el) => {
                 ${!i.arte_url && !i.arte_drive_url ? '<span class="muted">—</span>' : ''}</td>
             ${pode('ve_valores') ? `<td class="dir num">${brl(i.valor_total)}<div class="small muted">${unitario(i.valor_total, i.quantidade)} un</div></td>` : ''}
             ${pode('ve_custo') ? `<td class="dir num">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
-            <td class="dir"><button class="btn peq" onclick="modalItem('${i.id}')">Editar</button></td>
+            <td class="dir" style="white-space:nowrap">${i.status !== 'cancelado' ? `<button class="btn peq" onclick="modalItem('${i.id}')">Editar</button>` : ''}
+              ${podeCancelarItem(p, i) ? `<button class="btn peq perigo" onclick="modalCancelarItem('${i.id}')">Cancelar item</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>
       ${!cancelado && podeMover.length ? `
       <div class="barra-acao">
         <span id="sel-cont">Nenhum item selecionado</span>
         <select id="novo-status" aria-label="Novo status"><option value="">Mover para…</option>
-          ${podeMover.map(s => `<option value="${s}">${esc(nomeStatusItem(s))}</option>`).join('')}
+          ${podeMover.filter(s => s !== 'cancelado').map(s => `<option value="${s}">${esc(nomeStatusItem(s))}</option>`).join('')}
         </select>
         <button class="btn prim" onclick="moverSelecionados()">Mover itens</button>
       </div>` : ''}
       ${pode('ve_valores') ? `<div class="totais">
-        <span class="muted">Itens ${brl(p.valor_itens)}${Number(p.desconto) ? ` · Desconto ${brl(p.desconto)}` : ''}${Number(p.frete) ? ` · Frete ${brl(p.frete)}` : ''}</span>
+        <span class="muted">Itens ${brl(p.valor_itens)}${Number(p.desconto) ? ` · ${rotDesconto(p)} ${brl(p.desconto)}` : ''}${Number(p.desconto_pix_valor) ? ` · Pix à vista (${PIX_PCT}%) ${brl(p.desconto_pix_valor)}` : ''}${Number(p.frete) ? ` · Frete ${brl(p.frete)}` : ''}</span>
         <b class="num">${brl(p.valor_total)}</b>
         ${pode('ve_custo') && p.custo_total != null ? `<span class="small muted">Custo ${brl(p.custo_total)} · Margem ${brl(p.valor_total - p.custo_total)}${p.valor_total > 0 ? ` (${Math.round((p.valor_total - p.custo_total) / p.valor_total * 100)}%)` : ''}</span>` : ''}
       </div>` : ''}
@@ -836,11 +847,18 @@ async function carregarArquivosPedido(p, el) {
   const pe = r.pode_enviar || {};
   const todos = r.arquivos || [];
   const linhaArq = (a, comTipo = true) => `<tr>${comTipo ? `<td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>` : ''}
-        <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}copiado do ${esc(a.origem)}` : ''}</div></td>
+        <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}copiado do ${esc(a.origem)}` : ''}</div>
+          ${a.troca_pendente ? `<div style="margin-top:4px">${badge('Troca pendente · aguardando a pré-impressão', 'b-ambar')}${a.troca_substitui_nome ? ` <span class="small muted">no lugar de ${esc(a.troca_substitui_nome)}</span>` : ''}</div>` : ''}</td>
         <td class="small">${esc(a.criado_por_nome || '')}<div class="muted">${dataHora(a.created_at)}</div></td>
-        <td class="dir" style="white-space:nowrap">${a.em_uso
-          ? `<button class="btn peq" onclick="trocarComprovante('${a.recebimento_id}')" title="Troca o comprovante deste pagamento">Trocar</button>`
-          : pe[a.tipo] ? `<button class="btn peq" data-trocar-arq="${a.id}" title="Envia um arquivo novo no lugar deste">Trocar</button> <button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>` : ''}</td></tr>`;
+        <td class="dir" style="white-space:nowrap">${acoesArq(a)}</td></tr>`;
+  const acoesArq = a => {
+    if (a.em_uso) return `<button class="btn peq" onclick="trocarComprovante('${a.recebimento_id}')" title="Troca o comprovante deste pagamento">Trocar</button>`;
+    if (a.troca_pendente) return `${r.decide_troca ? `<button class="btn peq prim" data-troca-dec="${a.id}" data-aceitar="1">Aceitar troca</button> <button class="btn peq" data-troca-dec="${a.id}" data-aceitar="0">Recusar</button>` : ''}
+      ${a.criado_por === S.usuario.id ? ` <button class="btn peq" data-excluir-arq="${a.id}" title="Retira o pedido de troca">Desistir</button>` : ''}`;
+    if (!pe[a.tipo]) return '';
+    if (a.travado && !r.decide_troca) return `<button class="btn peq" data-trocar-arq="${a.id}" title="O item já está na pré-impressão/produção: o arquivo novo vai para a confirmação da pré-impressão">Pedir troca</button>`;
+    return `<button class="btn peq" data-trocar-arq="${a.id}" title="Envia um arquivo novo no lugar deste">Trocar</button> <button class="btn peq" data-excluir-arq="${a.id}">Excluir</button>`;
+  };
 
   // bloco "Arquivos de arte": só material do cliente, provas e artes finais
   const arqs = todos.filter(a => GRUPO_ARQ(a.tipo) === 'artes');
@@ -854,7 +872,7 @@ async function carregarArquivosPedido(p, el) {
         ${pe.producao && (p.itens || []).length ? `<button class="btn" data-trazer-arte>Trazer arte de outro pedido</button>` : ''}
         ${tiposArte.length ? `<button class="btn" data-enviar-arq>Enviar arquivo</button>` : ''}</div></div>
     ${grupos.length ? grupos.map(g => `<h3 style="font-size:14px;margin:14px 0 6px">${esc(g.titulo)}</h3>
-      <div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:90px"></th></tr></thead>
+      <div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:150px"></th></tr></thead>
       <tbody>${g.lista.map(a => linhaArq(a)).join('')}</tbody></table></div>`).join('')
       : `<p class="small muted" style="margin:0">Nenhum arquivo de arte ainda. A pasta do pedido no Drive é criada sozinha quando o primeiro arquivo for enviado.</p>`}`;
 
@@ -875,6 +893,7 @@ async function carregarArquivosPedido(p, el) {
   if (b) b.onclick = () => modalEnviarArquivo(p, tiposArte);
   el.querySelectorAll('[data-excluir-arq]').forEach(bx => bx.onclick = () => modalExcluirArquivo(todos.find(a => a.id === bx.dataset.excluirArq)));
   el.querySelectorAll('[data-trocar-arq]').forEach(bx => bx.onclick = () => trocarArquivo(p, todos.find(a => a.id === bx.dataset.trocarArq)));
+  el.querySelectorAll('[data-troca-dec]').forEach(bx => bx.onclick = () => decidirTrocaArte(todos.find(a => a.id === bx.dataset.trocaDec), bx.dataset.aceitar === '1'));
   const bt = alvo.querySelector('[data-trazer-arte]'); if (bt) bt.onclick = () => modalTrazerArte(p);
   // pedido recém-criado pelo "Repetir pedido": oferece trazer as artes finais do pedido original
   const rp = S.cache.trazerArtes;
@@ -944,17 +963,18 @@ function modalTrazerArte(p, origemPronta = null) {
         pedidos.push({ pedido_id: p.id, item_id: item, arquivo_id: id, _nome: (origem.arquivos.find(a => a.id === id) || {}).nome });
       }
     }
-    bt.disabled = true; bt.classList.add('ocupado'); let ok = 0;
+    bt.disabled = true; bt.classList.add('ocupado'); let ok = 0, pend = 0;
     for (const [n, d] of pedidos.entries()) {
       prog.textContent = `Copiando ${n + 1} de ${pedidos.length}: ${d._nome || ''}…`;
       const { _nome, ...dados } = d;
-      try { await api('arquivo_copiar', dados, true); ok++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
+      try { const rc = await api('arquivo_copiar', dados, true); ok++; if (rc.troca_pendente) pend++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
     }
     bt.disabled = false; bt.classList.remove('ocupado'); prog.textContent = '';
-    if (ok) { toast(ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.'); m.fechar(); recarregar(); }
+    if (ok) { toast((ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.') + (pend ? ' Material já na pré-impressão/produção: a arte vai para a confirmação da pré-impressão.' : '')); m.fechar(); recarregar(); }
   };
 }
 // troca: envia o arquivo novo com o mesmo tipo, material e identificação, e tira o antigo da pasta
+// V17: arte final de item já na pré-impressão/produção vira pedido de troca (a antiga continua valendo até a pré-impressão aceitar)
 function trocarArquivo(p, a) {
   const inp = document.createElement('input'); inp.type = 'file';
   inp.onchange = async () => {
@@ -962,16 +982,28 @@ function trocarArquivo(p, a) {
     let r;
     try {
       r = await aguarde(`Trocando arquivo: ${novo.name}…`, async () => {
-        await enviarArquivoDrive(p.id, novo, a.tipo, a.item_id, a.rotulo);
+        const info = {};
+        await enviarArquivoDrive(p.id, novo, a.tipo, a.item_id, a.rotulo, null, null, { substitui_id: a.id, info });
+        if (info.troca_pendente) return { pendente: true };
         return api('arquivo_excluir', { id: a.id, motivo: 'Substituído por ' + novo.name }).catch(() => null);
       });
     } catch (e) { return toast(`Não foi possível trocar: ${e.message}`, true); }
-    if (!r) toast('O arquivo novo foi enviado, mas o antigo não saiu da pasta. Exclua o antigo pela lista.', true);
+    if (r && r.pendente) toast('Arte enviada. A troca vai para a confirmação da pré-impressão; até lá, a arte atual continua valendo.');
+    else if (!r) toast('O arquivo novo foi enviado, mas o antigo não saiu da pasta. Exclua o antigo pela lista.', true);
     else if (r.drive_ok === false) toast('Arquivo trocado no sistema, mas o Drive não respondeu ao tirar o antigo. Confira a pasta do pedido.', true);
     else toast('Arquivo trocado.');
     recarregar();
   };
   inp.click();
+}
+async function decidirTrocaArte(a, aceitar) {
+  let motivo = null;
+  if (aceitar) { if (!await confirmar(`Aceitar a troca? ${esc(a.nome)} passa a ser a arte final do item${a.troca_substitui_nome ? ` e ${esc(a.troca_substitui_nome)} vai para a lixeira do Drive` : ''}. Se o item já está com o fornecedor, avise o fornecedor.`, 'Aceitar troca')) return; }
+  else { motivo = prompt('Por que a troca foi recusada? (aparece no histórico do pedido)'); if (!motivo || !motivo.trim()) return; }
+  const r = await api('decidir_troca_arte', { id: a.id, aceitar, motivo: motivo && motivo.trim() });
+  if (r.drive_ok === false) toast('Decisão registrada, mas o Drive não respondeu ao tirar o arquivo. Confira a pasta do pedido.', true);
+  else toast(aceitar ? 'Troca aceita: a arte nova já vale para a produção.' : 'Troca recusada.');
+  recarregar();
 }
 function modalExcluirArquivo(a) {
   const fin = ['orcamento', 'comprovante', 'nota_fiscal'].includes(a.tipo);
@@ -1016,21 +1048,23 @@ function modalEnviarArquivo(p, podeTipos) {
     const f = m.el.querySelector('#f-arq'); const arqs = [...f.elements.arquivos.files];
     if (!arqs.length) return toast('Escolha pelo menos um arquivo.', true);
     if (f.elements.tipo.value === 'producao' && !f.elements.item_id.value) return toast('Escolha o material (item) desta arte final.', true);
-    bt.disabled = true; bt.classList.add('ocupado'); const prog = m.el.querySelector('#arq-prog'); let ok = 0;
+    bt.disabled = true; bt.classList.add('ocupado'); const prog = m.el.querySelector('#arq-prog'); let ok = 0, pend = 0;
     for (const [n, arq] of arqs.entries()) {
       try {
+        const info = {};
         await enviarArquivoDrive(p.id, arq, f.elements.tipo.value, f.elements.item_id.value, f.elements.rotulo.value.trim(), frac =>
-          prog.textContent = `Enviando ${n + 1} de ${arqs.length}: ${arq.name} — ${Math.round(frac * 100)}%`);
-        ok++;
+          prog.textContent = `Enviando ${n + 1} de ${arqs.length}: ${arq.name} — ${Math.round(frac * 100)}%`, null, { info });
+        ok++; if (info.troca_pendente) pend++;
       } catch (e) { toast(`${arq.name}: ${e.message}`, true); }
     }
     bt.disabled = false; bt.classList.remove('ocupado');
-    if (ok) { toast(ok > 1 ? `${ok} arquivos enviados ao Drive.` : 'Arquivo enviado ao Drive.'); m.fechar(); recarregar(); }
+    if (ok) { toast((ok > 1 ? `${ok} arquivos enviados ao Drive.` : 'Arquivo enviado ao Drive.') + (pend ? ' O item já está na pré-impressão/produção: a arte nova vai para a confirmação da pré-impressão.' : '')); m.fechar(); recarregar(); }
   };
 }
-async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoProgresso, recebimentoId) {
+async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoProgresso, recebimentoId, opts = {}) {
   const mime = arquivo.type || 'application/octet-stream';
-  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, recebimento_id: recebimentoId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size }, true);
+  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, recebimento_id: recebimentoId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size, substitui_id: opts.substitui_id || null }, true);
+  if (opts.info) opts.info.troca_pendente = !!r.troca_pendente;
   if (!r.upload_url) throw new Error('O Drive não devolveu o endereço de envio.');
   const resp = await new Promise((ok, falha) => {
     const x = new XMLHttpRequest();
@@ -1058,7 +1092,6 @@ async function moverSelecionados() {
   if (!itens.length) return toast('Selecione os itens que deseja mover.', true);
   const status = $('#novo-status').value;
   if (!status) return toast('Escolha para qual status mover.', true);
-  if (status === 'cancelado' && !await confirmar(`Cancelar ${itens.length > 1 ? 'os itens selecionados' : 'o item selecionado'}?`, 'Cancelar itens', true)) return;
   await api('mudar_status_itens', { itens, status });
   toast('Itens atualizados.'); recarregar();
 }
@@ -1091,6 +1124,42 @@ async function cancelarPedido(excluir = false) {
     else { toast('Pedido cancelado. Os itens foram parados.'); recarregar(); }
   };
 }
+/* V16: cancelar item (em arte: na hora; na pré-impressão/produção: com a confirmação da pré-impressão; depois disso: não cancela) */
+const podeCancelarItem = (p, i) => p.status !== 'cancelado' && !p.excluido_em && i.status !== 'cancelado' && !i.cancel_solicitado_em
+  && ordemStatus(i.status) < 5 && (pode('cria_pedidos') || p.confirma_producao);
+function modalCancelarItem(id) {
+  const p = S.vistaAtual.dados; const i = p.itens.find(x => x.id === id);
+  if (p.itens.filter(x => x.status !== 'cancelado').length <= 1) return toast('Este é o único item ativo do pedido. Para cancelar tudo, use "Cancelar pedido".', true);
+  const direto = ordemStatus(i.status) <= 2 || p.confirma_producao;
+  const m = abrirModal({ titulo: 'Cancelar item', corpo: `
+    <p style="margin:0 0 8px"><b>${esc(i.descricao)}</b> · ${badgeItem(i.status)}${pode('ve_valores') ? ' · ' + brl(i.valor_total) : ''}</p>
+    <p class="small muted" style="margin:0 0 12px">${direto
+      ? 'O item sai do pedido e o total é recalculado. Tudo fica no histórico.'
+      : 'O item já está na pré-impressão/produção: o cancelamento vai para a confirmação da pré-impressão. Até a decisão, o item não avança.'}</p>
+    <label class="campo">Motivo *<input type="text" id="ci-motivo" maxlength="300" placeholder="Ex.: cliente desistiu deste material"></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>${direto ? 'Cancelar item' : 'Pedir cancelamento'}</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bc = m.el.querySelector('[data-c]');
+  bc.onclick = async () => {
+    const motivo = m.el.querySelector('#ci-motivo').value.trim(); if (!motivo) return toast('Informe o motivo.', true);
+    const r = await ocupado(bc, () => api('cancelar_item', { id, motivo })); m.fechar(); resultadoCancelItem(r);
+  };
+}
+async function decidirCancelItem(id, aceitar) {
+  let motivo = null;
+  if (aceitar) { if (!await confirmar('Confirmar o cancelamento deste item? Ele sai do pedido e o total é recalculado. Se já foi enviado ao fornecedor, avise o fornecedor.', 'Confirmar cancelamento', true)) return; }
+  else { motivo = prompt('Por que o cancelamento foi recusado? (o vendedor vê no histórico)'); if (!motivo || !motivo.trim()) return; }
+  resultadoCancelItem(await api('decidir_cancelamento_item', { id, aceitar, motivo: motivo && motivo.trim() }), aceitar);
+}
+function resultadoCancelItem(r, decidiu = true) {
+  if (r.pendente) toast('Pedido de cancelamento enviado para a pré-impressão.');
+  else if (r.cancelado) toast('Item cancelado.');
+  else if (!decidiu) toast('Cancelamento recusado.');
+  if (r.aviso_financeiro) { const a = abrirModal({ titulo: 'Atenção: pagamento do pedido', corpo: `<div class="alerta">${esc(r.aviso_financeiro)}</div>`, rodape: '<button class="btn prim" data-v>Entendi</button>' });
+    a.el.querySelector('[data-v]').onclick = a.fechar; }
+  recarregar();
+}
+
 async function reativarPedido() {
   if (!await confirmar('Reativar este pedido? Cada item volta para a etapa em que estava quando o pedido foi cancelado, e as parcelas canceladas junto com ele voltam a ficar em aberto.', 'Reativar')) return;
   await api('cancelar_pedido', { id: S.vistaAtual.dados.id, reativar: true }); toast('Pedido reativado.'); recarregar();
@@ -1100,12 +1169,13 @@ async function reativarPedido() {
 function repetirPedido() {
   const p = S.vistaAtual.dados;
   S.cache.repetir = { numero: p.numero, cliente: p.cliente, forma_entrega: p.forma_entrega, endereco_entrega: p.endereco_entrega,
-    observacoes: p.observacoes, observacao_geral: p.observacao_geral, desconto: p.desconto, frete: p.frete,
+    observacoes: p.observacoes, observacao_geral: p.observacao_geral, desconto: p.desconto, desconto_percentual: p.desconto_percentual, frete: p.frete,
     itens: (p.itens || []).map(i => ({ descricao: i.descricao, categoria_id: i.categoria_id, observacao: i.observacao, quantidade: i.quantidade,
       valor_total: i.valor_total, status: 'arte_a_fazer', precisa_acabamento: i.precisa_acabamento, acabamento_por: i.acabamento_por })) };
   descartarVista('novo'); location.hash = '#/novo';
 }
 function modalEditarPedido() {
+  let descEP;
   const p = S.vistaAtual.dados; const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
   const m = abrirModal({ titulo: `Editar pedido ${p.numero}`, corpo: `
     <form id="f-ped" class="grade g2">
@@ -1113,15 +1183,17 @@ function modalEditarPedido() {
       ${gestor ? `<label class="campo">Vendedor<select name="vendedor_id">${S.base.vendedores.map(v => `<option value="${v.id}" ${v.id === p.vendedor_id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : '<span></span>'}
       <label class="campo">Previsão de entrega *<input type="date" name="data_prevista_entrega" value="${esc(p.data_prevista_entrega || '')}" required></label>
       ${saiuParaEntrega(p) ? `<div class="small muted" style="grid-column:1/-1">Entrega: ${p.forma_entrega === 'entrega' ? 'Entregar no cliente' : 'Retira no balcão'}${p.endereco_entrega ? ' · ' + esc(p.endereco_entrega) : ''} <i>(já saiu para entrega, não pode mais ser alterada)</i></div>` : htmlEntrega(p)}
-      <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" name="desconto" value="${esc(p.desconto)}"></label>
+      ${htmlDesconto('ep-desc', p)}
       <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" name="frete" value="${esc(p.frete)}"></label>
       <label class="campo" style="grid-column:1/-1">Observações da entrega<textarea name="observacoes">${esc(p.observacoes || '')}</textarea></label>
       <label class="campo" style="grid-column:1/-1">Observação geral <span class="muted">(aparece para o cliente)</span><textarea name="observacao_geral">${esc(p.observacao_geral || '')}</textarea></label>
     </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar alterações</button>`,
-    aoAbrir: el => { if (!saiuParaEntrega(p)) { const e = ligarEntrega(el); if (p.forma_entrega !== 'entrega' && p.cliente) e.definirCliente(p.cliente); } } });
+    aoAbrir: el => { descEP = ligarDesconto(el, 'ep-desc', () => Number(p.valor_itens || 0));
+      if (!saiuParaEntrega(p)) { const e = ligarEntrega(el); if (p.forma_entrega !== 'entrega' && p.cliente) e.definirCliente(p.cliente); } } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    await api('editar_pedido', { id: p.id, ...formDados($('#f-ped', m.el)) }); m.fechar(); toast('Pedido atualizado.'); recarregar();
+    try { descEP.validar(); } catch (e) { return toast(e.message, true); }
+    await api('editar_pedido', { id: p.id, ...formDados($('#f-ped', m.el)), ...descEP.dados() }); m.fechar(); toast('Pedido atualizado.'); recarregar();
   };
 }
 
@@ -1521,6 +1593,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     if (st.forma === 'boleto' && !st.parcelas.length) gerarParc();
     if (st.forma === 'sinal_restante') sugerirSinal();
     render();
+    raiz.dispatchEvent(new CustomEvent('fp-forma'));
   });
   const subir = async a => { if (!enviados.has(a)) enviados.set(a, await enviarComprovante(a)); return enviados.get(a); };
   const coletarOrc = () => {
@@ -1580,6 +1653,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes, resumo: resumo(),
              autoriza_sem_pagamento: !!(mostraAut() && st.autoriza === true) };
   };
+  coletar.forma = () => st.forma;
   coletar.atualizar = () => {
     if (st.forma === 'boleto' && !st.parcManual) gerarParc();
     if (st.forma === 'sinal_restante') sugerirSinal();
@@ -1911,7 +1985,36 @@ function ligarEntrega(el) {
   };
 }
 const somaDiasUteis = (d, n) => { const x = new Date(d + 'T12:00:00'); let k = 0; while (k < n) { x.setDate(x.getDate() + 1); if (x.getDay() % 6) k++; } return x.toISOString().slice(0, 10); };
-const textoPrazo = n => n ? `${n} ${Number(n) === 1 ? 'dia útil' : 'dias úteis'} após a aprovação da arte` : '';
+const textoPrazo = n => n ? `${n} ${Number(n) === 1 ? 'dia útil' : 'dias úteis'} após entrar em produção` : '';
+/* V14: desconto em R$ ou % (no %, o banco recalcula o valor quando os itens mudam) */
+function htmlDesconto(id, v = {}) {
+  const pct = Number(v.desconto_percentual) > 0;
+  return `<div class="campo"><span>Desconto <span class="desc-tipo" data-desc-tipo="${id}"><button type="button" data-t="rs" class="${pct ? '' : 'ativo'}">R$</button><button type="button" data-t="pc" class="${pct ? 'ativo' : ''}">%</button></span></span>
+    <input type="number" step="0.01" min="0" ${pct ? 'max="100"' : ''} id="${id}" data-pct="${pct ? 1 : 0}" value="${esc(pct ? Number(v.desconto_percentual) : Number(v.desconto || 0))}"><span class="unit-calc" id="${id}-calc"></span></div>`;
+}
+const descPct = inp => inp.dataset.pct === '1';
+const descontoValor = (inp, base) => { const v = Number(inp.value || 0); return descPct(inp) ? Math.round(base * v) / 100 : v; };
+const descontoDados = inp => descPct(inp) ? { desconto: '', desconto_percentual: inp.value || '' } : { desconto: inp.value || 0, desconto_percentual: '' };
+function ligarDesconto(raiz, id, base, aoMudar) {
+  const inp = raiz.querySelector('#' + id), box = raiz.querySelector(`[data-desc-tipo="${id}"]`), calc = raiz.querySelector('#' + id + '-calc');
+  const mostrar = () => { calc.textContent = descPct(inp) && Number(inp.value) ? '= ' + brl(descontoValor(inp, base())) : ''; };
+  box.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const pc = b.dataset.t === 'pc'; if (pc === descPct(inp)) return;
+    const b0 = base(), v = Number(inp.value || 0);
+    const nv = !v ? 0 : pc ? (b0 > 0 ? Math.round(v / b0 * 10000) / 100 : 0) : descontoValor(inp, b0).toFixed(2);
+    inp.dataset.pct = pc ? '1' : '0'; inp.value = nv; if (pc) inp.max = 100; else inp.removeAttribute('max');
+    box.querySelectorAll('button').forEach(x => x.classList.toggle('ativo', x === b));
+    mostrar(); if (aoMudar) aoMudar();
+  });
+  inp.addEventListener('input', () => { mostrar(); if (aoMudar) aoMudar(); });
+  mostrar();
+  return { atualizar: mostrar, valor: () => descontoValor(inp, base()), dados: () => descontoDados(inp),
+           validar: () => { if (descPct(inp) && Number(inp.value) > 100) throw new Error('O desconto em porcentagem vai até 100%.'); } };
+}
+/* V19: 5% de desconto no Pix à vista (fixo), sobre itens menos desconto; frete não entra */
+const PIX_PCT = 5;
+const valorPix = (itens, desc) => Math.round(Math.max(Number(itens) - Number(desc), 0) * PIX_PCT) / 100;
+const rotDesconto = o => `Desconto${Number(o.desconto_percentual) > 0 ? ` (${num(o.desconto_percentual)}%)` : ''}`;
 const freteGratis = o => o.frete_gratis ?? (o.forma_entrega === 'entrega' && !Number(o.frete));
 const SELO_FRETE = `<div style="display:inline-block;margin-top:10px;padding:6px 16px;border:2px solid #00a986;color:#00a986;border-radius:6px;font-weight:700;letter-spacing:1.5px;font-size:12pt;transform:rotate(-2deg)">FRETE GRÁTIS</div>`;
 function blocosProposta(o) {
@@ -1954,9 +2057,10 @@ rota('novo', async (_p, el) => {
     <div class="painel"><div class="painel-cab"><h2>Itens</h2><span class="small muted">Escreva o produto: a categoria é escolhida pelo que você digitar (dá para trocar).</span></div>
       <div id="editor-itens"></div>
       <div class="grade g4" style="margin-top:14px">
-        <label class="campo">Desconto (R$)<input type="number" step="0.01" min="0" id="np-desc" value="${esc(rep ? Number(rep.desconto || 0) : 0)}"></label>
+        ${htmlDesconto('np-desc', rep || {})}
         <label class="campo">Frete (R$)<input type="number" step="0.01" min="0" id="np-frete" value="${esc(rep ? Number(rep.frete || 0) : 0)}"></label>
-        <div></div><div class="totais" style="margin:0"><span class="muted small">Total do pedido</span><b class="num" id="np-total">R$ 0,00</b></div>
+        <label class="check hidden" id="np-pix-box" style="align-self:end;padding-bottom:9px;white-space:normal"><input type="checkbox" id="np-pix"> Oferecer ${PIX_PCT}% de desconto no Pix à vista</label>
+        <div class="totais" style="margin:0"><span class="muted small">Total do pedido</span><b class="num" id="np-total">R$ 0,00</b><span class="small muted" id="np-total-pix"></span></div>
       </div>
     </div>
     <div class="painel" id="np-ent-painel"><div class="painel-cab"><h2>Entrega</h2></div>
@@ -1978,13 +2082,19 @@ rota('novo', async (_p, el) => {
       <button class="btn" type="button" id="np-descartar">Descartar pedido</button><button class="btn prim" id="np-salvar">Criar pedido</button>
     </div>`;
 
-  const total = () => {
-    const itens = pegarItens ? pegarItens() : [];
-    return itens.reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#np-desc').value || 0) + Number($('#np-frete').value || 0);
+  let descNP;
+  const somaItens = () => (pegarItens ? pegarItens() : []).reduce((s, i) => s + Number(i.valor_total || 0), 0);
+  const total = () => somaItens() - (descNP ? descNP.valor() : 0) + Number($('#np-frete').value || 0);
+  const atualizarTotal = () => {
+    $('#np-total').textContent = brl(total());
+    if (descNP) descNP.atualizar();
+    $('#np-total-pix').textContent = $('#np-orc').checked && $('#np-pix').checked ? `ou ${brl(total() - valorPix(somaItens(), descNP ? descNP.valor() : 0))} no Pix à vista` : '';
+    coletarPagamento && coletarPagamento.atualizar();
   };
-  const atualizarTotal = () => { $('#np-total').textContent = brl(total()); coletarPagamento && coletarPagamento.atualizar(); };
   pegarItens = editorItens($('#editor-itens'), rep ? rep.itens : [], { comStatus: true, aoMudar: atualizarTotal });
-  $('#np-desc').oninput = $('#np-frete').oninput = atualizarTotal;
+  $('#np-frete').oninput = atualizarTotal;
+  descNP = ligarDesconto(el, 'np-desc', somaItens, atualizarTotal);
+  $('#np-pix').onchange = atualizarTotal;
 
   const escolher = c => {
     cliente = c;
@@ -2010,13 +2120,14 @@ rota('novo', async (_p, el) => {
     definirTopoEm(el, o ? 'Novo orçamento' : 'Novo pedido', `<a class="btn" href="#/pedidos">Voltar</a>`);
     $('#np-cli-nome-box').classList.toggle('hidden', !o || !!cliente);
     $('#np-prev-box').classList.toggle('hidden', o);
-    ['#np-val-box', '#np-prazo-box'].forEach(s => $(s).classList.toggle('hidden', !o));
+    ['#np-val-box', '#np-prazo-box', '#np-pix-box'].forEach(s => $(s).classList.toggle('hidden', !o));
     $$('#f-np [name=numero], #f-np [name=vendedor_id]').forEach(i => i.closest('label').classList.toggle('hidden', o));
     $('#np-parc-painel h2').textContent = o ? 'Forma de Pagamento' : 'Forma de Pagamento *';
     $('#np-pag').innerHTML = htmlFormaPagamento(o ? { orcamento: true } : { autorizar: true });
     coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
     pegarItens.definirStatus(!o);
     $('#np-salvar').textContent = o ? 'Salvar orçamento' : 'Criar pedido';
+    atualizarTotal();
   };
   $('#np-descartar').onclick = async () => {
     if (!await confirmar('Descartar este pedido? Tudo o que foi preenchido será apagado.', 'Descartar', true)) return;
@@ -2026,12 +2137,14 @@ rota('novo', async (_p, el) => {
     const itens = pegarItens();
     if (pegarItens.incompletos()) return toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true);
     if (!itens.length) return toast('Inclua ao menos um item.', true);
+    try { descNP.validar(); } catch (e) { return toast(e.message, true); }
+    if (descNP.valor() > somaItens() + 0.009) return toast('O desconto não pode ser maior que o valor dos itens.', true);
     if (modoOrc()) {
       const nomeCli = $('#np-cli-nome').value.trim();
       if (!cliente && !nomeCli) return toast('Escolha um cliente ou informe o nome dele.', true);
       const f = formDados($('#f-np'));
       let pag; try { pag = await coletarPagamento(); } catch (e) { return toast(e.message, true); }
-      const d = { cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : nomeCli, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
+      const d = { cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : nomeCli, itens, ...descNP.dados(), desconto_pix: $('#np-pix').checked, frete: $('#np-frete').value,
         validade: $('#np-validade').value, observacoes: $('#np-obs-geral').value, observacoes_entrega: f.observacoes, forma_entrega: f.forma_entrega, endereco_entrega: f.endereco_entrega,
         prazo_dias_uteis: $('#np-prazo').value, forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '',
         pagamento_detalhe: pag?.pagamento_detalhe || null, condicoes_pagamento: pag ? pag.resumo : '' };
@@ -2044,7 +2157,7 @@ rota('novo', async (_p, el) => {
     if (!$('#np-prev').value) { $('#np-prev').focus(); return toast('Informe a previsão de entrega.', true); }
     $('#np-salvar').disabled = true;
     let pag; try { pag = await coletarPagamento(); } catch (e) { $('#np-salvar').disabled = false; if (e.message === 'upload' || e.message === 'tamanho') return; $('#np-parc-painel').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast(e.message, true); }
-    const d = { ...formDados($('#f-np')), observacao_geral: $('#np-obs-geral').value, cliente_id: cliente.id, itens, desconto: $('#np-desc').value, frete: $('#np-frete').value,
+    const d = { ...formDados($('#f-np')), observacao_geral: $('#np-obs-geral').value, cliente_id: cliente.id, itens, ...descNP.dados(), frete: $('#np-frete').value,
       recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
       autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
     try { const r = await api('criar_pedido', d); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`);
@@ -2073,15 +2186,20 @@ async function converterOrcamento(id) {
   if (o.pedido_id) return toast('Este orçamento já virou pedido.', true);
   if (o.cliente_id) return modalConversao(o, o.cliente);
   if (!pode('cadastra_clientes')) return toast('Pedido exige cliente cadastrado. Peça a quem cadastra clientes.', true);
+  if (o.cadastro_pendente) {
+    if (await confirmar('O cliente já enviou o cadastro pelo link do orçamento. Confira e aprove o cadastro; depois é só transformar em pedido.', 'Conferir cadastro')) abrirConferenciaCadastro(o.cadastro_pendente);
+    return;
+  }
   if (!await confirmar('Pedido exige cliente cadastrado. Vamos cadastrar este cliente agora e depois criar o pedido.', 'Cadastrar cliente')) return;
   modalCliente(null, c => modalConversao(o, c), o.cliente_nome || '');
 }
 function modalConversao(o, cliente) {
   const itens = o.itens || [];
   let coletar, ent;
+  const pixAtivo = () => { const c = document.querySelector('#conv-pix'); return !!(c && c.checked && !c.disabled && coletar && coletar.forma() === 'pix'); };
   const prev0 = o.prazo_dias_uteis ? somaDiasUteis(hoje(), Number(o.prazo_dias_uteis)) : '';
   const m = abrirModal({ titulo: `Transformar o orçamento ${o.numero} em pedido`, largo: true, corpo: `
-    <p style="margin:0 0 12px">Cliente: <b>${esc(cliente.nome_fantasia || cliente.nome)}</b> · Total: <b>${brl(o.valor_total)}</b></p>
+    <p style="margin:0 0 12px">Cliente: <b>${esc(cliente.nome_fantasia || cliente.nome)}</b> · Total: <b id="conv-total">${brl(o.valor_total)}</b></p>
     <h3 style="margin:0 0 8px">Status inicial de cada item</h3>
     <div class="tabela-wrap"><table><thead><tr><th>Produto</th><th class="dir">Qtd.</th><th class="dir">Total</th><th style="min-width:170px">Status inicial</th></tr></thead><tbody>
       ${itens.map((i, k) => `<tr><td><b>${esc(i.descricao || '')}</b>${i.observacao ? `<div class="small muted">${esc(i.observacao)}</div>` : ''}</td><td class="dir num">${num(i.quantidade)}</td><td class="dir num">${brl(i.valor_total)}</td>
@@ -2094,12 +2212,24 @@ function modalConversao(o, cliente) {
     <div class="grade g2" style="margin-top:8px" id="conv-ent">${htmlEntrega({ forma_entrega: o.forma_entrega, endereco_entrega: o.endereco_entrega })}</div>
     ${o.observacoes_entrega ? `<div class="small" style="margin-top:6px"><span class="muted">Observações da entrega:</span> ${esc(o.observacoes_entrega)}</div>` : ''}
     ${o.observacoes ? `<div class="small" style="margin-top:4px"><span class="muted">Observação geral:</span> ${esc(o.observacoes)}</div>` : ''}
-    <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>`,
+    <h3 style="margin:16px 0 8px">Forma de Pagamento *</h3><div id="conv-pag">${htmlFormaPagamento({ autorizar: true })}</div>
+    ${o.desconto_pix ? `<label class="check" style="margin-top:14px;white-space:normal"><input type="checkbox" id="conv-pix" disabled> Cliente vai pagar à vista no Pix com ${PIX_PCT}% de desconto (total ${brl(o.valor_pix)})</label>
+      <div class="small muted" id="conv-pix-dica" style="margin-top:4px">O orçamento ofereceu o desconto no Pix. Escolha a forma Pix para usar.</div>` : ''}`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
     aoAbrir: el => {
       const inicial = o.forma_pagamento ? { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe } : null;
-      coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), () => Number(o.valor_total || 0), () => el.querySelector('#conv-prev').value, inicial);
+      coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), () => pixAtivo() ? Number(o.valor_pix || 0) : Number(o.valor_total || 0), () => el.querySelector('#conv-prev').value, inicial);
       el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
+      const cx = el.querySelector('#conv-pix');
+      if (cx) {
+        let jaMarcou = false;
+        const ajustarPix = () => { const ehPix = coletar.forma() === 'pix'; cx.disabled = !ehPix;
+          if (ehPix && !jaMarcou) { cx.checked = true; jaMarcou = true; }
+          el.querySelector('#conv-pix-dica').textContent = ehPix ? 'Desmarque se o cliente não vai pagar à vista.' : 'O orçamento ofereceu o desconto no Pix. Escolha a forma Pix para usar.';
+          el.querySelector('#conv-total').textContent = brl(pixAtivo() ? o.valor_pix : o.valor_total); coletar.atualizar(); };
+        el.querySelector('[data-fp-raiz]').addEventListener('fp-forma', ajustarPix);
+        cx.onchange = ajustarPix; ajustarPix();
+      }
       ent = ligarEntrega(el.querySelector('#conv-ent'));
       if (!o.forma_entrega) ent.definirCliente(cliente);
     } });
@@ -2113,7 +2243,7 @@ function modalConversao(o, cliente) {
     try {
       const r = await api('converter_orcamento', { id: o.id, cliente_id: o.cliente_id ? undefined : cliente.id, status_itens,
         data_prevista_entrega: prev, forma_entrega: ent.forma(), endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
-        forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
+        forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs, desconto_pix: pixAtivo(),
         autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
       m.fechar(); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
     } finally { bt.disabled = false; }
@@ -2183,6 +2313,8 @@ rota('orcamento', async (id, el) => {
     ${aceito ? `<div class="alerta" style="margin-bottom:16px;background:var(--verde-bg);color:var(--grafite)">
         <b>Aprovado pelo cliente</b> · ${esc(o.aprovado_cliente_nome || '')} em ${dataHoraLonga(o.aprovado_cliente_em)}
         ${o.aprovado_cliente_comentario ? `<div style="margin-top:4px"><span class="muted">Comentário do cliente:</span> ${esc(o.aprovado_cliente_comentario)}</div>` : ''}
+        ${o.cadastro_pendente ? `<div style="margin-top:8px"><b>O cliente enviou o cadastro pelo link.</b> Confira e aprove o cadastro para transformar em pedido.
+          ${pode('cadastra_clientes') ? ' <button type="button" class="btn peq prim" id="o-conf-cad">Conferir cadastro</button>' : ''}</div>` : ''}
         ${!liberado ? `<div style="margin-top:8px"><button type="button" class="btn peq" id="o-editar-aceito">Editar orçamento</button> <span class="small muted">Se for alterado, o cliente precisa aprovar de novo.</span></div>` : '<div class="small" style="margin-top:6px"><b>Ao salvar, a aprovação do cliente será desfeita.</b></div>'}</div>` : ''}
     <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
       <label class="campo busca-box">Buscar cliente<input type="search" id="o-cli" placeholder="Nome, fantasia, CPF/CNPJ" autocomplete="off" ${travado ? 'disabled' : ''}></label>
@@ -2190,9 +2322,10 @@ rota('orcamento', async (id, el) => {
       <div id="o-cli-esc" style="margin-top:10px"></div></div>
     <div class="painel"><div class="painel-cab"><h2>Itens</h2></div><div id="o-itens"></div>
       <div class="grade g4" style="margin-top:14px">
-        <label class="campo">Desconto (R$)<input type="number" step="0.01" id="o-desc" value="${esc(o.desconto)}"></label>
+        ${htmlDesconto('o-desc', o)}
         <label class="campo">Frete (R$)<input type="number" step="0.01" id="o-frete" value="${esc(o.frete)}"></label>
-        <div></div><div class="totais" style="margin:0"><span class="muted small">Total</span><b class="num" id="o-total"></b></div></div></div>
+        <label class="check" style="align-self:end;padding-bottom:9px;white-space:normal"><input type="checkbox" id="o-pix" ${o.desconto_pix ? 'checked' : ''}> Oferecer ${PIX_PCT}% de desconto no Pix à vista</label>
+        <div class="totais" style="margin:0"><span class="muted small">Total</span><b class="num" id="o-total"></b><span class="small muted" id="o-total-pix"></span></div></div></div>
     <div class="painel"><form id="f-orc" class="grade g3">
       <label class="campo">Validade<input type="date" name="validade" value="${esc(o.validade || '')}"></label>
       <label class="campo">Situação<select name="status" ${travado ? 'disabled' : ''}>${[['aberto','Em elaboração'],['enviado','Enviado ao cliente'],['recusado','Recusado'],['expirado','Expirado']].map(([v, n]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${n}</option>`).join('')}${convertido ? '<option value="aprovado" selected>Virou pedido</option>' : ''}${aceito && !liberado ? '<option value="aceito" selected>Aprovado pelo cliente</option>' : ''}</select></label>
@@ -2210,17 +2343,25 @@ rota('orcamento', async (id, el) => {
     $('#o-cli-nome-box', el).classList.toggle('hidden', !!c); if (c) $('#o-cli-nome', el).value = '';
     const lp = $('#o-cli-limpar', el); if (lp) lp.onclick = () => mostrarCli(null); };
   mostrarCli(cliente); ligarBuscaCliente($('#o-cli', el), mostrarCli);
-  const totOrc = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0) - Number($('#o-desc', el).value || 0) + Number($('#o-frete', el).value || 0);
-  const tot = () => { $('#o-total', el).textContent = brl(totOrc()); };
+  let descO;
+  const somaO = () => (pegarItens ? pegarItens() : o.itens).reduce((s, i) => s + Number(i.valor_total || 0), 0);
+  const totOrc = () => somaO() - (descO ? descO.valor() : 0) + Number($('#o-frete', el).value || 0);
+  const tot = () => { $('#o-total', el).textContent = brl(totOrc()); if (descO) descO.atualizar();
+    $('#o-total-pix', el).textContent = $('#o-pix', el).checked ? `ou ${brl(totOrc() - valorPix(somaO(), descO ? descO.valor() : 0))} no Pix à vista` : ''; };
   pegarItens = editorItens($('#o-itens', el), o.itens, { aoMudar: tot });
   const pagOrc = ligarFormaPagamento($('#o-pag', el), totOrc, () => '', { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe });
-  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #f-orc button, #o-pag input, #o-pag button, #o-desc, #o-frete, #o-cli, #o-cli-nome', el).forEach(e => e.disabled = true);
+  if (travado) $$('#o-itens input, #o-itens select, #o-itens button, #f-orc input, #f-orc textarea, #f-orc button, #o-pag input, #o-pag button, #o-desc, #o-frete, #o-pix, [data-desc-tipo] button, #o-cli, #o-cli-nome', el).forEach(e => e.disabled = true);
   if ($('#o-editar-aceito', el)) $('#o-editar-aceito', el).onclick = () => { (S.cache.editarAceito ||= {})[o.id] = true; renderVista(S.vistaAtual); };
-  $('#o-desc', el).oninput = $('#o-frete', el).oninput = tot; tot();
+  $('#o-frete', el).oninput = tot;
+  descO = ligarDesconto(el, 'o-desc', somaO, tot);
+  $('#o-pix', el).onchange = tot; tot();
+  if ($('#o-conf-cad', el)) $('#o-conf-cad', el).onclick = () => abrirConferenciaCadastro(o.cadastro_pendente);
   const salvar = async () => {
     if (pegarItens.incompletos()) { toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true); throw new Error('itens'); }
+    try { descO.validar(); } catch (e) { toast(e.message, true); throw e; }
+    if (descO.valor() > somaO() + 0.009) { toast('O desconto não pode ser maior que o valor dos itens.', true); throw new Error('desconto'); }
     let pag; try { pag = await pagOrc(); } catch (e) { toast(e.message, true); throw e; }
-    const d = { ...formDados($('#f-orc', el)), observacoes: $('#o-obs-geral', el).value, cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome', el).value.trim(), itens: pegarItens(), desconto: $('#o-desc', el).value, frete: $('#o-frete', el).value,
+    const d = { ...formDados($('#f-orc', el)), observacoes: $('#o-obs-geral', el).value, cliente_id: cliente?.id || '', cliente_nome: cliente ? '' : $('#o-cli-nome', el).value.trim(), itens: pegarItens(), ...descO.dados(), desconto_pix: $('#o-pix', el).checked, frete: $('#o-frete', el).value,
       forma_pagamento: pag?.forma_pagamento || '', forma_pagamento_obs: pag?.forma_pagamento_obs || '', pagamento_detalhe: pag?.pagamento_detalhe || null,
       condicoes_pagamento: pag ? pag.resumo : '' };
     if (!d.cliente_id && !d.cliente_nome) { toast('Escolha um cliente ou informe o nome dele.', true); throw new Error('cliente'); }
@@ -2252,7 +2393,7 @@ function modalLinkOrcamento(o, cliente) {
   const nome = cliente ? (cliente.nome_fantasia || cliente.nome) : (o.cliente_nome || '');
   const texto = `Olá${nome ? ', ' + nome.split(' ')[0] : ''}! Segue o orçamento nº ${o.numero} da Gráfica Venda Hoje. Você pode conferir e aprovar por este link: ${link}`;
   const m = abrirModal({ titulo: `Link do orçamento ${o.numero}`, corpo: `
-    <p style="margin:0 0 10px">O cliente abre o orçamento sem precisar de login e aprova informando o nome. A aprovação (quem, data e hora) aparece aqui no orçamento e no Início.</p>
+    <p style="margin:0 0 10px">O cliente abre o orçamento sem precisar de login.${o.cliente_id ? ' Ele aprova informando o nome.' : ' Como ainda não tem cadastro, ele preenche o cadastro para aprovar (a GVH confere o cadastro antes de virar pedido).'} A aprovação (quem, data e hora) aparece aqui no orçamento e no Início.</p>
     <div style="display:flex;gap:6px"><input type="text" readonly value="${esc(link)}" id="lk-url" style="flex:1"><button class="btn" id="lk-copiar">Copiar</button></div>
     ${o.validade ? `<p class="small muted" style="margin:8px 0 0">Válido até ${data(o.validade)}. Depois disso o cliente não consegue mais aprovar.</p>` : ''}`,
     rodape: `<button class="btn" data-v>Fechar</button><a class="btn prim" target="_blank" rel="noopener" href="https://wa.me/${tel}?text=${encodeURIComponent(texto)}">Enviar pelo WhatsApp</a>` });
@@ -2314,11 +2455,14 @@ async function paginaPublicaOrcamento(chave) {
   const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const unit = (t, q) => Number(q) > 0 ? (Number(t) / Number(q)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '';
   const desenhar = (o, msgErro) => {
-    const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, EMPRESA.email].filter(Boolean).join(' · ')].filter(Boolean);
+    const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, o.vendedor_email || EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
     const rodapeAprov = o.situacao === 'aprovado'
-      ? `<div class="ok"><b>Orçamento aprovado ✓</b><div style="margin-top:4px">Aprovado por <b style="font-size:inherit;color:inherit">${esc(o.aprovado_por || '')}</b>${o.aprovado_em ? ' em ' + dataHoraLonga(o.aprovado_em) : ''}. A equipe da Gráfica Venda Hoje já foi avisada e vai seguir com o seu pedido.</div></div>`
+      ? `<div class="ok"><b>Orçamento aprovado ✓</b><div style="margin-top:4px">Aprovado por <b style="font-size:inherit;color:inherit">${esc(o.aprovado_por || '')}</b>${o.aprovado_em ? ' em ' + dataHoraLonga(o.aprovado_em) : ''}. ${o.cadastro_em_conferencia ? 'Recebemos também o seu cadastro. ' : ''}A equipe da Gráfica Venda Hoje já foi avisada e vai seguir com o seu pedido.</div></div>`
       : o.situacao === 'vencido' ? `<div class="aviso"><b>Este orçamento venceu em ${data(o.validade)}.</b> Fale com a Gráfica Venda Hoje para atualizar os valores.</div>`
       : o.situacao === 'indisponivel' ? `<div class="aviso"><b>Este orçamento não está mais disponível para aprovação.</b> Fale com a Gráfica Venda Hoje.</div>`
+      : o.precisa_cadastro ? `<div style="margin-top:26px;border:2px solid #00a986;border-radius:12px;padding:18px"><h2 style="margin:0 0 4px;font-size:18px">Aprovar este orçamento</h2>
+          <div style="font-size:13px;color:#5a6770">Confira os itens e os valores. Para aprovar, preencha o seu cadastro abaixo: precisamos dele para abrir o pedido, fazer a entrega e emitir a nota fiscal. Ao aprovar, a Gráfica Venda Hoje recebe a sua confirmação com o seu nome, a data e a hora.</div>
+          <div id="pub-cad"></div></div>`
       : `<div class="aprovar"><h2>Aprovar este orçamento</h2><div style="font-size:13px;color:#5a6770">Confira os itens e os valores. Ao aprovar, a Gráfica Venda Hoje recebe a sua confirmação com o seu nome, a data e a hora.</div>
           <label>Seu nome *<input type="text" id="pub-nome" maxlength="120" autocomplete="name"></label>
           <label>Comentário (opcional)<textarea id="pub-com" maxlength="1000" placeholder="Algum ajuste ou recado para a equipe?"></textarea></label>
@@ -2335,9 +2479,10 @@ async function paginaPublicaOrcamento(chave) {
           <tbody>${(o.itens || []).map(i => `<tr><td><b>${esc(i.descricao || '')}</b></td><td class="n">${num(i.quantidade)}</td><td class="n col-unit">${unit(i.valor_total, i.quantidade)}</td><td class="n">${din(i.valor_total)}</td></tr>`).join('')}</tbody></table></div>
         <div class="tot">
           ${Number(o.desconto) || Number(o.frete) ? `<div><span>Subtotal</span><span>${din(o.valor_itens)}</span></div>` : ''}
-          ${Number(o.desconto) ? `<div><span>Desconto</span><span>- ${din(o.desconto)}</span></div>` : ''}
+          ${Number(o.desconto) ? `<div><span>${rotDesconto(o)}</span><span>- ${din(o.desconto)}</span></div>` : ''}
           ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
-          <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div></div>
+          <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div>
+          ${o.desconto_pix && o.valor_pix != null ? `<div style="color:#00795f;font-weight:700;margin-top:4px"><span>À vista no Pix (${PIX_PCT}% off)</span><span>${din(o.valor_pix)}</span></div>` : ''}</div>
         ${freteGratis(o) ? `<div style="text-align:right">${SELO_FRETE}</div>` : ''}
         ${blocosProposta(o)}
         ${o.condicoes_pagamento ? `<div class="bloco"><div class="rot">Forma de pagamento</div><p>${esc(o.condicoes_pagamento)}</p></div>` : ''}
@@ -2347,6 +2492,11 @@ async function paginaPublicaOrcamento(chave) {
         <div class="acoes"><button class="bt sec" onclick="window.print()">Imprimir / salvar PDF</button></div>
       </div></div>
       <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
+    const caixaCad = $('#pub-cad', raiz);
+    if (caixaCad) formularioCadastro(caixaCad, { textoBotao: 'Cadastrar e aprovar orçamento',
+      extraHtml: `<label>Comentário (opcional)<textarea name="comentario" maxlength="1000" placeholder="Algum ajuste ou recado para a equipe?"></textarea></label>`,
+      aoEnviar: async dados => { const r = await api('orc_publico_aprovar', { chave, cadastro: dados, comentario: dados.comentario || '' }, true);
+        desenhar(r.orcamento); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } });
     const b = $('#pub-aprovar', raiz);
     if (b) b.onclick = async () => {
       const nome = $('#pub-nome', raiz).value.trim();
@@ -2387,16 +2537,16 @@ function modalLinkCadastro() {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('#lc-copiar').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.'); } catch { $('#lc-url', m.el).select(); } };
 }
-async function paginaPublicaCadastro() {
-  document.title = 'Cadastro · Gráfica Venda Hoje';
-  aplicarEstiloPublico();
-  const est = document.createElement('style');
+function aplicarEstiloCadastro() {
+  if (document.getElementById('estilo-cad')) return;
+  const est = document.createElement('style'); est.id = 'estilo-cad';
   est.textContent = `
     #pub .gr { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px 12px; }
     #pub .gr label { grid-column: span 6; display: block; font-size: 12.5px; color: #5a6770; margin-top: 10px; }
     #pub .gr .c2 { grid-column: span 2; } #pub .gr .c3 { grid-column: span 3; } #pub .gr .c4 { grid-column: span 4; } #pub .gr .c1 { grid-column: span 1; }
-    #pub .gr input:not([type=checkbox]) { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid #cfd6da; border-radius: 8px; margin-top: 4px; background: #fff; }
-    #pub .gr input:focus { outline: 2px solid #00a986; border-color: #00a986; }
+    #pub .gr input:not([type=checkbox]), #pub .gr textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid #cfd6da; border-radius: 8px; margin-top: 4px; background: #fff; }
+    #pub .gr textarea { min-height: 70px; resize: vertical; }
+    #pub .gr input:focus, #pub .gr textarea:focus { outline: 2px solid #00a986; border-color: #00a986; }
     #pub .sec { grid-column: span 6; margin: 22px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.3px; color: #00a986; font-weight: 700; border-bottom: 1px solid #e2e6e8; padding-bottom: 6px; }
     #pub .chk { display: flex !important; gap: 8px; align-items: flex-start; color: #1d262d !important; font-size: 13.5px !important; }
     #pub .chk input { margin-top: 3px; width: 18px; height: 18px; accent-color: #00a986; }
@@ -2405,22 +2555,18 @@ async function paginaPublicaCadastro() {
     #pub .hp { position: absolute; left: -5000px; width: 1px; height: 1px; overflow: hidden; }
     @media (max-width: 560px) { #pub .gr .c2, #pub .gr .c3, #pub .gr .c4 { grid-column: span 6; } #pub .gr .c1 { grid-column: span 2; } }`;
   document.head.appendChild(est);
-  const logo = $('#logo-gvh', document)?.src || '';
-  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+}
+/* Formulário de cadastro do cliente (sem login). aoEnviar(dados) chama o banco; se der erro, a mensagem aparece no formulário. */
+function formularioCadastro(alvo, { textoBotao = 'Enviar cadastro', extraHtml = '', aoEnviar }) {
+  aplicarEstiloCadastro();
   const ob = '<span class="obr">*</span>';
-  raiz.innerHTML = `<div class="folha">
-    <div class="cab">${logo ? `<img src="${logo}" alt="Gráfica Venda Hoje">` : `<b>${esc(EMPRESA.nome)}</b>`}
-      <div class="emp"><b>${esc(EMPRESA.nome)}</b><br>${esc(EMPRESA.telefone)} · ${esc(EMPRESA.email)}</div></div>
-    <div class="corpo" id="cad-corpo">
-      <h1 style="font-size:24px">Cadastro de cliente</h1>
-      <p style="color:#5a6770;margin:6px 0 0;font-size:14px">Preencha seus dados para agilizar orçamentos, pedidos, entregas e notas fiscais. Campos com ${ob} são obrigatórios.</p>
-      <form id="cad" class="gr" novalidate autocomplete="on">
+  alvo.innerHTML = `<form class="gr" data-cad novalidate autocomplete="on">
         <div class="hp" aria-hidden="true"><label>Site<input type="text" name="site_url" tabindex="-1" autocomplete="off"></label></div>
         <div class="sec">Documento</div>
-        <label class="c3">CPF ou CNPJ ${ob}<input type="text" name="cpf_cnpj" maxlength="18" inputmode="text" style="text-transform:uppercase" placeholder="Digite o CPF ou o CNPJ"><div class="dica" id="dica-doc">Pessoa física: CPF · Empresa: CNPJ</div></label>
-        <div id="cad-resto" style="display:none;grid-column:span 6"><div class="gr">
-          <div class="sec" id="sec-dados">Seus dados</div>
-          <label class="c4"><span id="rot-nome">Nome completo</span> ${ob}<input type="text" name="nome" autocomplete="name"></label>
+        <label class="c3">CPF ou CNPJ ${ob}<input type="text" name="cpf_cnpj" maxlength="18" inputmode="text" style="text-transform:uppercase" placeholder="Digite o CPF ou o CNPJ"><div class="dica" data-dica="doc">Pessoa física: CPF · Empresa: CNPJ</div></label>
+        <div data-resto style="display:none;grid-column:span 6"><div class="gr">
+          <div class="sec" data-sec-dados>Seus dados</div>
+          <label class="c4"><span data-rot-nome>Nome completo</span> ${ob}<input type="text" name="nome" autocomplete="name"></label>
           <label class="c2" data-t="PF">Data de aniversário (dia/mês) ${ob}<input type="text" name="aniversario" maxlength="5" placeholder="DD/MM" inputmode="numeric"></label>
           <label class="c3" data-t="PJ">Nome fantasia<input type="text" name="nome_fantasia"></label>
           <label class="c3" data-t="PJ">Ramo de atividade ${ob}<input type="text" name="segmento" placeholder="Ex.: Restaurante, Clínica, Loja de roupas"></label>
@@ -2432,49 +2578,48 @@ async function paginaPublicaCadastro() {
           <label class="c3">E-mail ${ob}<input type="email" name="email" autocomplete="email"></label>
           <label class="c3">Instagram<input type="text" name="instagram" placeholder="@perfil"></label>
           <div class="sec">Endereço</div>
-          <label class="c2">CEP ${ob}<input type="text" name="cep" maxlength="9" inputmode="numeric" autocomplete="postal-code"><div class="dica" id="dica-cep"></div></label>
+          <label class="c2">CEP ${ob}<input type="text" name="cep" maxlength="9" inputmode="numeric" autocomplete="postal-code"><div class="dica" data-dica="cep"></div></label>
           <label class="c4">Endereço (rua, avenida) ${ob}<input type="text" name="logradouro" autocomplete="address-line1"></label>
           <label class="c1">Número ${ob}<input type="text" name="numero"></label>
           <label class="c2">Complemento<input type="text" name="complemento" autocomplete="address-line2"></label>
           <label class="c3">Bairro ${ob}<input type="text" name="bairro"></label>
           <label class="c4">Cidade ${ob}<input type="text" name="cidade" autocomplete="address-level2"></label>
           <label class="c2">UF ${ob}<input type="text" name="uf" maxlength="2" style="text-transform:uppercase" autocomplete="address-level1"></label>
+          ${extraHtml}
           <label class="chk" style="margin-top:22px"><input type="checkbox" name="lgpd"> <span>Autorizo a Gráfica Venda Hoje a usar estes dados para orçamentos, pedidos, entregas, emissão de nota fiscal e contato comercial, conforme a Lei Geral de Proteção de Dados (LGPD). ${ob}</span></label>
-          <div class="erro" id="cad-erro" style="grid-column:span 6"></div>
-          <div class="acoes" style="grid-column:span 6"><button type="submit" class="bt prim" id="cad-enviar">Enviar cadastro</button></div>
+          <div class="erro" data-erro style="grid-column:span 6"></div>
+          <div class="acoes" style="grid-column:span 6"><button type="submit" class="bt prim" data-enviar>${esc(textoBotao)}</button></div>
         </div></div>
-      </form>
-    </div></div>
-    <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
-  const f = $('#cad', raiz); const F = new Proxy({}, { get: (_, n) => f.elements.namedItem(n) }); let tipo = null;
-  const dica = (id, t, err) => { const e = $('#' + id, raiz); e.textContent = t; e.classList.toggle('err', !!err); };
+      </form>`;
+  const f = alvo.querySelector('[data-cad]'); const F = new Proxy({}, { get: (_, n) => f.elements.namedItem(n) }); let tipo = null;
+  const dica = (k, t, err) => { const e = alvo.querySelector(`[data-dica="${k}"]`); e.textContent = t; e.classList.toggle('err', !!err); };
   const preencher = (n, v) => { if (v && F[n] && !F[n].value.trim()) F[n].value = v; };
   const mostrarTipo = () => {
-    $('#cad-resto', raiz).style.display = tipo ? '' : 'none';
-    $$('[data-t]', raiz).forEach(e => e.style.display = e.dataset.t === tipo ? '' : 'none');
-    $('#rot-nome', raiz).textContent = tipo === 'PJ' ? 'Razão social' : 'Nome completo';
-    $('#sec-dados', raiz).textContent = tipo === 'PJ' ? 'Dados da empresa' : 'Seus dados';
+    alvo.querySelector('[data-resto]').style.display = tipo ? '' : 'none';
+    alvo.querySelectorAll('[data-t]').forEach(e => e.style.display = e.dataset.t === tipo ? '' : 'none');
+    alvo.querySelector('[data-rot-nome]').textContent = tipo === 'PJ' ? 'Razão social' : 'Nome completo';
+    alvo.querySelector('[data-sec-dados]').textContent = tipo === 'PJ' ? 'Dados da empresa' : 'Seus dados';
   };
   F.cpf_cnpj.oninput = async () => {
     const d = F.cpf_cnpj.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
-    if (d.length !== 11 && d.length !== 14) { tipo = null; mostrarTipo(); dica('dica-doc', 'Pessoa física: CPF · Empresa: CNPJ'); return; }
+    if (d.length !== 11 && d.length !== 14) { tipo = null; mostrarTipo(); dica('doc', 'Pessoa física: CPF · Empresa: CNPJ'); return; }
     const t = docValido(d);
-    if (!t) { tipo = null; mostrarTipo(); dica('dica-doc', 'CPF/CNPJ inválido. Confira o que foi digitado.', true); return; }
+    if (!t) { tipo = null; mostrarTipo(); dica('doc', 'CPF/CNPJ inválido. Confira o que foi digitado.', true); return; }
     F.cpf_cnpj.value = fmtDoc(d); const novo = t !== tipo; tipo = t; mostrarTipo();
-    dica('dica-doc', tipo === 'PJ' ? 'Empresa (CNPJ)' : 'Pessoa física (CPF)');
+    dica('doc', tipo === 'PJ' ? 'Empresa (CNPJ)' : 'Pessoa física (CPF)');
     if (novo) F.nome.focus();
     if (tipo === 'PJ' && /^\d{14}$/.test(d)) {
       try { const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${d}`); if (r.ok) { const j = await r.json();
         preencher('nome', j.razao_social); preencher('nome_fantasia', j.nome_fantasia); preencher('cep', j.cep);
         preencher('logradouro', [j.descricao_tipo_de_logradouro, j.logradouro].filter(Boolean).join(' ')); preencher('numero', j.numero);
         preencher('complemento', j.complemento); preencher('bairro', j.bairro); preencher('cidade', j.municipio); preencher('uf', j.uf);
-        dica('dica-doc', 'Empresa (CNPJ) · dados da Receita preenchidos, confira abaixo'); } } catch {}
+        dica('doc', 'Empresa (CNPJ) · dados da Receita preenchidos, confira abaixo'); } } catch {}
     }
   };
   F.cep.onblur = async () => {
-    const cep = F.cep.value.replace(/\D/g, ''); if (cep.length !== 8) { if (cep) dica('dica-cep', 'CEP com 8 números', true); return; }
-    F.cep.value = cep.replace(/^(\d{5})(\d{3})$/, '$1-$2'); dica('dica-cep', '');
-    try { const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`); if (!r.ok) return dica('dica-cep', 'CEP não encontrado, preencha o endereço', true); const j = await r.json();
+    const cep = F.cep.value.replace(/\D/g, ''); if (cep.length !== 8) { if (cep) dica('cep', 'CEP com 8 números', true); return; }
+    F.cep.value = cep.replace(/^(\d{5})(\d{3})$/, '$1-$2'); dica('cep', '');
+    try { const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`); if (!r.ok) return dica('cep', 'CEP não encontrado, preencha o endereço', true); const j = await r.json();
       preencher('logradouro', j.street); preencher('bairro', j.neighborhood); preencher('cidade', j.city); preencher('uf', j.state);
       if (!F.numero.value) F.numero.focus(); } catch {}
   };
@@ -2483,21 +2628,39 @@ async function paginaPublicaCadastro() {
   f.onsubmit = async e => {
     e.preventDefault();
     const dados = formDados(f); dados.telefone_whatsapp = F.telefone_whatsapp.checked; dados.lgpd = F.lgpd.checked;
-    const err = msg => { $('#cad-erro', raiz).textContent = msg; return false; };
+    const err = msg => { alvo.querySelector('[data-erro]').textContent = msg; return false; };
     const falta = [['nome', tipo === 'PJ' ? 'a razão social' : 'o nome completo'], ...(tipo === 'PJ' ? [['segmento', 'o ramo de atividade'], ['responsavel', 'o nome do responsável']] : [['aniversario', 'a data de aniversário']]),
       ['telefone', 'o telefone'], ['email', 'o e-mail'], ['cep', 'o CEP'], ['logradouro', 'o endereço'], ['numero', 'o número'], ['bairro', 'o bairro'], ['cidade', 'a cidade'], ['uf', 'a UF']]
       .find(([n]) => !String(dados[n] || '').trim());
     if (falta) { F[falta[0]].focus(); return err(`Informe ${falta[1]}.`); }
     if (!dados.lgpd) return err('Marque a autorização de uso dos dados (LGPD) para enviar.');
-    const b = $('#cad-enviar', raiz); b.disabled = true; b.textContent = 'Enviando…'; err('');
-    try {
-      await api('cadastro_publico', dados, true);
-      $('#cad-corpo', raiz).innerHTML = `<div class="ok" style="margin-top:0"><b>Cadastro enviado ✓</b>
-        <div style="margin-top:6px">Obrigado! A equipe da Gráfica Venda Hoje vai conferir os seus dados. Se precisar alterar alguma informação, é só preencher de novo ou falar com o seu atendente pelo ${esc(EMPRESA.telefone)}.</div></div>`;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (ex) { b.disabled = false; b.textContent = 'Enviar cadastro'; err(ex.message === 'Failed to fetch' ? 'Sem conexão. Tente de novo.' : ex.message); }
+    const b = alvo.querySelector('[data-enviar]'); b.disabled = true; b.textContent = 'Enviando…'; err('');
+    try { await aoEnviar(dados); }
+    catch (ex) { b.disabled = false; b.textContent = textoBotao; err(ex.message === 'Failed to fetch' ? 'Sem conexão. Tente de novo.' : ex.message); }
   };
-  setTimeout(() => F.cpf_cnpj.focus(), 50);
+  return { focar: () => F.cpf_cnpj.focus() };
+}
+async function paginaPublicaCadastro() {
+  document.title = 'Cadastro · Gráfica Venda Hoje';
+  aplicarEstiloPublico();
+  const logo = $('#logo-gvh', document)?.src || '';
+  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+  raiz.innerHTML = `<div class="folha">
+    <div class="cab">${logo ? `<img src="${logo}" alt="Gráfica Venda Hoje">` : `<b>${esc(EMPRESA.nome)}</b>`}
+      <div class="emp"><b>${esc(EMPRESA.nome)}</b><br>${esc(EMPRESA.telefone)} · ${esc(EMPRESA.email)}</div></div>
+    <div class="corpo" id="cad-corpo">
+      <h1 style="font-size:24px">Cadastro de cliente</h1>
+      <p style="color:#5a6770;margin:6px 0 0;font-size:14px">Preencha seus dados para agilizar orçamentos, pedidos, entregas e notas fiscais. Campos com <span class="obr">*</span> são obrigatórios.</p>
+      <div id="cad-alvo"></div>
+    </div></div>
+    <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
+  const fc = formularioCadastro($('#cad-alvo', raiz), { textoBotao: 'Enviar cadastro', aoEnviar: async dados => {
+    await api('cadastro_publico', dados, true);
+    $('#cad-corpo', raiz).innerHTML = `<div class="ok" style="margin-top:0"><b>Cadastro enviado ✓</b>
+      <div style="margin-top:6px">Obrigado! A equipe da Gráfica Venda Hoje vai conferir os seus dados. Se precisar alterar alguma informação, é só preencher de novo ou falar com o seu atendente pelo ${esc(EMPRESA.telefone)}.</div></div>`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } });
+  setTimeout(() => fc.focar(), 50);
 }
 
 /* ---------- conferência dos cadastros recebidos pelo link ---------- */
@@ -2508,13 +2671,19 @@ async function modalCadastrosLink() {
     <p class="small muted" style="margin:0 0 10px">Confira os dados enviados pelo cliente. Aprovando, o cadastro entra no sistema (ou atualiza o cliente que já existe, sem mexer em revenda, observação fixa e contatos).</p>
     <div class="tabela-wrap"><table><thead><tr><th>Enviado em</th><th>Cliente</th><th>Documento</th><th>Contato</th><th></th></tr></thead><tbody>
     ${r.solicitacoes.map(x => `<tr><td class="num">${dataHora(x.updated_at)}</td>
-      <td><b>${esc(x.nome)}</b>${x.existente ? `<div>${badge('Já é cliente: ' + x.existente.nome, 'b-ambar')}</div>` : ''}</td>
+      <td><b>${esc(x.nome)}</b>${x.existente ? `<div>${badge('Já é cliente: ' + x.existente.nome, 'b-ambar')}</div>` : ''}${x.orcamento_numero ? `<div>${badge('Aprovou o orçamento ' + x.orcamento_numero, 'b-verde')}</div>` : ''}</td>
       <td class="num">${esc(fmtDoc(x.cpf_cnpj))}</td><td class="small">${esc(fmtTel(x.dados.telefone))}<br>${esc(x.dados.email || '')}</td>
       <td class="dir"><button class="btn prim peq" onclick="conferirCadastroLink('${x.id}')">Conferir</button></td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vazio">Nenhum cadastro aguardando conferência.</div>',
     rodape: `<button class="btn" data-v>Fechar</button><button class="btn" id="cl-link">Link de cadastro</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('#cl-link').onclick = () => { m.fechar(); modalLinkCadastro(); };
+}
+async function abrirConferenciaCadastro(id) {
+  const r = await api('listar_cadastros_link', {});
+  S.cadLink = {}; r.solicitacoes.forEach(x => S.cadLink[x.id] = x);
+  if (!S.cadLink[id]) { toast('Este cadastro já foi conferido. Atualize a tela.', true); return recarregar(); }
+  conferirCadastroLink(id);
 }
 function conferirCadastroLink(id) {
   document.querySelector('.fundo-modal')?.remove();
@@ -2534,8 +2703,10 @@ function conferirCadastroLink(id) {
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-r>Recusar</button><button class="btn prim" data-a>${x.existente ? 'Aprovar e atualizar cliente' : 'Aprovar cadastro'}</button>` });
   m.el.querySelector('[data-v]').onclick = () => { m.fechar(); modalCadastrosLink(); };
   m.el.querySelector('[data-a]').onclick = async () => {
-    const r = await api('revisar_cadastro_link', { id, acao: 'aprovar' }); m.fechar(); toast('Cadastro aprovado.');
+    const r = await api('revisar_cadastro_link', { id, acao: 'aprovar' }); m.fechar();
+    toast(r.orcamento_numero ? `Cadastro aprovado. O orçamento ${r.orcamento_numero} já está ligado ao cliente e pode virar pedido.` : 'Cadastro aprovado.');
     if (VISTAS.get('clientes')) VISTAS.get('clientes').sujo = true;
+    if (r.orcamento_id) { const v = VISTAS.get('orcamento/' + r.orcamento_id); if (v) v.sujo = true; }
     if (await confirmar('Cadastro aprovado. Quer abrir o cliente para completar dados internos (revenda, observação fixa)?', 'Abrir cliente')) modalCliente(r.cliente_id, recarregar);
     else recarregar();
   };
@@ -2553,8 +2724,8 @@ const EMPRESA = {
   endereco: 'Av. General Pedro Pinho, 438 · Pestana · Osasco/SP · CEP 06180-180',
   telefone: '(11) 98456-6956',
   email: 'diretoria@gvh.com.br',
-  site: 'graficavendahoje.impressao.site',
-  condicoes_gerais: 'Valores válidos até a data de validade. A produção começa após a aprovação da arte e a confirmação do pagamento combinado. Prazos contados em dias úteis a partir da aprovação da arte.'
+  site: 'gvh.com.br',
+  condicoes_gerais: 'Valores válidos até a data de validade. A produção começa após a aprovação da arte e a confirmação do pagamento combinado. Prazos contados em dias úteis a partir da entrada em produção.'
 };
 function imprimirOrcamento(o) {
   const c = o.cliente;
@@ -2562,7 +2733,7 @@ function imprimirOrcamento(o) {
   const din = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const unit = (t, q) => Number(q) > 0 ? (Number(t) / Number(q)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '';
   const nomeProd = id => S.base.produtos.find(p => p.id === id)?.nome || '';
-  const vendedor = S.base.vendedores.find(v => v.id === o.vendedor_id)?.nome || '';
+  const vendedor = o.vendedor_nome || S.base.vendedores.find(v => v.id === o.vendedor_id)?.nome || '';
   const nomeCli = c ? (c.nome_fantasia || c.nome) : (o.cliente_nome || '');
   const linhasCli = c ? [
       c.nome_fantasia ? c.nome : '',
@@ -2570,7 +2741,7 @@ function imprimirOrcamento(o) {
       [c.telefone ? fmtTel(c.telefone) : '', c.email].filter(Boolean).join(' · '),
       enderecoCliente(c)
     ].filter(Boolean) : [];
-  const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
+  const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, o.vendedor_email || EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
   const logo = $('#logo-gvh', document)?.src || '';
   const titulo = `Orçamento ${o.numero} - ${nomeCli}`.replace(/[\\/:*?"<>|]/g, '');
   const itens = o.itens || [];
@@ -2623,9 +2794,10 @@ function imprimirOrcamento(o) {
   </table>
   <div class="totais">
     ${Number(o.desconto) || Number(o.frete) ? `<div><span>Subtotal</span><span>${din(o.valor_itens)}</span></div>` : ''}
-    ${Number(o.desconto) ? `<div><span>Desconto</span><span>- ${din(o.desconto)}</span></div>` : ''}
+    ${Number(o.desconto) ? `<div><span>${rotDesconto(o)}</span><span>- ${din(o.desconto)}</span></div>` : ''}
     ${Number(o.frete) ? `<div><span>Frete</span><span>${din(o.frete)}</span></div>` : ''}
     <div class="final"><span>Total</span><span>${din(o.valor_total)}</span></div>
+    ${o.desconto_pix && o.valor_pix != null ? `<div style="color:#00795f;font-weight:700;margin-top:4px"><span>À vista no Pix (${PIX_PCT}% off)</span><span>${din(o.valor_pix)}</span></div>` : ''}
   </div>
   ${freteGratis(o) ? `<div style="text-align:right">${SELO_FRETE}</div>` : ''}
   ${blocosProposta(o)}
@@ -2781,9 +2953,12 @@ rota('producao', async (_p, el) => {
 async function preencherArtesFinais(el) {
   const caixas = [...el.querySelectorAll('[data-arq-item]')]; if (!caixas.length) return;
   let r; try { r = await api('listar_arquivos_itens', { item_ids: [...new Set(caixas.map(c => c.dataset.arqItem))] }, true); } catch { return; }
-  caixas.forEach(c => { const l = (r.itens || {})[c.dataset.arqItem]; if (!l || !l.length) return;
-    c.innerHTML = `<div class="small" style="margin-top:4px"><span class="muted">Arte final:</span> ${l.map(a =>
-      `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome)}">${esc(a.rotulo || a.nome)}</a>${a.origem ? ` <span class="muted">(do ${esc(a.origem)})</span>` : ''}`).join(' · ')}</div>`; });
+  const cancel = new Set(r.cancelamentos_pendentes || []);
+  caixas.forEach(c => { const id = c.dataset.arqItem, l = (r.itens || {})[id] || [];
+    const avisos = [(r.trocas_pendentes || {})[id] ? badge('Troca de arte aguardando confirmação', 'b-ambar') : '', cancel.has(id) ? badge('Pedido de cancelamento', 'b-vermelho') : ''].filter(Boolean);
+    c.innerHTML = (l.length ? `<div class="small" style="margin-top:4px"><span class="muted">Arte final:</span> ${l.map(a =>
+      `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome)}">${esc(a.rotulo || a.nome)}</a>${a.origem ? ` <span class="muted">(do ${esc(a.origem)})</span>` : ''}`).join(' · ')}</div>` : '')
+      + (avisos.length ? `<div style="margin-top:4px">${avisos.join(' ')} <span class="small muted">(decida no pedido)</span></div>` : ''); });
 }
 async function salvarLinhaProd(id, enviar) {
   const tr = $(`tr[data-item="${id}"]`); const d = { id };
