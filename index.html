@@ -104,6 +104,9 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .b-vermelho{background:var(--vermelho-bg);color:var(--vermelho)}
 
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.caixa-linha{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--linha);border-radius:var(--raio-s);padding:12px 14px;cursor:pointer;background:#fff}
+.caixa-linha input{margin-top:2px;width:16px;height:16px;flex:none}
+.caixa-linha:hover{background:var(--linha-2)}
 .chip{border:1px solid var(--linha);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}
 .chip.ativo{background:var(--grafite);color:#fff;border-color:var(--grafite)}
 .desc-tipo{display:inline-flex;margin-left:6px;vertical-align:middle;border:1px solid var(--linha);border-radius:6px;overflow:hidden}
@@ -805,7 +808,7 @@ rota('pedido', async (id, el) => {
       </div>` : ''}
     </div>
 
-    <div class="painel" id="artes-pedido"><div class="painel-cab"><h2>Artes</h2></div><p class="small muted" style="margin:0">Carregando artes…</p></div>
+    <div class="painel" data-artes-pedido><div class="painel-cab"><h2>Artes</h2></div><p class="small muted" style="margin:0">Carregando artes…</p></div>
 
     <div class="painel" id="arquivos-pedido"><div class="painel-cab"><h2>Arquivos de arte</h2></div><p class="small muted" style="margin:0">Carregando arquivos…</p></div>
 
@@ -2953,6 +2956,7 @@ rota('arte', async (_p, el) => {
   const designers = S.base?.designers || [];
   definirTopoEm(el, 'Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.abaArte || (S.cache.abaArte = 'em_andamento');
+  const fl = S.cache.filtroArteFila || (S.cache.filtroArteFila = 'todos');
   const des = S.cache.desArte || '';
   const abas = [['em_andamento', 'Em andamento'], ['concluidas', 'Concluídas'], ['todas', 'Todas']];
   const r = await api('listar_artes', { situacao: f, designer_id: des || null, limite: 100 });
@@ -2964,12 +2968,14 @@ rota('arte', async (_p, el) => {
         <select id="f-des-arte"><option value="">Todas</option>
         ${designers.map(d => `<option value="${d.id}" ${des === d.id ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}</select></label>` : ''}
       <span class="small muted">${r.total} arte(s)</span>
-    </div></div>
-    ${cardsArtesPorPedido(r.artes, 'interno')}`;
+    </div>
+    ${chipsFiltroArte(r.artes, fl, 'filtrarFilaArte')}</div>
+    ${cardsArtesPorPedido(r.artes.filter(filtroArteFn(fl)), 'interno', 'arte')}`;
   const fd = $('#f-des-arte', el);
   if (fd) fd.onchange = () => { S.cache.desArte = fd.value; recarregar(); };
   preencherArquivosArte(el);
 });
+function filtrarFilaArte(k) { S.cache.filtroArteFila = k; recarregar(); }
 async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
 function modalArte(id) {
   const i = S.vistaAtual.dados.find(x => x.id === id);
@@ -3049,8 +3055,43 @@ function acoesVendedorArte(a, pode) {
   return b.join(' ');
 }
 
+// Filtros rápidos da fila. Cada um é uma pergunta que a equipe faz de verdade no dia a dia.
+const FILTROS_ARTE = [
+  ['todos', 'Todos', () => true],
+  ['urgentes', 'Urgentes', a => a.urgente],
+  ['a_fazer', 'Artes à fazer', a => a.situacao === 'a_fazer'],
+  ['em_criacao', 'Em criação', a => a.situacao === 'em_criacao'],
+  ['aguardando_cliente', 'Com o cliente', a => a.situacao === 'aguardando_cliente'],
+  ['em_alteracao', 'Para alterar', a => a.situacao === 'em_alteracao'],
+  ['atrasados', 'Atrasados', a => a.entrega_atrasada || a.tempo_estourado],
+  ['sem_designer', 'Sem designer', a => !a.designer_id]
+];
+function chipsFiltroArte(artes, atual, aoClicar) {
+  return `<div class="chips" style="margin-bottom:14px">${FILTROS_ARTE.map(([k, n, teste]) => {
+    const q = artes.filter(teste).length;
+    if (!q && k !== 'todos' && k !== atual) return '';
+    return `<button class="chip ${atual === k ? 'ativo' : ''}" onclick="${aoClicar}('${k}')">${n} (${q})</button>`;
+  }).join('')}</div>`;
+}
+const filtroArteFn = k => (FILTROS_ARTE.find(f => f[0] === k) || FILTROS_ARTE[0])[2];
+// pedidos abertos no "ver mais" — guardado por tela, para não fechar sozinho ao atualizar
+const abertoArte = (nome, id) => !!(S.cache.artesAbertas?.[nome]?.[id]);
+function alternarPedidoArte(nome, id) {
+  S.cache.artesAbertas = S.cache.artesAbertas || {};
+  const m = (S.cache.artesAbertas[nome] = S.cache.artesAbertas[nome] || {});
+  m[id] = !m[id]; recarregar();
+}
+// Resumo do pedido: o que a pessoa precisa para decidir se abre ou não.
+function resumoArtes(lista) {
+  const por = {};
+  lista.forEach(a => { por[a.situacao] = (por[a.situacao] || 0) + 1; });
+  const ordem = ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao', 'aprovada', 'resolvida_vendedor', 'cancelada'];
+  return ordem.filter(k => por[k]).map(k => `${badge((por[k] > 1 ? por[k] + ' ' : '') + (ARTE_SIT[k] || [k])[0], (ARTE_SIT[k] || [, 'b-cinza'])[1])}`).join(' ');
+}
+
 // Um card por pedido, com as artes dele agrupadas por item — é assim que a equipe de arte trabalha hoje.
-function cardsArtesPorPedido(artes, modo) {
+// Fechado mostra só o resumo; "Ver mais" abre os itens.
+function cardsArtesPorPedido(artes, modo, nomeTela) {
   if (!artes.length) return '<div class="vazio">Nenhuma arte por aqui.</div>';
   const porPedido = new Map();
   artes.forEach(a => { if (!porPedido.has(a.pedido_id)) porPedido.set(a.pedido_id, []); porPedido.get(a.pedido_id).push(a); });
@@ -3060,17 +3101,25 @@ function cardsArtesPorPedido(artes, modo) {
     lista.forEach(a => { const k = a.item_id || a.id; if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(a); });
     const urgente = lista.some(a => a.urgente);
     const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>` : '';
+    const aberto = abertoArte(nomeTela, p.pedido_id);
+    const nItens = porItem.size, nArtes = lista.length;
+    const alertas = [lista.some(a => a.entrega_atrasada) ? badge('ATRASADO', 'b-vermelho') : '',
+                     urgente ? badge('URGENTE', 'b-vermelho') : '',
+                     lista.some(a => a.tempo_estourado) ? badge('Passou do tempo previsto', 'b-ambar') : '',
+                     lista.some(a => a.falta_pagamento) ? badge('Falta pagamento', 'b-ambar') : ''].filter(Boolean).join(' ');
     return `
     <div class="painel" style="${urgente ? 'border-left:3px solid var(--vermelho)' : ''}">
       <div class="painel-cab">
         <div>
           <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
-          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)}${p.vendedor_nome ? ' · Vendedor ' + esc(p.vendedor_nome) : ''}</div>
+          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)} · ${nItens} ${nItens === 1 ? 'material' : 'materiais'} · ${nArtes} ${nArtes === 1 ? 'arte' : 'artes'}${p.vendedor_nome ? ' · Vendedor ' + esc(p.vendedor_nome) : ''}${modo !== 'designer' && p.designer_nome ? ' · ' + esc(p.designer_nome) : ''}</div>
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${resumoArtes(lista)} ${alertas}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${zap}
-          ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}</div>
+          ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}
+          <button class="btn peq" onclick="alternarPedidoArte('${nomeTela}','${p.pedido_id}')">${aberto ? 'Ver menos' : 'Ver mais'}</button></div>
       </div>
-      ${[...porItem.values()].map(as => {
+      ${!aberto ? '' : [...porItem.values()].map(as => {
         const it = as[0];
         return `<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
           <div><b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
@@ -3089,6 +3138,7 @@ function cardsArtesPorPedido(artes, modo) {
               <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                 ${modo === 'designer' ? acoesDesigner(a) : acoesVendedorArte(a, true)}
+                ${a.item_id && modo === 'designer' && a.situacao !== 'cancelada' ? `<button class="btn peq" onclick="modalEnviarArteDesigner('${a.id}')">Enviar arquivo</button>` : ''}
                 ${a.item_id ? `<button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>` : ''}
               </div>
             </div>`).join('')}
@@ -3110,13 +3160,37 @@ async function arteSituacao(id, situacao, pedeObs) {
 async function arteResolverVendedor(id) {
   const ok = confirm('Marcar esta arte como resolvida pelo vendedor? Ela sai da fila da designer e não gera pagamento para ela.');
   if (!ok) return;
-  try { await api('arte_resolver_vendedor', { id }); toast('Arte resolvida pelo vendedor.'); recarregar(); }
+  const fazer = async (confirmar) => {
+    const r = await api('arte_resolver_vendedor', confirmar ? { id, confirmar: true } : { id });
+    toast('Arte resolvida pelo vendedor.');
+    await oferecerPreImpressao(r.arte);
+    recarregar();
+  };
+  try { await fazer(false); }
   catch (e) {
     if (/^CONFIRMAR: /.test(e.message)) {
       if (!confirm(e.message.replace(/^CONFIRMAR: /, '') + '\n\nConfirmar?')) return;
-      try { await api('arte_resolver_vendedor', { id, confirmar: true }); toast('Arte resolvida pelo vendedor.'); recarregar(); }
-      catch (e2) { toast(e2.message, true); }
+      try { await fazer(true); } catch (e2) { toast(e2.message, true); }
     } else toast(e.message, true);
+  }
+}
+// Com a arte resolvida, o item pode já seguir. Perguntamos em vez de mover sozinho:
+// o pagamento e a autorização continuam valendo, e a trava do banco responde se não puder.
+async function oferecerPreImpressao(arte) {
+  if (!arte || !arte.item_id) return;
+  if (!['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao'].includes(arte.item_status)) return;
+  if (!podeStatus('pre_impressao')) return;
+  let r; try { r = await api('listar_artes', { situacao: 'em_andamento', pedido_id: arte.pedido_id, limite: 100 }, true); } catch { return; }
+  const pendentes = (r.artes || []).filter(a => a.item_id === arte.item_id);
+  if (pendentes.length) {
+    toast(`O material "${arte.item_descricao}" ainda tem ${pendentes.length} arte(s) em andamento.`);
+    return;
+  }
+  if (!confirm(`O material "${arte.item_descricao}" está em ${nomeStatusItem(arte.item_status)} e já não tem arte pendente.\n\nEnviar para a pré-impressão agora?`)) return;
+  try { await api('mudar_status_itens', { itens: [arte.item_id], status: 'pre_impressao' }); toast('Item enviado para a pré-impressão.'); }
+  catch (e) {
+    if (/^SEM_PAGAMENTO: /.test(e.message)) toast(e.message.replace(/^SEM_PAGAMENTO: /, ''), true);
+    else toast(e.message, true);
   }
 }
 function modalArteEditar(id) {
@@ -3126,7 +3200,8 @@ function modalArteEditar(id) {
     <form id="f-arte-ed" class="grade">
       <label class="campo">Tipo de arte<select name="tipo">${arteTipos().map(t => `<option value="${t.codigo}" ${a.tipo === t.codigo ? 'selected' : ''}>${esc(t.nome)}${t.valor != null ? ' — ' + brl(t.valor) : ''}</option>`).join('')}</select></label>
       <label class="campo">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(a.instrucoes || '')}</textarea></label>
-      <label class="campo" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="urgente" ${a.urgente ? 'checked' : ''}> Arte urgente</label>
+      <label class="caixa-linha"><input type="checkbox" name="urgente" ${a.urgente ? 'checked' : ''}>
+        <span><b>Arte urgente</b><br><span class="small muted">Vai para o topo da fila da designer.</span></span></label>
     </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
@@ -3156,15 +3231,55 @@ async function modalConversaArte(id) {
   };
 }
 
+// A designer envia o arquivo direto do card: material do cliente, prova ou arte final.
+function modalEnviarArteDesigner(arteId) {
+  const a = (S.vistaAtual?.artes || []).find(x => x.id === arteId); if (!a) return;
+  const m = abrirModal({ titulo: `Enviar arquivo · ${a.item_descricao}`, corpo: `
+    <form id="f-env-arte" class="grade">
+      <label class="campo">O que é este arquivo
+        <select name="tipo">
+          <option value="producao">Arte final (vai para a produção)</option>
+          <option value="prova">Prova (o que foi mostrado ao cliente)</option>
+          <option value="arte">Material que o cliente mandou</option>
+        </select></label>
+      <label class="campo">Arquivo<input type="file" id="env-arq" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
+      <label class="campo">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span>
+        <input type="text" id="env-rot" maxlength="40"></label>
+      <div class="small muted">O arquivo vai para a pasta deste pedido no Drive.</div>
+      <div id="env-status" class="small"></div>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Enviar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async (ev) => {
+    const arqs = [...$('#env-arq', m.el).files];
+    if (!arqs.length) return toast('Escolha o arquivo.', true);
+    const btn = ev.currentTarget; btn.disabled = true;
+    const st = $('#env-status', m.el);
+    const tipo = $('#f-env-arte', m.el).elements.tipo.value, rot = $('#env-rot', m.el).value.trim();
+    let falhou = 0;
+    for (const arq of arqs) {
+      st.textContent = `Enviando ${arq.name}…`;
+      try { await enviarArquivoDrive(a.pedido_id, arq, tipo, a.item_id, rot, f => { st.textContent = `Enviando ${arq.name}… ${Math.round(f * 100)}%`; }); }
+      catch (e) { falhou++; toast(`${arq.name}: ${e.message}`, true); }
+    }
+    btn.disabled = false;
+    if (falhou < arqs.length) { m.fechar(); toast('Arquivo enviado.'); recarregar(); }
+    else st.textContent = '';
+  };
+}
+
 /* ---------- painel da designer ---------- */
 rota('minhas-artes', async (_p, el) => {
   definirTopoEm(el, 'Minhas artes', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const f = S.cache.filtroMinhasArtes || (S.cache.filtroMinhasArtes = 'todos');
   const r = await api('listar_artes', { situacao: 'em_andamento', limite: 100 });
   vistaDoEl(el).artes = r.artes;
-  el.innerHTML = `${r.total > r.artes.length ? `<p class="small muted">Mostrando ${r.artes.length} de ${r.total}.</p>` : ''}
-    ${cardsArtesPorPedido(r.artes, 'designer')}`;
+  const lista = r.artes.filter(filtroArteFn(f));
+  el.innerHTML = `${chipsFiltroArte(r.artes, f, 'filtrarMinhasArtes')}
+    ${r.total > r.artes.length ? `<p class="small muted">Mostrando ${r.artes.length} de ${r.total}.</p>` : ''}
+    ${cardsArtesPorPedido(lista, 'designer', 'minhas-artes')}`;
   preencherArquivosArte(el);
 });
+function filtrarMinhasArtes(k) { S.cache.filtroMinhasArtes = k; recarregar(); }
 rota('artes-feitas', async (_p, el) => {
   definirTopoEm(el, 'Artes concluídas', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const busca = S.cache.buscaArtesFeitas || '';
@@ -3174,7 +3289,7 @@ rota('artes-feitas', async (_p, el) => {
     <div class="painel"><div class="filtros"><label class="campo">Buscar <span class="muted">(pedido, cliente ou item)</span>
       <input type="search" id="b-artes" value="${esc(busca)}" placeholder="Ex.: 48923 ou Alessandra"></label></div></div>
     <p class="small muted">${r.total} arte(s) concluída(s).</p>
-    ${cardsArtesPorPedido(r.artes, 'designer')}`;
+    ${cardsArtesPorPedido(r.artes, 'designer', 'artes-feitas')}`;
   const b = $('#b-artes', el);
   b.onchange = () => { S.cache.buscaArtesFeitas = b.value.trim(); recarregar(); };
   preencherArquivosArte(el);
@@ -3217,7 +3332,7 @@ async function preencherArquivosArte(el) {
 
 /* ---------- bloco "Artes" na tela do pedido (vendedor / diretor) ---------- */
 async function preencherArtesPedido(el, p) {
-  const alvo = $('#artes-pedido', el); if (!alvo) return;
+  const alvo = el.querySelector('[data-artes-pedido]'); if (!alvo) return;
   let r;
   try { r = await api('listar_artes', { situacao: 'todas', limite: 200, pedido_id: p.id }, true); }
   catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Artes</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar as artes: ${esc(e.message)}</p>`; return; }
@@ -3273,7 +3388,7 @@ async function preencherArtesPedido(el, p) {
     }).join('') : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
     <p class="small muted" style="margin-top:14px">O item sai da etapa de arte quando todas as artes dele estiverem aprovadas pelo cliente. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>`;
 
-  const sel = $('#des-pedido', alvo);
+  const sel = alvo.querySelector('#des-pedido');
   if (sel) sel.onchange = async () => {
     try { await api('pedido_designer', { pedido_id: p.id, designer_id: sel.value || null }); toast('Designer do pedido atualizada.'); recarregar(); }
     catch (e) { toast(e.message, true); sel.value = desPedido; }
