@@ -104,6 +104,11 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .b-vermelho{background:var(--vermelho-bg);color:var(--vermelho)}
 
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.cores{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.cores button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.cores button.ativo{border-color:var(--grafite);box-shadow:0 0 0 2px #fff inset}
+.tag-pessoa{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;border-radius:20px;padding:3px 10px;white-space:nowrap;line-height:1.5}
+.tag-pessoa .papel{font-weight:400;opacity:.8;font-size:11px}
 .caixa-linha{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--linha);border-radius:var(--raio-s);padding:12px 14px;cursor:pointer;background:#fff}
 .caixa-linha input{margin-top:2px;width:16px;height:16px;flex:none}
 .caixa-linha:hover{background:var(--linha-2)}
@@ -3006,6 +3011,34 @@ const ARTE_SIT = {
   cancelada: ['Cancelada', 'b-vermelho']
 };
 const badgeArte = s => badge((ARTE_SIT[s] || [s])[0], (ARTE_SIT[s] || [, 'b-cinza'])[1]);
+// Cada pessoa tem uma cor no cadastro (Cadastros › Usuários). Sem cor, cai numa cor
+// derivada do nome, para nunca ficar sem identificação visual.
+const COR_PESSOA_PADRAO = '#5D6B73';
+function corDaPessoa(nome, cor) {
+  if (cor && /^#[0-9A-Fa-f]{6}$/.test(cor)) return cor;
+  if (!nome) return COR_PESSOA_PADRAO;
+  const p = ['#00838F', '#AD1457', '#5D4037', '#455A64', '#9E9D24', '#4527A0', '#C62828'];
+  let h = 0; for (const c of String(nome)) h = (h * 31 + c.charCodeAt(0)) % 9973;
+  return p[h % p.length];
+}
+// texto branco ou escuro conforme o que der mais contraste com a cor de fundo,
+// medido pela regra de contraste da WCAG — serve para qualquer cor que o diretor escolher
+function luminancia(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const contrasteEntre = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+const LUM_ESCURO = luminancia('#132A32');
+function textoSobre(hex) {
+  const L = luminancia(hex);
+  return contrasteEntre(L, 1) >= contrasteEntre(L, LUM_ESCURO) ? '#fff' : '#132A32';
+}
+function tagPessoa(nome, cor, papel) {
+  if (!nome) return '';
+  const c = corDaPessoa(nome, cor);
+  return `<span class="tag-pessoa" style="background:${c};color:${textoSobre(c)}" title="${esc(papel ? papel + ': ' + nome : nome)}">${esc(nome)}${papel ? `<span class="papel">${esc(papel)}</span>` : ''}</span>`;
+}
 const soPainelArte = () => !!S.perm.so_painel_arte;
 const gerenciaArtes = () => !!S.perm.gerencia_artes;
 const arteTipos = () => (S.base?.arte_tipos || []).filter(t => t.ativo);
@@ -3112,7 +3145,13 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
       <div class="painel-cab">
         <div>
           <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
-          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)} · ${nItens} ${nItens === 1 ? 'material' : 'materiais'} · ${nArtes} ${nArtes === 1 ? 'arte' : 'artes'}${p.vendedor_nome ? ' · Vendedor ' + esc(p.vendedor_nome) : ''}${modo !== 'designer' && p.designer_nome ? ' · ' + esc(p.designer_nome) : ''}</div>
+          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)} · ${nItens} ${nItens === 1 ? 'material' : 'materiais'} · ${nArtes} ${nArtes === 1 ? 'arte' : 'artes'}</div>
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${tagPessoa(p.vendedor_nome, p.vendedor_cor, 'vendedor')}
+            ${[...new Set(lista.filter(a => a.designer_nome).map(a => a.designer_nome + '|' + (a.designer_cor || '')))]
+              .map(x => tagPessoa(x.split('|')[0], x.split('|')[1], 'designer')).join('')}
+            ${lista.some(a => !a.designer_id) ? badge('Sem designer', 'b-ambar') : ''}
+          </div>
           <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${resumoArtes(lista)} ${alertas}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${zap}
@@ -3134,7 +3173,8 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
                 ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
               </div>
               ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
-              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}${a.designer_nome && modo !== 'designer' ? ' · ' + esc(a.designer_nome) : ''}</div>
+              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}</div>
+              ${modo !== 'designer' && a.designer_nome ? `<div style="margin-top:6px">${tagPessoa(a.designer_nome, a.designer_cor, 'designer')}</div>` : ''}
               <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                 ${modo === 'designer' ? acoesDesigner(a) : acoesVendedorArte(a, true)}
@@ -3306,7 +3346,7 @@ rota('meus-pagamentos', async (_p, el) => {
     <p class="small muted">Período de ${data(r.de)} a ${data(r.ate)}. Conta arte aprovada pelo cliente e feita pela designer.</p>
     ${sem.length ? sem.map(s => `
       <div class="painel">
-        <div class="painel-cab"><h2 style="margin:0">Semana de ${data(s.semana)}${soPainelArte() ? '' : ' · ' + esc(s.designer_nome)}</h2>
+        <div class="painel-cab"><h2 style="margin:0">Semana de ${data(s.semana)} ${soPainelArte() ? '' : tagPessoa(s.designer_nome, (S.base?.designers || []).find(d => d.id === s.designer_id)?.cor)}</h2>
           <b class="num">${brl(s.total)}</b></div>
         <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Item</th><th>Tipo</th><th class="dir">Valor</th><th>Aprovada em</th></tr></thead>
           <tbody>${(r.artes || []).filter(a => (!s.designer_id || a.designer_id === s.designer_id) && String(a.aprovada_em).slice(0, 10) >= String(s.semana) && String(a.aprovada_em).slice(0, 10) <= addDiasISO(s.semana, 6))
@@ -3344,12 +3384,13 @@ async function preencherArtesPedido(el, p) {
   const itens = p.itens.filter(i => i.status !== 'cancelado');
 
   alvo.innerHTML = `
-    <div class="painel-cab"><h2>Artes</h2>
+    <div class="painel-cab"><h2>Artes ${artes.length && artes[0].vendedor_nome ? tagPessoa(artes[0].vendedor_nome, artes[0].vendedor_cor, 'vendedor') : ''}</h2>
       ${podeMexer && designers.length ? `<label class="campo" style="margin:0;min-width:220px">Designer do pedido
         <select id="des-pedido">
           <option value="">Sem designer</option>
           ${designers.map(d => `<option value="${d.id}" ${desPedido === d.id ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}
-        </select></label>` : ''}
+        </select></label>
+        ${desPedido ? `<div style="align-self:flex-end;padding-bottom:10px">${tagPessoa((designers.find(d => d.id === desPedido) || {}).nome, (designers.find(d => d.id === desPedido) || {}).cor, 'designer')}</div>` : ''}` : ''}
     </div>
     ${itens.length ? itens.map(i => {
       const as = artes.filter(a => a.item_id === i.id && a.situacao !== 'cancelada');
@@ -3374,7 +3415,7 @@ async function preencherArtesPedido(el, p) {
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                 ${as.length > 1 ? `<span class="small muted">Arte ${k + 1}</span>` : ''}
                 ${badgeArte(a.situacao)} ${badge(nomeTipoArte(a.tipo), 'b-cinza')} ${etiquetasArte(a)}
-                ${a.designer_nome ? `<span class="small muted">${esc(a.designer_nome)}</span>` : `<span class="small muted">Sem designer</span>`}
+                ${a.designer_nome ? tagPessoa(a.designer_nome, a.designer_cor, 'designer') : badge('Sem designer', 'b-ambar')}
                 ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
               </div>
               ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
@@ -4028,7 +4069,7 @@ rota('usuarios', async (_p, el) => {
   definirTopoEm(el, 'Usuários', `<button class="btn prim" onclick="modalUsuario(null)">Novo usuário</button>`);
   const r = await api('listar_usuarios'); vistaDoEl(el).dados = r;
   el.innerHTML = `<div class="painel"><div class="tabela-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Comissão</th><th></th></tr></thead><tbody>
-    ${r.usuarios.map(u => `<tr class="clicavel" onclick="modalUsuario('${u.id}')"><td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td><td>${esc(u.perfil_nome)}</td>
+    ${r.usuarios.map(u => `<tr class="clicavel" onclick="modalUsuario('${u.id}')"><td>${tagPessoa(u.nome, u.cor)}</td><td>${esc(u.email)}</td><td>${esc(u.perfil_nome)}</td>
       <td>${u.recebe_comissao ? num(u.percentual_comissao) + '%' : 'Não recebe (economizada)'}</td><td>${u.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
     </tbody></table></div></div>`;
 });
@@ -4040,15 +4081,41 @@ function modalUsuario(id) {
     <label class="campo">Perfil<select name="perfil">${S.vistaAtual.dados.perfis.map(p => `<option value="${p.codigo}" ${p.codigo === u.perfil ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
     <label class="campo">${id ? 'Nova senha (deixe em branco para manter)' : 'Senha'}<input type="text" name="senha" autocomplete="off"></label>
     <label class="campo">Comissão (%)<input type="number" step="0.01" name="percentual_comissao" value="${esc(u.percentual_comissao)}"></label>
-    <div></div>
+    <div class="campo" style="grid-column:1/-1">
+      <span>Cor nas etiquetas <span class="muted">(aparece nas telas de arte)</span></span>
+      <input type="hidden" name="cor" id="u-cor" value="${esc(u.cor || '')}">
+      <div class="cores" id="u-cores"></div>
+      <div id="u-cor-previa" style="margin-top:8px"></div>
+    </div>
     <label class="check"><input type="checkbox" name="recebe_comissao" value="true" ${u.recebe_comissao ? 'checked' : ''}> Recebe comissão</label>
     <label class="check"><input type="checkbox" name="ativo" value="true" ${u.ativo ? 'checked' : ''}> Ativo</label></form>
     <p class="small muted" style="margin:0">Quem não recebe comissão tem o valor registrado como "comissão economizada". Trocar a senha encerra as sessões abertas desse usuário.</p>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar usuário</button>` });
+  // paleta: as cinco primeiras são as cores combinadas da equipe; as demais ficam para quem entrar depois
+  const paleta = S.vistaAtual.dados.paleta || [];
+  const usadas = new Map((S.vistaAtual.dados.usuarios || []).filter(x => x.cor && x.id !== id).map(x => [x.cor.toUpperCase(), x.nome]));
+  const hCor = $('#u-cor', m.el);
+  const desenharCores = () => {
+    $('#u-cores', m.el).innerHTML = paleta.map(c => {
+      const dono = usadas.get(c.toUpperCase());
+      return `<button type="button" data-cor="${c}" class="${(hCor.value || '').toUpperCase() === c.toUpperCase() ? 'ativo' : ''}"
+        style="background:${c}" title="${dono ? 'Já é a cor de ' + esc(dono) : 'Cor livre'}"></button>`;
+    }).join('');
+    const nome = $('#f-usu', m.el).elements.nome.value || 'Nome da pessoa';
+    const dono = usadas.get((hCor.value || '').toUpperCase());
+    $('#u-cor-previa', m.el).innerHTML = (hCor.value ? tagPessoa(nome, hCor.value) : '<span class="small muted">Sem cor escolhida: o sistema escolhe uma ao salvar.</span>')
+      + (dono ? `<div class="small" style="color:var(--ambar, #9a6410);margin-top:6px">Atenção: essa cor já é de ${esc(dono)}.</div>` : '');
+    $('#u-cores', m.el).querySelectorAll('[data-cor]').forEach(b => b.onclick = () => {
+      hCor.value = (hCor.value || '').toUpperCase() === b.dataset.cor.toUpperCase() ? '' : b.dataset.cor;
+      desenharCores();
+    });
+  };
+  desenharCores();
+  $('#f-usu', m.el).elements.nome.addEventListener('input', desenharCores);
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados($('#f-usu', m.el)); d.ativo = !!d.ativo; d.recebe_comissao = !!d.recebe_comissao; if (id) d.id = id;
-    await api('salvar_usuario', d); m.fechar(); toast('Usuário salvo.'); recarregar();
+    await api('salvar_usuario', d); m.fechar(); toast('Usuário salvo.'); await carregarBase(); recarregar();
   };
 }
 
