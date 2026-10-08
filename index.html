@@ -312,7 +312,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
       throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -443,12 +443,22 @@ async function iniciarApp() {
   $('#u-perfil').textContent = S.perm.nome || S.usuario.perfil;
   montarMenu();
   iniciarAtualizacaoAutomatica();
-  if (!location.hash) location.hash = '#/inicio'; else rotear();
+  const inicial = S.perm.so_painel_arte ? '#/minhas-artes' : '#/inicio';
+  if (!location.hash || (S.perm.so_painel_arte && !/^#\/(minhas-artes|artes-feitas|meus-pagamentos)/.test(location.hash))) location.hash = inicial;
+  else rotear();
 }
 
 /* ---------- menu e rotas ---------- */
 function itensMenu() {
   const m = [];
+  // AR2: o perfil Designer só usa o painel das artes dela
+  if (S.perm.so_painel_arte) {
+    m.push(['Minhas artes']);
+    m.push(['#/minhas-artes', 'Artes em andamento']);
+    m.push(['#/artes-feitas', 'Concluídas']);
+    m.push(['#/meus-pagamentos', 'Meus pagamentos']);
+    return m;
+  }
   m.push(['Operação']);
   m.push(['#/inicio', 'Início']);
   m.push(['#/pedidos', 'Pedidos']);
@@ -466,6 +476,7 @@ function itensMenu() {
   if (podeNovaCategoria()) m.push(['#/sugestoes', 'Produtos sugeridos']);
   if (pode('gerencia_cadastros')) m.push(['#/feriados', 'Feriados']);
   if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
+  if (S.perm.gerencia_artes) m.push(['#/meus-pagamentos', 'Pagamentos das artes']);
   return m;
 }
 function montarMenu() {
@@ -794,6 +805,8 @@ rota('pedido', async (id, el) => {
       </div>` : ''}
     </div>
 
+    <div class="painel" id="artes-pedido"><div class="painel-cab"><h2>Artes</h2></div><p class="small muted" style="margin:0">Carregando artes…</p></div>
+
     <div class="painel" id="arquivos-pedido"><div class="painel-cab"><h2>Arquivos de arte</h2></div><p class="small muted" style="margin:0">Carregando arquivos…</p></div>
 
     ${pode('ve_financeiro') ? `
@@ -831,6 +844,7 @@ rota('pedido', async (id, el) => {
   $$('.sel-item').forEach(c => c.onchange = atualizarSel);
   $('#sel-todos').onchange = e => { $$('.sel-item:not(:disabled)').forEach(c => c.checked = e.target.checked); atualizarSel(); };
   $('#form-obs').onsubmit = async e => { e.preventDefault(); await api('adicionar_observacao', { pedido_id: p.id, texto: e.target.texto.value }); toast('Observação adicionada.'); recarregar(); };
+  preencherArtesPedido(el, p);
   carregarArquivosPedido(p, el);
 });
 
@@ -2936,30 +2950,25 @@ function abrirImpressao(html, titulo) {
 
 /* ---------- ARTE ---------- */
 rota('arte', async (_p, el) => {
+  const designers = S.base?.designers || [];
   definirTopoEm(el, 'Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
-  const f = S.cache.filtroArte || (S.cache.filtroArte = 'arte_a_fazer');
-  const abas = [['arte_a_fazer','À fazer'],['arte_em_alteracao','Em alteração'],['arte_em_aprovacao','Com o cliente para aprovação']];
-  const r = await api('listar_itens', { status: ['arte_a_fazer','arte_em_alteracao','arte_em_aprovacao'] });
-  const cont = k => r.itens.filter(i => i.status === k).length;
-  const lista = r.itens.filter(i => i.status === f);
+  const f = S.cache.abaArte || (S.cache.abaArte = 'em_andamento');
+  const des = S.cache.desArte || '';
+  const abas = [['em_andamento', 'Em andamento'], ['concluidas', 'Concluídas'], ['todas', 'Todas']];
+  const r = await api('listar_artes', { situacao: f, designer_id: des || null, limite: 100 });
+  vistaDoEl(el).artes = r.artes;
   el.innerHTML = `
-    <div class="chips" style="margin-bottom:14px">${abas.map(([k, n]) => `<button class="chip ${f === k ? 'ativo' : ''}" onclick="S.cache.filtroArte='${k}';recarregar()">${n} (${cont(k)})</button>`).join('')}</div>
-    <div class="painel">${lista.length ? `<div class="tabela-wrap"><table>
-      <thead><tr><th>Pedido</th><th>Item</th><th>Status</th><th>Arte</th><th>Parado há</th><th></th></tr></thead>
-      <tbody>${lista.map(i => `<tr>
-        <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>${i.observacao ? `<div class="small">${esc(i.observacao)}</div>` : ''}</td>
-        <td>${badgeItem(i.status)}</td>
-        <td class="small">${i.arte_url ? `<a href="${esc(i.arte_url)}" target="_blank" rel="noopener">Prova</a> ` : ''}<div data-arq-item="${i.id}"></div></td>
-        <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
-        <td class="dir" style="white-space:nowrap">
-          <button class="btn peq" onclick="modalArte('${i.id}')">Arte</button>
-          ${i.status !== 'arte_em_aprovacao' && podeStatus('arte_em_aprovacao') ? `<button class="btn peq" onclick="moverItem('${i.id}','arte_em_aprovacao')">Enviei ao cliente</button>` : ''}
-          ${i.status === 'arte_em_aprovacao' && podeStatus('arte_em_alteracao') ? `<button class="btn peq" onclick="moverItem('${i.id}','arte_em_alteracao')">Pediu alteração</button>` : ''}
-          ${podeStatus('pre_impressao') ? `<button class="btn prim peq" onclick="moverItem('${i.id}','pre_impressao')">Arte aprovada</button>` : ''}
-        </td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item nesta etapa.</div>'}</div>`;
-  vistaDoEl(el).dados = r.itens;
-  preencherArtesFinais(el);
+    <div class="painel"><div class="filtros" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="chips">${abas.map(([k, n]) => `<button class="chip ${f === k ? 'ativo' : ''}" onclick="S.cache.abaArte='${k}';recarregar()">${n}</button>`).join('')}</div>
+      ${designers.length > 1 ? `<label class="campo" style="margin:0;min-width:200px">Designer
+        <select id="f-des-arte"><option value="">Todas</option>
+        ${designers.map(d => `<option value="${d.id}" ${des === d.id ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}</select></label>` : ''}
+      <span class="small muted">${r.total} arte(s)</span>
+    </div></div>
+    ${cardsArtesPorPedido(r.artes, 'interno')}`;
+  const fd = $('#f-des-arte', el);
+  if (fd) fd.onchange = () => { S.cache.desArte = fd.value; recarregar(); };
+  preencherArquivosArte(el);
 });
 async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
 function modalArte(id) {
@@ -2980,6 +2989,305 @@ function modalArte(id) {
     }
     m.fechar(); toast('Arte atualizada.'); recarregar();
   };
+}
+
+/* ---------- ARTES (AR2) ---------- */
+// Situações da arte. A designer move a arte; o item anda sozinho conforme as artes dele.
+const ARTE_SIT = {
+  a_fazer: ['À fazer', 'b-cinza'], em_criacao: ['Em criação', 'b-azul'],
+  aguardando_cliente: ['Com o cliente', 'b-ambar'], em_alteracao: ['Em alteração', 'b-ambar'],
+  aprovada: ['Aprovada', 'b-verde'], resolvida_vendedor: ['Resolvida pelo vendedor', 'b-cinza'],
+  cancelada: ['Cancelada', 'b-vermelho']
+};
+const badgeArte = s => badge((ARTE_SIT[s] || [s])[0], (ARTE_SIT[s] || [, 'b-cinza'])[1]);
+const soPainelArte = () => !!S.perm.so_painel_arte;
+const gerenciaArtes = () => !!S.perm.gerencia_artes;
+const arteTipos = () => (S.base?.arte_tipos || []).filter(t => t.ativo);
+const nomeTipoArte = c => (S.base?.arte_tipos || []).find(t => t.codigo === c)?.nome || c;
+
+function tempoCurto(seg) {
+  const s = Math.max(0, Math.round(Number(seg) || 0));
+  if (s < 60) return s + ' s';
+  const m = Math.round(s / 60); if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), mm = m % 60;
+  if (h < 24) return h + 'h' + (mm ? ' ' + mm + 'min' : '');
+  const d = Math.floor(h / 24); return d + (d === 1 ? ' dia' : ' dias') + (h % 24 ? ' ' + (h % 24) + 'h' : '');
+}
+function etiquetasArte(a) {
+  const e = [];
+  if (a.urgente) e.push(badge('URGENTE', 'b-vermelho'));
+  if (a.entrega_atrasada) e.push(badge('ATRASADO', 'b-vermelho'));
+  if (a.tempo_estourado) e.push(badge('Passou do tempo previsto', 'b-ambar'));
+  if (a.situacao === 'aprovada') e.push(badge('CLIENTE APROVOU', 'b-verde'));
+  if (a.situacao === 'em_alteracao') e.push(badge('CLIENTE PEDIU ALTERAÇÃO', 'b-ambar'));
+  if (a.falta_pagamento) e.push(badge('Falta pagamento', 'b-ambar'));
+  return e.join(' ');
+}
+// Botões da designer: um passo por vez, na ordem do trabalho dela.
+function acoesDesigner(a) {
+  const b = [];
+  if (a.situacao === 'a_fazer') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','em_criacao')">Começar a arte</button>`);
+  if (a.situacao === 'em_criacao' || a.situacao === 'em_alteracao') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aguardando_cliente')">Enviei a prova ao cliente</button>`);
+  if (a.situacao === 'aguardando_cliente') {
+    b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
+    b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Cliente pediu alteração</button>`);
+  }
+  return b.join(' ');
+}
+function acoesVendedorArte(a, pode) {
+  if (!pode) return '';
+  const b = [];
+  if (a.situacao === 'aguardando_cliente') {
+    b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
+    b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Cliente pediu alteração</button>`);
+  }
+  if (a.situacao === 'aprovada') b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Devolver para a designer</button>`);
+  if (['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao'].includes(a.situacao)) {
+    b.push(`<button class="btn peq" onclick="modalArteEditar('${a.id}')">Editar</button>`);
+    b.push(`<button class="btn peq" onclick="arteResolverVendedor('${a.id}')">Resolvida pelo vendedor</button>`);
+  }
+  return b.join(' ');
+}
+
+// Um card por pedido, com as artes dele agrupadas por item — é assim que a equipe de arte trabalha hoje.
+function cardsArtesPorPedido(artes, modo) {
+  if (!artes.length) return '<div class="vazio">Nenhuma arte por aqui.</div>';
+  const porPedido = new Map();
+  artes.forEach(a => { if (!porPedido.has(a.pedido_id)) porPedido.set(a.pedido_id, []); porPedido.get(a.pedido_id).push(a); });
+  return [...porPedido.values()].map(lista => {
+    const p = lista[0];
+    const porItem = new Map();
+    lista.forEach(a => { const k = a.item_id || a.id; if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(a); });
+    const urgente = lista.some(a => a.urgente);
+    const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>` : '';
+    return `
+    <div class="painel" style="${urgente ? 'border-left:3px solid var(--vermelho)' : ''}">
+      <div class="painel-cab">
+        <div>
+          <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
+          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)}${p.vendedor_nome ? ' · Vendedor ' + esc(p.vendedor_nome) : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${zap}
+          ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}</div>
+      </div>
+      ${[...porItem.values()].map(as => {
+        const it = as[0];
+        return `<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
+          <div><b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
+            ${it.categoria_nome ? `<span class="small muted"> · ${esc(it.categoria_nome)}</span>` : ''}
+            ${as.length > 1 ? `<span class="small muted"> · ${as.length} artes</span>` : ''}</div>
+          ${it.item_observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Observação:</span> ${esc(it.item_observacao)}</div>` : ''}
+          ${as.map((a, k) => `
+            <div style="margin-top:10px;padding:10px;background:var(--fundo-2, #f7f8f9);border-radius:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                ${as.length > 1 ? `<span class="small muted">Arte ${k + 1}</span>` : ''}
+                ${badgeArte(a.situacao)} ${badge(nomeTipoArte(a.tipo), 'b-cinza')} ${etiquetasArte(a)}
+                ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
+              </div>
+              ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
+              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}${a.designer_nome && modo !== 'designer' ? ' · ' + esc(a.designer_nome) : ''}</div>
+              <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
+              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                ${modo === 'designer' ? acoesDesigner(a) : acoesVendedorArte(a, true)}
+                ${a.item_id ? `<button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>` : ''}
+              </div>
+            </div>`).join('')}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function arteSituacao(id, situacao, pedeObs) {
+  let obs = null;
+  if (pedeObs) {
+    obs = prompt(situacao === 'em_alteracao' ? 'O que o cliente pediu para mudar?' : 'Observação:');
+    if (obs == null || !obs.trim()) return;
+  }
+  try { await api('arte_situacao', { id, situacao, obs: obs ? obs.trim() : null }); toast('Arte atualizada.'); recarregar(); }
+  catch (e) { toast(e.message, true); }
+}
+async function arteResolverVendedor(id) {
+  const ok = confirm('Marcar esta arte como resolvida pelo vendedor? Ela sai da fila da designer e não gera pagamento para ela.');
+  if (!ok) return;
+  try { await api('arte_resolver_vendedor', { id }); toast('Arte resolvida pelo vendedor.'); recarregar(); }
+  catch (e) {
+    if (/^CONFIRMAR: /.test(e.message)) {
+      if (!confirm(e.message.replace(/^CONFIRMAR: /, '') + '\n\nConfirmar?')) return;
+      try { await api('arte_resolver_vendedor', { id, confirmar: true }); toast('Arte resolvida pelo vendedor.'); recarregar(); }
+      catch (e2) { toast(e2.message, true); }
+    } else toast(e.message, true);
+  }
+}
+function modalArteEditar(id) {
+  const a = (S.vistaAtual?.artes || []).find(x => x.id === id); if (!a) return;
+  const m = abrirModal({
+    titulo: `Arte · ${a.item_descricao}`, corpo: `
+    <form id="f-arte-ed" class="grade">
+      <label class="campo">Tipo de arte<select name="tipo">${arteTipos().map(t => `<option value="${t.codigo}" ${a.tipo === t.codigo ? 'selected' : ''}>${esc(t.nome)}${t.valor != null ? ' — ' + brl(t.valor) : ''}</option>`).join('')}</select></label>
+      <label class="campo">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(a.instrucoes || '')}</textarea></label>
+      <label class="campo" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="urgente" ${a.urgente ? 'checked' : ''}> Arte urgente</label>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const f = $('#f-arte-ed', m.el);
+    try {
+      await api('salvar_arte', { id, tipo: f.elements.tipo.value, instrucoes: f.elements.instrucoes.value.trim(), urgente: f.elements.urgente.checked });
+      m.fechar(); toast('Arte salva.'); recarregar();
+    } catch (e) { toast(e.message, true); }
+  };
+}
+async function modalConversaArte(id) {
+  let r; try { r = await api('obter_arte', { id }); } catch (e) { return toast(e.message, true); }
+  const msgs = r.mensagens || [];
+  const linha = x => `<div style="padding:8px 10px;border-radius:8px;margin-bottom:6px;background:${x.canal === 'cliente' ? 'var(--ambar-bg)' : 'var(--linha-2)'}">
+      <div class="small muted">${x.canal === 'cliente' ? 'Pedido do cliente' : esc(x.autor_nome || '')} · ${dataHora(x.created_at)}</div>
+      <div>${esc(x.texto)}</div></div>`;
+  const m = abrirModal({
+    titulo: `Conversa · ${r.arte.item_descricao}`, corpo: `
+    <div style="max-height:46vh;overflow:auto;margin-bottom:12px">${msgs.length ? msgs.map(linha).join('') : '<p class="small muted">Nenhuma mensagem ainda.</p>'}</div>
+    <label class="campo">Nova mensagem<textarea id="msg-arte" rows="3" placeholder="Para o vendedor ou para a designer"></textarea></label>`,
+    rodape: `<button class="btn" data-v>Fechar</button><button class="btn prim" data-s>Enviar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const t = $('#msg-arte', m.el).value.trim(); if (!t) return;
+    try { await api('arte_mensagem', { id, canal: 'equipe', texto: t }); m.fechar(); toast('Mensagem enviada.'); recarregar(); }
+    catch (e) { toast(e.message, true); }
+  };
+}
+
+/* ---------- painel da designer ---------- */
+rota('minhas-artes', async (_p, el) => {
+  definirTopoEm(el, 'Minhas artes', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const r = await api('listar_artes', { situacao: 'em_andamento', limite: 100 });
+  vistaDoEl(el).artes = r.artes;
+  el.innerHTML = `${r.total > r.artes.length ? `<p class="small muted">Mostrando ${r.artes.length} de ${r.total}.</p>` : ''}
+    ${cardsArtesPorPedido(r.artes, 'designer')}`;
+  preencherArquivosArte(el);
+});
+rota('artes-feitas', async (_p, el) => {
+  definirTopoEm(el, 'Artes concluídas', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const busca = S.cache.buscaArtesFeitas || '';
+  const r = await api('listar_artes', { situacao: 'concluidas', busca: busca || null, limite: 50 });
+  vistaDoEl(el).artes = r.artes;
+  el.innerHTML = `
+    <div class="painel"><div class="filtros"><label class="campo">Buscar <span class="muted">(pedido, cliente ou item)</span>
+      <input type="search" id="b-artes" value="${esc(busca)}" placeholder="Ex.: 48923 ou Alessandra"></label></div></div>
+    <p class="small muted">${r.total} arte(s) concluída(s).</p>
+    ${cardsArtesPorPedido(r.artes, 'designer')}`;
+  const b = $('#b-artes', el);
+  b.onchange = () => { S.cache.buscaArtesFeitas = b.value.trim(); recarregar(); };
+  preencherArquivosArte(el);
+});
+rota('meus-pagamentos', async (_p, el) => {
+  definirTopoEm(el, soPainelArte() ? 'Meus pagamentos' : 'Pagamentos das artes', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  const r = await api('artes_pagamentos', {});
+  const sem = (r.semanas || []);
+  el.innerHTML = `
+    <div class="grade g2">
+      <div class="cartao-num"><span class="n num">${brl(r.total)}</span><span class="muted small">Total no período</span></div>
+      <div class="cartao-num"><span class="n num">${r.quantidade}</span><span class="muted small">Artes aprovadas</span></div>
+    </div>
+    <p class="small muted">Período de ${data(r.de)} a ${data(r.ate)}. Conta arte aprovada pelo cliente e feita pela designer.</p>
+    ${sem.length ? sem.map(s => `
+      <div class="painel">
+        <div class="painel-cab"><h2 style="margin:0">Semana de ${data(s.semana)}${soPainelArte() ? '' : ' · ' + esc(s.designer_nome)}</h2>
+          <b class="num">${brl(s.total)}</b></div>
+        <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Item</th><th>Tipo</th><th class="dir">Valor</th><th>Aprovada em</th></tr></thead>
+          <tbody>${(r.artes || []).filter(a => (!s.designer_id || a.designer_id === s.designer_id) && String(a.aprovada_em).slice(0, 10) >= String(s.semana) && String(a.aprovada_em).slice(0, 10) <= addDiasISO(s.semana, 6))
+            .map(a => `<tr><td><b>${esc(a.pedido_numero)}</b></td><td>${esc(a.item_descricao)}</td><td>${esc(a.tipo_nome)}</td>
+              <td class="dir num">${brl(a.valor)}</td><td class="small">${dataHora(a.aprovada_em)}</td></tr>`).join('')}</tbody></table></div>
+      </div>`).join('') : '<div class="vazio">Nenhuma arte aprovada no período.</div>'}`;
+});
+const addDiasISO = (iso, d) => { const x = new Date(String(iso).slice(0, 10) + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
+
+// mostra os arquivos de arte de cada arte (material do cliente, prova, arte final)
+async function preencherArquivosArte(el) {
+  const caixas = [...el.querySelectorAll('[data-arte-item]')].filter(c => c.dataset.arteItem);
+  if (!caixas.length) return;
+  let r; try { r = await api('listar_arquivos_itens', { item_ids: [...new Set(caixas.map(c => c.dataset.arteItem))] }, true); } catch { return; }
+  const porItem = r.itens || {};
+  caixas.forEach(c => {
+    const arqs = porItem[c.dataset.arteItem] || [];
+    c.innerHTML = arqs.length
+      ? '<span class="muted">Arte final:</span> ' + arqs.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome)}">${esc(a.rotulo || a.nome)}</a>`).join(' · ')
+      : '<span class="muted">Sem arquivo de arte ainda.</span>';
+  });
+}
+
+/* ---------- bloco "Artes" na tela do pedido (vendedor / diretor) ---------- */
+async function preencherArtesPedido(el, p) {
+  const alvo = $('#artes-pedido', el); if (!alvo) return;
+  let r;
+  try { r = await api('listar_artes', { situacao: 'todas', limite: 200, pedido_id: p.id }, true); }
+  catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Artes</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar as artes: ${esc(e.message)}</p>`; return; }
+  const artes = r.artes || [];
+  vistaDoEl(el).artes = artes;
+  const designers = S.base?.designers || [];
+  const desPedido = artes.find(a => a.designer_id)?.designer_id || '';
+  const podeMexer = pode('cria_pedidos') || gerenciaArtes();
+  const itens = p.itens.filter(i => i.status !== 'cancelado');
+
+  alvo.innerHTML = `
+    <div class="painel-cab"><h2>Artes</h2>
+      ${podeMexer && designers.length ? `<label class="campo" style="margin:0;min-width:220px">Designer do pedido
+        <select id="des-pedido">
+          <option value="">Sem designer</option>
+          ${designers.map(d => `<option value="${d.id}" ${desPedido === d.id ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}
+        </select></label>` : ''}
+    </div>
+    ${itens.length ? itens.map(i => {
+      const as = artes.filter(a => a.item_id === i.id && a.situacao !== 'cancelada');
+      const naArte = ['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao'].includes(i.status);
+      if (i.sem_arte) return `
+        <div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
+          <div><b>${esc(i.descricao)}</b> ${badge('Não precisa de arte', 'b-cinza')}</div>
+          ${podeMexer && naArte ? `<button class="btn peq" style="margin-top:8px" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
+        </div>`;
+      return `
+        <div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+            <div><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span></div>
+            ${podeMexer && naArte ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <label class="small muted">Qtde de artes
+                <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
+              <button class="btn peq" onclick="alternarSemArte('${i.id}',true)">Não precisa de arte</button>
+            </div>` : ''}
+          </div>
+          ${as.length ? as.map((a, k) => `
+            <div style="margin-top:8px;padding:10px;background:var(--linha-2);border-radius:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                ${as.length > 1 ? `<span class="small muted">Arte ${k + 1}</span>` : ''}
+                ${badgeArte(a.situacao)} ${badge(nomeTipoArte(a.tipo), 'b-cinza')} ${etiquetasArte(a)}
+                ${a.designer_nome ? `<span class="small muted">${esc(a.designer_nome)}</span>` : `<span class="small muted">Sem designer</span>`}
+                ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
+              </div>
+              ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
+              <div class="small muted" style="margin-top:6px">Designer ${tempoCurto(a.seg_designer)} · Cliente ${tempoCurto(a.seg_cliente)}</div>
+              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                ${acoesVendedorArte(a, podeMexer && p.status !== 'cancelado')}
+                <button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>
+              </div>
+            </div>`).join('') : '<p class="small muted" style="margin:8px 0 0">Nenhuma arte neste item.</p>'}
+        </div>`;
+    }).join('') : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
+    <p class="small muted" style="margin-top:14px">O item sai da etapa de arte quando todas as artes dele estiverem aprovadas pelo cliente. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>`;
+
+  const sel = $('#des-pedido', alvo);
+  if (sel) sel.onchange = async () => {
+    try { await api('pedido_designer', { pedido_id: p.id, designer_id: sel.value || null }); toast('Designer do pedido atualizada.'); recarregar(); }
+    catch (e) { toast(e.message, true); sel.value = desPedido; }
+  };
+  alvo.querySelectorAll('[data-qtd-artes]').forEach(inp => inp.onchange = async () => {
+    const id = inp.dataset.qtdArtes, qtd = Number(inp.value);
+    try { await api('item_qtd_artes', { item_id: id, qtd }); toast('Quantidade de artes atualizada.'); recarregar(); }
+    catch (e) { toast(e.message, true); recarregar(); }
+  });
+}
+async function alternarSemArte(itemId, valor) {
+  if (valor && !confirm('Marcar que este item não precisa de arte? Ele não aparece para a designer e não gera pagamento.')) return;
+  try { await api('item_sem_arte', { item_id: itemId, sem_arte: valor }); toast('Item atualizado.'); recarregar(); }
+  catch (e) { toast(e.message, true); }
 }
 
 /* ---------- PRÉ-IMPRESSÃO E PRODUÇÃO ---------- */
