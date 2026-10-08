@@ -318,7 +318,10 @@ async function api(acao, dados = {}, silencioso = false) {
     if (Array.isArray(j)) j = j[0];
     if (!j || j.ok !== true) {
       if (j && j.codigo === 'SESSAO' && acao !== 'login') { sairLocal(); throw new Error('Sua sessão expirou. Entre novamente.'); }
-      throw new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
+      // o banco manda o código do caso (ex.: CONFIRMAR, SEM_PAGAMENTO) separado da mensagem
+      const err = new Error((j && (j.erro || j.message)) || 'Não foi possível concluir a ação.');
+      if (j && j.codigo) err.codigo = j.codigo;
+      throw err;
     }
     if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
@@ -3227,8 +3230,8 @@ async function arteResolverVendedor(id) {
   };
   try { await fazer(false); }
   catch (e) {
-    if (/^CONFIRMAR: /.test(e.message)) {
-      if (!confirm(e.message.replace(/^CONFIRMAR: /, '') + '\n\nConfirmar?')) return;
+    if (e.codigo === 'CONFIRMAR') {
+      if (!confirm(e.message + '\n\nConfirmar e encerrar a arte?')) return;
       try { await fazer(true); } catch (e2) { toast(e2.message, true); }
     } else toast(e.message, true);
   }
@@ -3248,8 +3251,7 @@ async function oferecerPreImpressao(arte) {
   if (!confirm(`O material "${arte.item_descricao}" está em ${nomeStatusItem(arte.item_status)} e já não tem arte pendente.\n\nEnviar para a pré-impressão agora?`)) return;
   try { await api('mudar_status_itens', { itens: [arte.item_id], status: 'pre_impressao' }); toast('Item enviado para a pré-impressão.'); }
   catch (e) {
-    if (/^SEM_PAGAMENTO: /.test(e.message)) toast(e.message.replace(/^SEM_PAGAMENTO: /, ''), true);
-    else toast(e.message, true);
+    toast(e.message, true);
   }
 }
 function modalArteEditar(id) {
