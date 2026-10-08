@@ -2965,16 +2965,18 @@ rota('arte', async (_p, el) => {
   const des = S.cache.desArte || '';
   const abas = [['em_andamento', 'Em andamento'], ['concluidas', 'Concluídas'], ['todas', 'Todas']];
   const b = S.cache.buscaArte || '';
-  const r = await api('listar_artes', { situacao: f, designer_id: des || null, busca: b || null, limite: 100 });
+  const vd = S.cache.vendArte || '';
+  const r = await api('listar_artes', { situacao: f, designer_id: des || null, vendedor_id: vd || null, busca: b || null, limite: 100 });
   vistaDoEl(el).artes = r.artes;
   el.innerHTML = `
     <div class="chips" style="margin-bottom:14px">${abas.map(([k, n]) => `<button class="chip ${f === k ? 'ativo' : ''}" onclick="S.cache.abaArte='${k}';recarregar()">${n}</button>`).join('')}</div>
-    ${barraFiltroArte({ artes: r.artes, filtro: fl, busca: b, aoFiltrar: 'filtrarFilaArte', idBusca: 'b-arte', designers, desSel: des, idDes: 'f-des-arte' })}
-    <p class="small muted">${r.total} arte(s)${b ? ' encontrada(s)' : ''}.</p>
+    ${barraFiltroArte({ artes: r.artes, filtro: fl, busca: b, aoFiltrar: 'filtrarFilaArte', idBusca: 'b-arte',
+      vendedores: S.base?.vendedores || [], vendSel: vd, idVend: 'f-vend-arte', designers, desSel: des, idDes: 'f-des-arte' })}
+    <p class="small muted">${r.total} arte(s)${b || vd || des ? ' no filtro' : ''}.</p>
     ${cardsArtesPorPedido(r.artes.filter(filtroArteFn(fl)), 'interno', 'arte')}`;
-  const fd = $('#f-des-arte', el);
-  if (fd) fd.onchange = () => { S.cache.desArte = fd.value; recarregar(); };
   ligarBuscaArte(el, '#b-arte', 'buscaArte');
+  ligarFiltroArte(el, '#f-vend-arte', 'vendArte');
+  ligarFiltroArte(el, '#f-des-arte', 'desArte');
   preencherArquivosArte(el);
 });
 function filtrarFilaArte(k) { S.cache.filtroArteFila = k; recarregar(); }
@@ -3098,16 +3100,23 @@ const FILTROS_ARTE = [
 ];
 // Barra de filtros das telas de arte: busca por pedido, cliente, material, vendedor ou designer,
 // no mesmo padrão da tela de Pedidos, mais os chips de situação.
-function barraFiltroArte({ artes, filtro, busca, aoFiltrar, idBusca, designers, desSel, idDes }) {
+function barraFiltroArte({ artes, filtro, busca, aoFiltrar, idBusca, designers, desSel, idDes, vendedores, vendSel, idVend }) {
   return `<div class="painel filtros">
     <div class="linha-form">
       <label class="campo" style="flex:2">Buscar<input type="search" id="${idBusca}" value="${esc(busca || '')}"
-        placeholder="Número do pedido, cliente, material, vendedor ou designer"></label>
-      ${designers && designers.length > 1 ? `<label class="campo">Designer<select id="${idDes}"><option value="">Todas</option>
+        placeholder="Número do pedido ou nome do cliente"></label>
+      ${vendedores && vendedores.length ? `<label class="campo">Vendedor<select id="${idVend}"><option value="">Todos</option>
+        ${vendedores.map(v => `<option value="${v.id}" ${vendSel === v.id ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select></label>` : ''}
+      ${designers && designers.length ? `<label class="campo">Designer<select id="${idDes}"><option value="">Todas</option>
         ${designers.map(d => `<option value="${d.id}" ${desSel === d.id ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}</select></label>` : ''}
     </div>
     ${chipsFiltroArte(artes, filtro, aoFiltrar, true)}
   </div>`;
+}
+// liga um dropdown de filtro das telas de arte
+function ligarFiltroArte(el, sel, chave) {
+  const c = el.querySelector(sel); if (!c) return;
+  c.onchange = () => { S.cache[chave] = c.value; recarregar(); };
 }
 function chipsFiltroArte(artes, atual, aoClicar, dentroDoPainel) {
   return `<div class="chips" style="margin-${dentroDoPainel ? 'top' : 'bottom'}:14px">${FILTROS_ARTE.map(([k, n, teste]) => {
@@ -3322,13 +3331,16 @@ rota('minhas-artes', async (_p, el) => {
   definirTopoEm(el, 'Minhas artes', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroMinhasArtes || (S.cache.filtroMinhasArtes = 'todos');
   const b = S.cache.buscaMinhasArtes || '';
-  const r = await api('listar_artes', { situacao: 'em_andamento', busca: b || null, limite: 100 });
+  const vd = S.cache.vendMinhasArtes || '';
+  const r = await api('listar_artes', { situacao: 'em_andamento', busca: b || null, vendedor_id: vd || null, limite: 100 });
   vistaDoEl(el).artes = r.artes;
   const lista = r.artes.filter(filtroArteFn(f));
-  el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca: b, aoFiltrar: 'filtrarMinhasArtes', idBusca: 'b-minhas' })}
+  el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca: b, aoFiltrar: 'filtrarMinhasArtes', idBusca: 'b-minhas',
+      vendedores: S.base?.vendedores || [], vendSel: vd, idVend: 'f-vend-minhas' })}
     ${r.total > r.artes.length ? `<p class="small muted">Mostrando ${r.artes.length} de ${r.total}.</p>` : ''}
     ${cardsArtesPorPedido(lista, 'designer', 'minhas-artes')}`;
   ligarBuscaArte(el, '#b-minhas', 'buscaMinhasArtes');
+  ligarFiltroArte(el, '#f-vend-minhas', 'vendMinhasArtes');
   preencherArquivosArte(el);
 });
 function filtrarMinhasArtes(k) { S.cache.filtroMinhasArtes = k; recarregar(); }
@@ -3343,12 +3355,15 @@ rota('artes-feitas', async (_p, el) => {
   definirTopoEm(el, 'Artes concluídas', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const busca = S.cache.buscaArtesFeitas || '';
   const f = S.cache.filtroArtesFeitas || (S.cache.filtroArtesFeitas = 'todos');
-  const r = await api('listar_artes', { situacao: 'concluidas', busca: busca || null, limite: 50 });
+  const vdf = S.cache.vendArtesFeitas || '';
+  const r = await api('listar_artes', { situacao: 'concluidas', busca: busca || null, vendedor_id: vdf || null, limite: 50 });
   vistaDoEl(el).artes = r.artes;
-  el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca, aoFiltrar: 'filtrarArtesFeitas', idBusca: 'b-artes' })}
+  el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca, aoFiltrar: 'filtrarArtesFeitas', idBusca: 'b-artes',
+      vendedores: S.base?.vendedores || [], vendSel: vdf, idVend: 'f-vend-feitas' })}
     <p class="small muted">${r.total} arte(s) concluída(s).</p>
     ${cardsArtesPorPedido(r.artes.filter(filtroArteFn(f)), 'designer', 'artes-feitas')}`;
   ligarBuscaArte(el, '#b-artes', 'buscaArtesFeitas');
+  ligarFiltroArte(el, '#f-vend-feitas', 'vendArtesFeitas');
   preencherArquivosArte(el);
 });
 function filtrarArtesFeitas(k) { S.cache.filtroArtesFeitas = k; recarregar(); }
