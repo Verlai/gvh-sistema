@@ -323,7 +323,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento|gabaritos$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -468,6 +468,7 @@ function itensMenu() {
     m.push(['#/minhas-artes', 'Artes em andamento']);
     m.push(['#/artes-feitas', 'Concluídas']);
     m.push(['#/meus-pagamentos', 'Meus pagamentos']);
+    m.push(['#/gabaritos', 'Gabaritos']);
     return m;
   }
   m.push(['Operação']);
@@ -485,6 +486,7 @@ function itensMenu() {
   m.push(['#/clientes', 'Clientes']);
   if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/categorias', 'Categorias']); }
   if (podeNovaCategoria()) m.push(['#/sugestoes', 'Produtos sugeridos']);
+  m.push(['#/gabaritos', 'Gabaritos']);
   if (pode('gerencia_cadastros')) m.push(['#/feriados', 'Feriados']);
   if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
   if (S.perm.gerencia_artes) m.push(['#/meus-pagamentos', 'Pagamentos das artes']);
@@ -764,7 +766,9 @@ rota('pedido', async (id, el) => {
       <div class="grade g4" style="margin-top:18px">
         <div><div class="small muted">Vendedor</div>${esc(p.vendedor_nome)}</div>
         <div><div class="small muted">Entrega</div>${p.forma_entrega === 'entrega' ? 'Entregar no cliente' : 'Cliente retira no balcão'}${p.endereco_entrega ? `<div class="small muted">${esc(p.endereco_entrega)}</div>` : ''}</div>
-        <div><div class="small muted">Previsão para o cliente</div>${data(p.data_prevista_entrega)}</div>
+        <div><div class="small muted">Previsão para o cliente</div>${data(p.data_prevista_entrega)}
+          <div class="small muted">Entrega leva ${p.dias_entrega_efetivo ?? '—'} ${Number(p.dias_entrega_efetivo) === 1 ? 'dia útil' : 'dias úteis'}${p.dias_entrega == null ? ' (padrão)' : ''}
+            ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalDiasEntrega()">alterar</button>` : ''}</div></div>
         <div><div class="small muted">Criado em</div>${dataHora(p.created_at)}</div>
       </div>
       ${p.forma_pagamento || p.condicoes_pagamento ? `<div style="margin-top:12px"><span class="small muted">Forma de pagamento:</span> ${esc(FORMAS_COMB[p.forma_pagamento] || '')}${p.condicoes_pagamento && p.condicoes_pagamento !== FORMAS_COMB[p.forma_pagamento] ? `${p.forma_pagamento ? ' · ' : ''}${esc(p.condicoes_pagamento)}` : ''}</div>` : ''}
@@ -788,7 +792,9 @@ rota('pedido', async (id, el) => {
                 ${i.cancel_solicitado_em && i.status !== 'cancelado' ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px"><b>Pedido de cancelamento</b> por ${esc(i.cancel_solicitado_por_nome || '')}: ${esc(i.cancel_motivo || '')}
                   ${p.confirma_producao ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq perigo" onclick="decidirCancelItem('${i.id}',true)">Confirmar cancelamento</button><button class="btn peq" onclick="decidirCancelItem('${i.id}',false)">Recusar</button></div>` : '<div class="muted">Aguardando a confirmação da pré-impressão.</div>'}</div>` : ''}
                 ${i.troca_arte_pendente ? `<div style="margin-top:4px">${badge('Troca de arte aguardando a pré-impressão', 'b-ambar')}</div>` : ''}</td>
-            <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div></td>
+            <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div>
+                ${i.urgencia && i.status !== 'cancelado' && ordemStatus(i.status) < 8 ? `<div style="margin-top:4px">${badgeUrgencia(i.urgencia)}
+                  ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalUrgenciaItem('${i.id}')">${urgenteProducao(i.urgencia) ? 'Urgência' : 'Subir urgência'}</button>` : ''}</div>` : ''}</td>
             <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
                 ${i.codigo_producao ? `<div>Cód. fornecedor ${esc(i.codigo_producao)}</div>` : ''}
                 ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prev. produção ${data(i.prazo_producao)}</div>` : ''}</td>
@@ -2971,6 +2977,7 @@ rota('arte', async (_p, el) => {
   const vd = S.cache.vendArte || '';
   const r = await api('listar_artes', { situacao: f, designer_id: des || null, vendedor_id: vd || null, busca: b || null, limite: 100 });
   vistaDoEl(el).artes = r.artes;
+  await carregarGabaritos().catch(() => {});
   el.innerHTML = `
     <div class="chips" style="margin-bottom:14px">${abas.map(([k, n]) => `<button class="chip ${f === k ? 'ativo' : ''}" onclick="S.cache.abaArte='${k}';recarregar()">${n}</button>`).join('')}</div>
     ${barraFiltroArte({ artes: r.artes, filtro: fl, busca: b, aoFiltrar: 'filtrarFilaArte', idBusca: 'b-arte',
@@ -3093,7 +3100,7 @@ function acoesVendedorArte(a, pode) {
 // Filtros rápidos da fila. Cada um é uma pergunta que a equipe faz de verdade no dia a dia.
 const FILTROS_ARTE = [
   ['todos', 'Todos', () => true],
-  ['urgentes', 'Urgentes', a => a.urgente],
+  ['urgentes', 'Urgentes', a => a.urgente || urgenteProducao(a.urgencia)],
   ['a_fazer', 'Artes à fazer', a => a.situacao === 'a_fazer'],
   ['em_criacao', 'Em criação', a => a.situacao === 'em_criacao'],
   ['aguardando_cliente', 'Com o cliente', a => a.situacao === 'aguardando_cliente'],
@@ -3158,12 +3165,14 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
     const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>` : '';
     const aberto = abertoArte(nomeTela, p.pedido_id);
     const nItens = porItem.size, nArtes = lista.length;
+    const urgProd = lista.find(a => a.urgencia?.nivel === 'muito_urgente') || lista.find(a => a.urgencia?.nivel === 'urgente');
     const alertas = [lista.some(a => a.entrega_atrasada) ? badge('ATRASADO', 'b-vermelho') : '',
+                     urgProd ? badgeUrgencia(urgProd.urgencia) : '',
                      urgente ? badge('URGENTE', 'b-vermelho') : '',
                      lista.some(a => a.tempo_estourado) ? badge('Passou do tempo previsto', 'b-ambar') : '',
                      lista.some(a => a.falta_pagamento) ? badge('Falta pagamento', 'b-ambar') : ''].filter(Boolean).join(' ');
     return `
-    <div class="painel" style="${urgente ? 'border-left:3px solid var(--vermelho)' : ''}">
+    <div class="painel" style="${urgente || urgProd ? 'border-left:3px solid var(--vermelho)' : ''}">
       <div class="painel-cab">
         <div>
           <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
@@ -3185,7 +3194,10 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
         return `<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
           <div><b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
             ${it.categoria_nome ? `<span class="small muted"> · ${esc(it.categoria_nome)}</span>` : ''}
-            ${as.length > 1 ? `<span class="small muted"> · ${as.length} artes</span>` : ''}</div>
+            ${as.length > 1 ? `<span class="small muted"> · ${as.length} artes</span>` : ''} ${badgeUrgencia(it.urgencia)}</div>
+          ${it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, it.urgencia,
+              as.some(a => ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao'].includes(a.situacao))
+              && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
           ${it.item_observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Observação:</span> ${esc(it.item_observacao)}</div>` : ''}
           ${as.map((a, k) => `
             <div style="margin-top:10px;padding:10px;background:var(--fundo-2, #f7f8f9);border-radius:8px">
@@ -3336,6 +3348,7 @@ rota('minhas-artes', async (_p, el) => {
   const vd = S.cache.vendMinhasArtes || '';
   const r = await api('listar_artes', { situacao: 'em_andamento', busca: b || null, vendedor_id: vd || null, limite: 100 });
   vistaDoEl(el).artes = r.artes;
+  await carregarGabaritos().catch(() => {});
   const lista = r.artes.filter(filtroArteFn(f));
   el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca: b, aoFiltrar: 'filtrarMinhasArtes', idBusca: 'b-minhas',
       vendedores: S.base?.vendedores || [], vendSel: vd, idVend: 'f-vend-minhas' })}
@@ -3360,6 +3373,7 @@ rota('artes-feitas', async (_p, el) => {
   const vdf = S.cache.vendArtesFeitas || '';
   const r = await api('listar_artes', { situacao: 'concluidas', busca: busca || null, vendedor_id: vdf || null, limite: 50 });
   vistaDoEl(el).artes = r.artes;
+  await carregarGabaritos().catch(() => {});
   el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca, aoFiltrar: 'filtrarArtesFeitas', idBusca: 'b-artes',
       vendedores: S.base?.vendedores || [], vendSel: vdf, idVend: 'f-vend-feitas' })}
     <p class="small muted">${r.total} arte(s) concluída(s).</p>
@@ -3393,6 +3407,7 @@ const addDiasISO = (iso, d) => { const x = new Date(String(iso).slice(0, 10) + '
 
 // mostra os arquivos de arte de cada arte (material do cliente, prova, arte final)
 async function preencherArquivosArte(el) {
+  ligarSelectsGabarito(el);
   const caixas = [...el.querySelectorAll('[data-arte-item]')].filter(c => c.dataset.arteItem);
   if (!caixas.length) return;
   let r; try { r = await api('listar_arquivos_itens', { item_ids: [...new Set(caixas.map(c => c.dataset.arteItem))] }, true); } catch { return; }
@@ -3413,6 +3428,7 @@ async function preencherArtesPedido(el, p) {
   catch (e) { alvo.innerHTML = `<div class="painel-cab"><h2>Artes</h2></div><p class="small" style="color:var(--vermelho);margin:0">Não foi possível carregar as artes: ${esc(e.message)}</p>`; return; }
   const artes = r.artes || [];
   vistaDoEl(el).artes = artes;
+  await carregarGabaritos().catch(() => {});
   const designers = S.base?.designers || [];
   const desPedido = artes.find(a => a.designer_id)?.designer_id || '';
   const podeMexer = pode('cria_pedidos') || gerenciaArtes();
@@ -3438,7 +3454,8 @@ async function preencherArtesPedido(el, p) {
       return `
         <div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
-            <div><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span></div>
+            <div><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span> ${badgeUrgencia(i.urgencia)}
+              ${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}</div>
             ${podeMexer && naArte ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <label class="small muted">Qtde de artes
                 <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
@@ -3469,6 +3486,7 @@ async function preencherArtesPedido(el, p) {
     try { await api('pedido_designer', { pedido_id: p.id, designer_id: sel.value || null }); toast('Designer do pedido atualizada.'); recarregar(); }
     catch (e) { toast(e.message, true); sel.value = desPedido; }
   };
+  ligarSelectsGabarito(alvo);
   alvo.querySelectorAll('[data-qtd-artes]').forEach(inp => inp.onchange = async () => {
     const id = inp.dataset.qtdArtes, qtd = Number(inp.value);
     try { await api('item_qtd_artes', { item_id: id, qtd }); toast('Quantidade de artes atualizada.'); recarregar(); }
@@ -4076,6 +4094,255 @@ function modalSugestao(id) {
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = { texto: f.texto.value, categoria_id: f.categoria_id.value, ordem: f.ordem.value }; if (id) { d.id = id; d.ativo = f.ativo.checked; }
     await api('salvar_sugestao', d); await carregarBase(); m.fechar(); toast('Produto sugerido salvo.'); recarregar();
+  };
+}
+
+/* ---------- AR3a: GABARITOS e URGÊNCIA DA PRODUÇÃO ---------- */
+// Lista de materiais e gabaritos (o banco é a fonte). Guardada por 5 minutos; salvar força recarregar.
+async function carregarGabaritos(forcar) {
+  const c = S.cache.gabaritos;
+  if (!forcar && c && Date.now() - c.em < 5 * 60 * 1000) return c.dados;
+  const r = await api('gabaritos', {}, true);
+  S.cache.gabaritos = { em: Date.now(), dados: r };
+  return r;
+}
+const gruposGabarito = () => (S.cache.gabaritos?.dados?.grupos || []);
+const URG_NOME = { normal: 'Prazo normal', urgente: 'URGENTE', muito_urgente: 'MUITO URGENTE' };
+const fmtMm = v => v == null || v === '' ? '' : String(Number(v)).replace('.', ',');
+// Texto curto da conta, para o "title" e para a linha de detalhe
+function textoUrgencia(u) {
+  if (!u || u.dias_producao == null) return 'Sem previsão de entrega: o sistema não consegue calcular a urgência.';
+  const d = Number(u.dias_producao);
+  const base = d < 0 ? `Previsão já passou (${-d} ${-d === 1 ? 'dia útil' : 'dias úteis'} a menos que o necessário)`
+             : `${d} ${d === 1 ? 'dia útil' : 'dias úteis'} de produção`;
+  return `${base}, já descontado${Number(u.dias_entrega) === 1 ? '' : 's'} ${u.dias_entrega} ${Number(u.dias_entrega) === 1 ? 'dia' : 'dias'} de entrega · `
+    + (u.definitiva ? 'contando da entrada na pré-impressão' : 'provável: contando de hoje até entrar na pré-impressão');
+}
+// Selo da urgência da produção. Prazo normal não mostra nada (para não poluir).
+function badgeUrgencia(u, sempre) {
+  if (!u || !u.nivel) return '';
+  if (u.nivel === 'normal' && !sempre) return '';
+  const cls = u.nivel === 'muito_urgente' ? 'b-vermelho' : u.nivel === 'urgente' ? 'b-ambar' : 'b-cinza';
+  const txt = (URG_NOME[u.nivel] || u.nivel) + (u.nivel === 'normal' ? '' : ' · produção') + (u.definitiva ? '' : ' (provável)');
+  const tit = textoUrgencia(u) + (u.manual ? ` · Marcado à mão por ${u.manual_por_nome || '—'}: ${u.manual_motivo || ''}` : '');
+  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>`;
+}
+const urgenteProducao = u => !!u && (u.nivel === 'urgente' || u.nivel === 'muito_urgente');
+
+// Linha "Gabarito" do item: material escolhido + variação sugerida com o link do .cdr.
+function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
+  const grupos = gruposGabarito();
+  const sug = u && u.gabarito_sugerido_id
+    ? `<span>→ <b>${esc(u.gabarito_sugerido_nome)}</b>${u.gabarito_sugerido_url ? ` · <a href="${esc(u.gabarito_sugerido_url)}" target="_blank" rel="noopener">Abrir gabarito</a>` : ''}</span>`
+    : (grupoId ? '<span class="muted">→ nenhuma variação vale para esta urgência/quantidade</span>' : '');
+  if (podeEscolher) {
+    return `<div class="small" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="muted">Gabarito:</span>
+      <select data-gab-item="${itemId}" style="padding:4px 6px;font-size:12px;width:auto;max-width:280px">
+        <option value="">— escolher material —</option>
+        ${grupos.map(g => `<option value="${g.id}" ${g.id === grupoId ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}
+        ${grupoId && !grupos.some(g => g.id === grupoId) && u?.grupo_nome ? `<option value="${grupoId}" selected>${esc(u.grupo_nome)} (inativo)</option>` : ''}
+      </select>${sug}</div>`;
+  }
+  if (!grupoId) return '';
+  return `<div class="small" style="margin-top:6px"><span class="muted">Gabarito:</span> ${esc(u?.grupo_nome || '')} ${sug}</div>`;
+}
+// Liga os selects de gabarito de uma área da tela
+function ligarSelectsGabarito(raiz) {
+  raiz.querySelectorAll('[data-gab-item]').forEach(s => s.onchange = async () => {
+    try { await api('item_gabarito', { item_id: s.dataset.gabItem, gabarito_grupo_id: s.value || null }); toast('Gabarito do item atualizado.'); recarregar(); }
+    catch (e) { recarregar(); }
+  });
+}
+
+// Subir a urgência na mão (vendedor do pedido, Diretor/Administrador). Motivo obrigatório.
+function modalUrgenciaItem(itemId) {
+  const p = S.vistaAtual?.dados;
+  const i = (p?.itens || []).find(x => x.id === itemId); if (!i) return;
+  const u = i.urgencia || {};
+  const opcoes = ['urgente', 'muito_urgente'].filter(n => ({ urgente: 2, muito_urgente: 3 })[n] > ({ normal: 1, urgente: 2, muito_urgente: 3 })[u.calculada] || !u.calculada);
+  const m = abrirModal({ titulo: 'Urgência da produção', corpo: `
+    <p style="margin:0 0 6px"><b>${esc(i.descricao)}</b></p>
+    <p class="small muted" style="margin:0 0 12px">Pela conta do sistema: <b>${esc(URG_NOME[u.calculada] || '—')}</b>. ${esc(textoUrgencia(u))}.</p>
+    ${u.manual ? `<div class="alerta" style="margin-bottom:12px">Marcado à mão como <b>${esc(URG_NOME[u.manual])}</b> por ${esc(u.manual_por_nome || '—')}: ${esc(u.manual_motivo || '')}</div>` : ''}
+    ${opcoes.length ? `<form id="f-urg" class="grade g2">
+      <label class="campo">Subir para<select name="nivel">${opcoes.map(n => `<option value="${n}" ${u.manual === n ? 'selected' : ''}>${URG_NOME[n]}</option>`).join('')}</select></label>
+      <label class="campo" style="grid-column:1/-1">Motivo *<input type="text" name="motivo" maxlength="200" value="${esc(u.manual_motivo || '')}" placeholder="Ex.: cliente precisa para o evento de sábado"></label>
+    </form>
+    <p class="small muted" style="margin:8px 0 0">Na mão só dá para <b>subir</b> a urgência; para baixar, mude a previsão de entrega ou os dias de entrega.</p>`
+    : '<p class="small muted" style="margin:0">O item já está como MUITO URGENTE pela conta do sistema.</p>'}`,
+    rodape: `${u.manual ? '<button class="btn" data-tirar style="margin-right:auto">Tirar a marcação à mão</button>' : ''}<button class="btn" data-v>Voltar</button>${opcoes.length ? '<button class="btn prim" data-s>Salvar</button>' : ''}` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bt = m.el.querySelector('[data-tirar]');
+  if (bt) bt.onclick = async () => { try { await api('item_urgencia', { item_id: itemId, nivel: null }); m.fechar(); toast('Vale de novo a conta do sistema.'); recarregar(); } catch (e) {} };
+  const bs = m.el.querySelector('[data-s]');
+  if (bs) bs.onclick = async () => {
+    const d = formDados($('#f-urg', m.el));
+    if (!d.motivo.trim()) return toast('Escreva o motivo da urgência.', true);
+    try { await api('item_urgencia', { item_id: itemId, nivel: d.nivel, motivo: d.motivo.trim() }); m.fechar(); toast('Urgência atualizada.'); recarregar(); } catch (e) {}
+  };
+}
+// Dias de entrega do pedido (padrão: 1 para entrega no endereço, 0 para retirada)
+function modalDiasEntrega() {
+  const p = S.vistaAtual?.dados; if (!p) return;
+  const padrao = p.forma_entrega === 'entrega' ? 1 : 0;
+  const m = abrirModal({ titulo: 'Dias de entrega', corpo: `
+    <p class="small muted" style="margin:0 0 12px">Quantos dias úteis a entrega leva até o cliente. O sistema desconta esses dias para saber quanto sobra para a produção (3 ou mais = prazo normal; 1 ou 2 = urgente; 0 = muito urgente).</p>
+    <form id="f-dent" class="grade g2">
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="padrao" ${p.dias_entrega == null ? 'checked' : ''}> Usar o padrão (${padrao} ${padrao === 1 ? 'dia' : 'dias'} — ${p.forma_entrega === 'entrega' ? 'entrega no endereço' : 'retirada no balcão'})</label>
+      <label class="campo">Dias úteis de entrega<input type="number" name="dias" min="0" max="30" value="${esc(p.dias_entrega ?? padrao)}"></label>
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  const f = $('#f-dent', m.el).elements;
+  const sinc = () => { f.dias.disabled = f.padrao.checked; };
+  f.padrao.onchange = sinc; sinc();
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    try { await api('pedido_dias_entrega', { pedido_id: p.id, dias_entrega: f.padrao.checked ? null : f.dias.value }); m.fechar(); toast('Dias de entrega atualizados.'); recarregar(); } catch (e) {}
+  };
+}
+
+// ----- tela Cadastros › Gabaritos -----
+const FORMATOS_ARQ = [['pdf', 'PDF'], ['cdr', 'CorelDRAW (.cdr)'], ['imagem', 'Imagem (JPG/PNG)']];
+const FACA_CORES = [['magenta', 'Magenta'], ['preto', 'Preto']];
+function textoCondicao(g) {
+  const urg = g.cond_urgencias && g.cond_urgencias.length ? g.cond_urgencias.map(u => URG_NOME[u] ? URG_NOME[u].toLowerCase() : u).join(' ou ') : '';
+  const q = g.cond_qtd_min != null && g.cond_qtd_max != null ? `de ${num(g.cond_qtd_min)} a ${num(g.cond_qtd_max)} un`
+          : g.cond_qtd_min != null ? `a partir de ${num(g.cond_qtd_min)} un` : g.cond_qtd_max != null ? `até ${num(g.cond_qtd_max)} un` : '';
+  if (!urg && !q) return 'Sempre';
+  if (urg && q) return `${urg} ${g.cond_modo === 'ou' ? 'OU' : 'E'} ${q}`;
+  return urg || q;
+}
+function textoMedidas(g) {
+  const tam = g.tamanho_livre ? 'Tamanho livre' : `${fmtMm(g.corte_largura_mm)} × ${fmtMm(g.corte_altura_mm)} mm`;
+  const arq = !g.tamanho_livre && Number(g.sangria_mm) ? ` <span class="muted">(arquivo ${fmtMm(Number(g.corte_largura_mm) + 2 * Number(g.sangria_mm))} × ${fmtMm(Number(g.corte_altura_mm) + 2 * Number(g.sangria_mm))})</span>` : '';
+  return tam + arq;
+}
+rota('gabaritos', async (_p, el) => {
+  const r = await carregarGabaritos(true);
+  const ed = !!r.pode_editar;
+  const todos = ed && S.cache.gabTodos;
+  const dados = todos ? await api('gabaritos', { todos: true }, true) : r;
+  definirTopoEm(el, 'Gabaritos', ed ? `<label class="check" style="margin:0"><input type="checkbox" ${todos ? 'checked' : ''} onchange="S.cache.gabTodos=this.checked;recarregar()"> Mostrar inativos</label>
+    <button class="btn prim" onclick="modalGrupoGabarito(null)">Novo material</button>` : '');
+  vistaDoEl(el).gabaritos = dados.grupos;
+  el.innerHTML = `<div class="painel"><p class="small muted" style="margin:0">Cada <b>material</b> tem um ou mais <b>gabaritos</b>. O sistema sugere o gabarito pela <b>urgência da produção</b> e pela <b>quantidade</b> do item; a designer abre o <code>.cdr</code> pelo link. As medidas daqui são as que a conferência da arte final vai usar. Arquivo acima de <b>${num(dados.limite_mb || 100)} MB</b> vai para o checklist.</p></div>
+    ${(dados.grupos || []).map(gr => `
+    <div class="painel" style="${gr.ativo ? '' : 'opacity:.6'}">
+      <div class="painel-cab">
+        <div><h2 style="margin:0">${esc(gr.nome)} ${gr.ativo ? '' : badge('Inativo', 'b-cinza')}</h2>
+          <div class="small muted">${esc(gr.categoria_nome || 'Sem categoria')}${gr.itens_usando ? ` · usado em ${gr.itens_usando} ${gr.itens_usando == 1 ? 'item' : 'itens'}` : ''}
+            ${gr.pasta_url ? ` · <a href="${esc(gr.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
+            ${gr.instrucoes_url ? ` · <a href="${esc(gr.instrucoes_url)}" target="_blank" rel="noopener">Instruções</a>` : ''}</div>
+          ${gr.observacoes ? `<div class="small" style="margin-top:4px">${esc(gr.observacoes)}</div>` : ''}</div>
+        ${ed ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq" data-gr-ed="${gr.id}">Editar material</button><button class="btn peq prim" data-gb-novo="${gr.id}">Novo gabarito</button></div>` : ''}
+      </div>
+      ${gr.gabaritos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Gabarito</th><th>Quando usar</th><th>Tamanho final</th><th>Sangria</th><th>Segurança</th><th>Páginas</th><th>Arte final</th><th></th></tr></thead><tbody>
+        ${gr.gabaritos.map(g => `<tr class="${ed ? 'clicavel' : ''}" ${ed ? `data-gb-ed="${g.id}" data-gb-gr="${gr.id}"` : ''} style="${g.ativo ? '' : 'opacity:.55'}">
+          <td><b>${esc(g.nome)}</b> ${g.ativo ? '' : badge('Inativo', 'b-cinza')}${g.instrucoes ? `<div class="small muted" style="max-width:320px">${esc(g.instrucoes)}</div>` : ''}</td>
+          <td class="small">${esc(textoCondicao(g))}</td>
+          <td class="small">${textoMedidas(g)}</td>
+          <td class="small num">${fmtMm(g.sangria_mm)} mm</td>
+          <td class="small num">${fmtMm(g.seguranca_mm)} mm</td>
+          <td class="small">${g.paginas || 'Qualquer'}${g.ultima_pagina_faca ? `<div class="muted">última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}</div>` : ''}</td>
+          <td class="small">${(g.formatos || []).map(f => (FORMATOS_ARQ.find(x => x[0] === f) || [, f])[1].replace(' (.cdr)', '').replace(' (JPG/PNG)', '')).join(', ')}${g.dpi_min ? `<div class="muted">mín. ${g.dpi_min} dpi</div>` : ''}</td>
+          <td class="small">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Abrir .cdr</a>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>` : '<p class="small muted" style="margin:0">Nenhum gabarito neste material ainda.</p>'}
+    </div>`).join('') || '<div class="painel"><div class="vazio">Nenhum material cadastrado.</div></div>'}`;
+  el.querySelectorAll('[data-gr-ed]').forEach(b => b.onclick = () => modalGrupoGabarito(b.dataset.grEd));
+  el.querySelectorAll('[data-gb-novo]').forEach(b => b.onclick = () => modalGabarito(b.dataset.gbNovo, null));
+  el.querySelectorAll('[data-gb-ed]').forEach(tr => tr.onclick = () => modalGabarito(tr.dataset.gbGr, tr.dataset.gbEd));
+});
+function grupoDaTela(id) { return (S.vistaAtual?.gabaritos || gruposGabarito()).find(g => g.id === id); }
+async function modalGrupoGabarito(id) {
+  await carregarBase();
+  const g = id ? grupoDaTela(id) : { ativo: true, ordem: 100 };
+  const m = abrirModal({ titulo: id ? 'Material' : 'Novo material', largo: true, corpo: `<form id="f-gr" class="grade g2">
+      <label class="campo" style="grid-column:1/-1">Nome * <span class="muted">(ex.: Cartão de Visita UVF, Adesivo impressão e recorte)</span><input type="text" name="nome" maxlength="80" value="${esc(g.nome || '')}"></label>
+      <label class="campo">Categoria<select name="categoria_id">${opcoesCategoria(g.categoria_id, false).replace('Selecione a categoria', 'Sem categoria')}</select></label>
+      <label class="campo">Ordem <span class="muted">(menor aparece primeiro)</span><input type="number" name="ordem" value="${esc(g.ordem ?? 100)}"></label>
+      <label class="campo" style="grid-column:1/-1">Link da pasta na "Gabaritos GVH"<input type="url" name="pasta_url" value="${esc(g.pasta_url || '')}" placeholder="https://drive.google.com/drive/folders/…"></label>
+      <label class="campo" style="grid-column:1/-1">Link das instruções (documento)<input type="url" name="instrucoes_url" value="${esc(g.instrucoes_url || '')}" placeholder="https://docs.google.com/document/…"></label>
+      <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes" rows="2">${esc(g.observacoes || '')}</textarea></label>
+      ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo (aparece para escolher no item)</label>` : ''}
+    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  const f = $('#f-gr', m.el);
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = formDados(f); if (id) { d.id = id; d.ativo = f.elements.ativo.checked; }
+    try { await api('salvar_gabarito_grupo', d); await carregarGabaritos(true); m.fechar(); toast('Material salvo.'); recarregar(); } catch (e) {}
+  };
+}
+function modalGabarito(grupoId, id) {
+  const gr = grupoDaTela(grupoId) || {};
+  const g = id ? (gr.gabaritos || []).find(x => x.id === id) : { ativo: true, formatos: ['pdf'], sangria_mm: 0, seguranca_mm: 0, cond_modo: 'e', prioridade: ((gr.gabaritos || []).length + 1) * 10 };
+  const marc = (lista, v) => (lista || []).includes(v) ? 'checked' : '';
+  const m = abrirModal({ titulo: `${gr.nome || 'Material'} · ${id ? 'gabarito' : 'novo gabarito'}`, largo: true, corpo: `<form id="f-gb">
+    <div class="grade g3">
+      <label class="campo" style="grid-column:span 2">Nome * <span class="muted">(ex.: Prazo normal acima de 250 un)</span><input type="text" name="nome" maxlength="80" value="${esc(g.nome || '')}"></label>
+      <label class="campo">Ordem de teste <span class="muted">(menor primeiro)</span><input type="number" name="prioridade" value="${esc(g.prioridade ?? 100)}"></label>
+    </div>
+    <h3 style="margin:14px 0 6px">Quando usar</h3>
+    <p class="small muted" style="margin:0 0 8px">Deixe tudo em branco para valer sempre. O sistema testa os gabaritos do material pela ordem e usa o primeiro que servir.</p>
+    <div class="grade g3">
+      <div class="campo">Urgência da produção
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${['normal', 'urgente', 'muito_urgente'].map(u => `<label class="check" style="margin:0"><input type="checkbox" name="cond_urgencias" value="${u}" ${marc(g.cond_urgencias, u)}> ${URG_NOME[u]}</label>`).join('')}</div></div>
+      <label class="campo">Quantidade de (un)<input type="number" min="0" name="cond_qtd_min" value="${esc(g.cond_qtd_min ?? '')}"></label>
+      <label class="campo">até (un)<input type="number" min="0" name="cond_qtd_max" value="${esc(g.cond_qtd_max ?? '')}"></label>
+      <label class="campo" style="grid-column:1/-1">Quando tiver urgência e quantidade
+        <select name="cond_modo"><option value="e" ${g.cond_modo !== 'ou' ? 'selected' : ''}>As duas precisam valer (urgência E quantidade)</option>
+          <option value="ou" ${g.cond_modo === 'ou' ? 'selected' : ''}>Basta uma valer (urgência OU quantidade)</option></select></label>
+    </div>
+    <h3 style="margin:14px 0 6px">Medidas (mm)</h3>
+    <div class="grade g4">
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="tamanho_livre" ${g.tamanho_livre ? 'checked' : ''}> Tamanho livre (a medida vem do pedido, como adesivo de recorte e lona)</label>
+      <label class="campo">Largura final<input type="text" inputmode="decimal" name="corte_largura_mm" value="${esc(fmtMm(g.corte_largura_mm))}"></label>
+      <label class="campo">Altura final<input type="text" inputmode="decimal" name="corte_altura_mm" value="${esc(fmtMm(g.corte_altura_mm))}"></label>
+      <label class="campo">Sangria (cada lado)<input type="text" inputmode="decimal" name="sangria_mm" value="${esc(fmtMm(g.sangria_mm))}"></label>
+      <label class="campo">Segurança <span class="muted">(para dentro do corte)</span><input type="text" inputmode="decimal" name="seguranca_mm" value="${esc(fmtMm(g.seguranca_mm))}"></label>
+    </div>
+    <p class="small muted" id="gb-arq" style="margin:4px 0 0"></p>
+    <h3 style="margin:14px 0 6px">Arte final</h3>
+    <div class="grade g3">
+      <div class="campo">Formatos aceitos *
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${FORMATOS_ARQ.map(([v, n]) => `<label class="check" style="margin:0"><input type="checkbox" name="formatos" value="${v}" ${marc(g.formatos, v)}> ${n}</label>`).join('')}</div></div>
+      <label class="campo">Páginas <span class="muted">(vazio = qualquer)</span><input type="number" min="1" max="50" name="paginas" value="${esc(g.paginas ?? '')}"></label>
+      <label class="campo">Resolução mínima (dpi)<input type="number" min="30" max="2400" name="dpi_min" value="${esc(g.dpi_min ?? '')}"></label>
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="ultima_pagina_faca" ${g.ultima_pagina_faca ? 'checked' : ''}> A última página é a faca (contorno de corte)</label>
+      <div class="campo" id="gb-faca">Cor da faca
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${FACA_CORES.map(([v, n]) => `<label class="check" style="margin:0"><input type="checkbox" name="faca_cores" value="${v}" ${marc(g.faca_cores, v)}> ${n}</label>`).join('')}</div></div>
+    </div>
+    <div class="grade g2" style="margin-top:10px">
+      <label class="campo" style="grid-column:1/-1">Link do gabarito (.cdr no Drive)<input type="url" name="arquivo_url" value="${esc(g.arquivo_url || '')}" placeholder="https://drive.google.com/file/d/…"></label>
+      <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(g.instrucoes || '')}</textarea></label>
+      ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo</label>` : ''}
+    </div></form>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar gabarito</button>` });
+  const f = $('#f-gb', m.el), el = f.elements;
+  const lista = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(c => c.value);
+  const sinc = () => {
+    const livre = el.tamanho_livre.checked;
+    el.corte_largura_mm.disabled = livre; el.corte_altura_mm.disabled = livre;
+    $('#gb-faca', m.el).style.display = el.ultima_pagina_faca.checked ? '' : 'none';
+    const n = s => Number(String(s || '').replace(',', '.')) || 0;
+    const w = n(el.corte_largura_mm.value), h = n(el.corte_altura_mm.value), s = n(el.sangria_mm.value);
+    $('#gb-arq', m.el).textContent = !livre && w && h ? `Tamanho do arquivo (com sangria): ${fmtMm(+(w + 2 * s).toFixed(2))} × ${fmtMm(+(h + 2 * s).toFixed(2))} mm` : '';
+  };
+  ['tamanho_livre', 'ultima_pagina_faca'].forEach(k => el[k].onchange = sinc);
+  ['corte_largura_mm', 'corte_altura_mm', 'sangria_mm'].forEach(k => el[k].oninput = sinc);
+  sinc();
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const d = {
+      grupo_id: grupoId, nome: el.nome.value, prioridade: el.prioridade.value,
+      cond_urgencias: lista('cond_urgencias'), cond_qtd_min: el.cond_qtd_min.value, cond_qtd_max: el.cond_qtd_max.value, cond_modo: el.cond_modo.value,
+      tamanho_livre: el.tamanho_livre.checked, corte_largura_mm: el.corte_largura_mm.value, corte_altura_mm: el.corte_altura_mm.value,
+      sangria_mm: el.sangria_mm.value, seguranca_mm: el.seguranca_mm.value,
+      formatos: lista('formatos'), paginas: el.paginas.value, dpi_min: el.dpi_min.value,
+      ultima_pagina_faca: el.ultima_pagina_faca.checked, faca_cores: el.ultima_pagina_faca.checked ? lista('faca_cores') : [],
+      arquivo_url: el.arquivo_url.value, instrucoes: el.instrucoes.value
+    };
+    if (id) { d.id = id; d.ativo = el.ativo.checked; }
+    try { await api('salvar_gabarito', d); await carregarGabaritos(true); m.fechar(); toast('Gabarito salvo.'); recarregar(); } catch (e) {}
   };
 }
 
