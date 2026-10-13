@@ -4379,9 +4379,16 @@ async function modalGrupoGabarito(id) {
       <label class="campo" style="grid-column:1/-1">Link das instruções (documento)<input type="url" name="instrucoes_url" value="${esc(g.instrucoes_url || '')}" placeholder="https://docs.google.com/document/…"></label>
       <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes" rows="2">${esc(g.observacoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo (aparece para escolher no item)</label>` : ''}
-    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+      ${id && g.itens_usando ? `<p class="small muted" style="grid-column:1/-1;margin:0">Usado em ${g.itens_usando} ${g.itens_usando == 1 ? 'item' : 'itens'} de pedido: não dá para excluir, só desativar.</p>` : ''}
+    </form>`, rodape: `${id && !g.itens_usando ? '<button class="btn perigo" data-x style="margin-right:auto">Excluir material</button>' : ''}<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
   const f = $('#f-gr', m.el);
   m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bx = m.el.querySelector('[data-x]');
+  if (bx) bx.onclick = async () => {
+    const n = (g.gabaritos || []).length;
+    if (!await confirmar(`Excluir o material "${esc(g.nome)}"${n ? ` e ${n === 1 ? 'o gabarito dele' : `os ${n} gabaritos dele`}` : ''}? Não dá para desfazer. Os arquivos no Drive não são apagados.`, 'Excluir', true)) return;
+    try { await api('excluir_gabarito_grupo', { id }); await carregarGabaritos(true); delete S.exp['gab-' + id]; m.fechar(); toast('Material excluído.'); recarregar(); } catch (e) {}
+  };
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados(f); if (id) { d.id = id; d.ativo = f.elements.ativo.checked; }
     try { await api('salvar_gabarito_grupo', d); await carregarGabaritos(true); m.fechar(); toast('Material salvo.'); recarregar(); } catch (e) {}
@@ -4432,8 +4439,13 @@ function modalGabarito(grupoId, id) {
       <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(g.instrucoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo</label>` : ''}
     </div></form>`,
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar gabarito</button>` });
+    rodape: `${id ? '<button class="btn perigo" data-x style="margin-right:auto">Excluir gabarito</button>' : ''}<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar gabarito</button>` });
   const f = $('#f-gb', m.el), el = f.elements;
+  const bx = m.el.querySelector('[data-x]');
+  if (bx) bx.onclick = async () => {
+    if (!await confirmar(`Excluir o gabarito "${esc(g.nome)}" de ${esc(gr.nome || 'este material')}? Não dá para desfazer. O arquivo no Drive não é apagado.`, 'Excluir', true)) return;
+    try { await api('excluir_gabarito', { id }); await carregarGabaritos(true); m.fechar(); toast('Gabarito excluído.'); recarregar(); } catch (e) {}
+  };
   const lista = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(c => c.value);
   const sinc = () => {
     const livre = el.tamanho_livre.checked;
