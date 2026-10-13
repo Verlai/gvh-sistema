@@ -1890,9 +1890,17 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
     </form>
     <div id="cli-contatos" class="hidden"><div class="painel-cab" style="margin-bottom:6px"><h3>Contatos</h3>${podeEditar ? '<button type="button" class="btn peq" id="add-contato">Adicionar contato</button>' : ''}</div>
       <div id="contatos"></div></div>
+    ${id ? '<div data-cli-gab></div>' : ''}
     ${c.pedidos && c.pedidos.length ? `<div><h3 style="margin-bottom:6px">Últimos pedidos</h3><table><tbody>${c.pedidos.map(p => `<tr class="clicavel" onclick="location.hash='#/pedido/${p.id}';document.querySelector('.fundo-modal')?.remove()"><td><b>${esc(p.numero)}</b></td><td>${data(p.created_at)}</td><td>${esc(p.status_nome)}</td>${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}`,
     rodape: podeEditar ? `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar cliente</button>` : `<button class="btn" data-v>Fechar</button>` });
   const f = $('#f-cli', m.el); const s = m.el.querySelector('[data-s]');
+  if (id) carregarGabaritos().then(() => {
+    const box = m.el.querySelector('[data-cli-gab]'); if (!box) return;
+    const lista = gruposGabarito().flatMap(gr => gr.gabaritos.filter(g => g.cliente_id === id && g.ativo).map(g => ({ gr, g })));
+    if (!lista.length) return;
+    box.innerHTML = blocoExp('cli-gab-' + id, `<b>Gabaritos deste cliente</b> <span class="small muted">(${lista.length})</span>`,
+      lista.map(({ gr, g }) => `<div class="small" style="padding:4px 0">${esc(gr.nome)} › <b>${esc(g.nome)}</b> · ${textoMedidas(g)} · ${esc(textoCondicao(g))}${g.arquivo_url ? ` · <a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener">Abrir</a>` : ''}</div>`).join(''), false);
+  }).catch(() => {});
   let tipo = id && c.cpf_cnpj ? c.tipo_pessoa : null;
   const info = (txt, erro = false) => { const e = $('#doc-info', m.el); e.textContent = txt; e.style.color = erro ? 'var(--vermelho)' : ''; };
   const aplicarTipo = () => {
@@ -4184,8 +4192,15 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
   const gr = grupos.find(g => g.id === grupoId);
   const abrir = url => url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">${url.includes('/folders/') ? 'Abrir pasta' : 'Abrir gabarito'}</a>` : '';
   let atual;
-  if (u && u.gabarito_escolhido_id) {
-    atual = `<b>${esc(u.gabarito_escolhido_nome)}</b>${u.gabarito_escolhido_so_item ? ' <span class="muted">(só deste item)</span>' : ''}
+  if (u && u.confirmar_cliente) {
+    // gabarito do cliente vence o geral, mas alguém confirma antes
+    atual = `<div class="alerta" style="padding:6px 10px">Este cliente tem gabarito próprio: <b>${esc(u.gabarito_sugerido_nome)}</b>${abrir(u.gabarito_sugerido_url)}
+      ${podeEscolher ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn peq prim" data-gab-conf="${itemId}" data-gid="${u.gabarito_sugerido_id}">Usar o do cliente</button>
+        ${u.gabarito_geral_id ? `<button type="button" class="btn peq" data-gab-conf="${itemId}" data-gid="${u.gabarito_geral_id}">Usar o geral (${esc(u.gabarito_geral_nome)})</button>` : ''}</div>`
+      : ' <span class="muted">· aguardando confirmação</span>'}</div>`;
+  } else if (u && u.gabarito_escolhido_id) {
+    atual = `<b>${esc(u.gabarito_escolhido_nome)}</b>${u.gabarito_escolhido_so_item ? ' <span class="muted">(só deste item)</span>' : ''}${u.gabarito_escolhido_cliente ? ' <span class="muted">(do cliente)</span>' : ''}
       <span class="muted" title="Escolhido à mão${u.gabarito_escolhido_em ? ' em ' + dataHora(u.gabarito_escolhido_em) : ''}"> · ✋ ${esc(u.gabarito_escolhido_por_nome || '')}</span>
       ${u.gabarito_escolhido_pendente ? badge('sem medidas', 'b-ambar') : ''}${abrir(u.gabarito_escolhido_url)}`;
   } else if (u && u.gabarito_sugerido_id) {
@@ -4200,7 +4215,8 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
     const nomeMat = gr ? gr.nome : (u && u.grupo_nome) || '';
     return `<div class="small" style="margin-top:6px"><span class="muted">Gabarito:</span> ${nomeMat ? esc(nomeMat) + ' · ' : ''}${atual}</div>`;
   }
-  const variacoes = [...(gr ? gr.gabaritos : []).filter(g => g.ativo).map(g => [g.id, g.nome + (g.medidas_pendentes ? ' (sem medidas)' : '')]),
+  const variacoes = [...(gr ? gr.gabaritos : []).filter(g => g.ativo && (!g.cliente_id || (u && g.cliente_id === u.cliente_id)))
+                       .map(g => [g.id, g.nome + (g.cliente_id ? ' (do cliente)' : '') + (g.medidas_pendentes ? ' (sem medidas)' : '')]),
                      ...((u && u.gabaritos_do_item) || []).map(g => [g.id, g.nome + ' (só deste item)'])];
   const est = 'padding:4px 6px;font-size:12px;width:auto;max-width:240px';
   return `<div class="small" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -4214,13 +4230,13 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
         <option value="">${u && u.gabarito_sugerido_id ? 'Sugestão do sistema (' + esc(u.gabarito_sugerido_nome) + ')' : 'Sugestão do sistema'}</option>
         ${variacoes.map(([id, n]) => `<option value="${id}" ${u && id === u.gabarito_escolhido_id ? 'selected' : ''}>${esc(n)}</option>`).join('')}
       </select>` : ''}
-      <button type="button" class="btn link peq" data-gab-novo="${itemId}" data-gab-gr="${grupoId || ''}">+ Novo gabarito</button>
+      <button type="button" class="btn link peq" data-gab-novo="${itemId}" data-gab-gr="${grupoId || ''}" data-gab-cli="${esc((u && u.cliente_nome) || '')}">+ Novo gabarito</button>
     </div>
     <div class="small" style="margin-top:4px">${atual}</div>`;
 }
 // Selo pequeno "sem gabarito" (vendedor, Diretor e arte)
 const veSeloGabarito = () => pode('cria_pedidos') || gerenciaArtes() || !!S.perm.so_painel_arte || pode('gerencia_cadastros');
-const seloSemGabarito = u => u && u.sem_gabarito && veSeloGabarito() ? badge('sem gabarito', 'b-cinza') : '';
+const seloSemGabarito = u => !u || !veSeloGabarito() ? '' : u.confirmar_cliente ? badge('confirmar gabarito do cliente', 'b-ambar') : u.sem_gabarito ? badge('sem gabarito', 'b-cinza') : '';
 // Material cujos gabaritos ativos ainda estão todos com medidas pendentes (devolve o material)
 function gabaritoSoPendente(grupoId) {
   const g = gruposGabarito().find(x => x.id === grupoId);
@@ -4238,11 +4254,14 @@ function ligarSelectsGabarito(raiz) {
     try { await api('item_gabarito', { item_id: s.dataset.gabVar, gabarito_id: s.value || null }); toast(s.value ? 'Gabarito escolhido para o item.' : 'O item volta a seguir a sugestão do sistema.'); recarregar(); }
     catch (e) { recarregar(); }
   });
-  raiz.querySelectorAll('[data-gab-novo]').forEach(b => b.onclick = () => modalNovoGabaritoItem(b.dataset.gabNovo, b.dataset.gabGr || null));
+  raiz.querySelectorAll('[data-gab-novo]').forEach(b => b.onclick = () => modalNovoGabaritoItem(b.dataset.gabNovo, b.dataset.gabGr || null, b.dataset.gabCli || ''));
+  raiz.querySelectorAll('[data-gab-conf]').forEach(b => b.onclick = async () => {
+    try { await api('item_gabarito', { item_id: b.dataset.gabConf, gabarito_id: b.dataset.gid }); toast('Gabarito do item confirmado.'); recarregar(); } catch (e) {}
+  });
 }
 const numBr = v => v === '' || v == null ? null : Number(String(v).replace(',', '.'));
 // Criar gabarito a partir do item: para o material (vale nos próximos pedidos) ou só para o item.
-function modalNovoGabaritoItem(itemId, grupoId) {
+function modalNovoGabaritoItem(itemId, grupoId, clienteNome) {
   const grupos = gruposGabarito();
   const m = abrirModal({ titulo: 'Novo gabarito', largo: true, corpo: `<form id="f-ngi">
     <div class="grade g2">
@@ -4254,7 +4273,8 @@ function modalNovoGabaritoItem(itemId, grupoId) {
       <label class="campo"><span id="ngi-nome-rot">Nome do gabarito *</span><input type="text" name="nome" maxlength="80" placeholder="Ex.: 1 dobra · Prazo normal acima de 250 un"></label>
     </div>
     <div class="campo" style="margin-top:10px">Onde gravar
-      <label class="check" style="margin:4px 0 0"><input type="radio" name="destino" value="material" checked> <span><b>Gravar para o material</b> — vale para os próximos pedidos</span></label>
+      <label class="check" style="margin:4px 0 0"><input type="radio" name="destino" value="material" checked> <span><b>Gravar para o material</b> — vale para os próximos pedidos de todos os clientes</span></label>
+      ${clienteNome ? `<label class="check" style="margin:2px 0 0"><input type="radio" name="destino" value="cliente"> <span><b>Gravar para este cliente (${esc(clienteNome)})</b> — vale nos próximos pedidos dele neste material, antes dos gerais</span></label>` : ''}
       <label class="check" style="margin:2px 0 0"><input type="radio" name="destino" value="item"> <span><b>Só para este item</b> — não grava no cadastro de Gabaritos</span></label>
     </div>
     <h3 style="margin:14px 0 6px">Medidas (mm)</h3>
@@ -4322,17 +4342,18 @@ function modalNovoGabaritoItem(itemId, grupoId) {
     if (r.repetido) { modalGabaritoRepetido(r, d, enviar); return r; }
     await carregarGabaritos(true); m.fechar();
     toast(d.destino === 'item' ? 'Gabarito criado só para este item.'
+      : d.destino === 'cliente' && r.acao === 'novo' ? `Gabarito gravado para o cliente ${clienteNome} e escolhido no item.`
       : r.acao === 'substituir' ? 'Gabarito do cadastro substituído e escolhido no item.'
       : r.acao === 'usar' ? 'O item ficou com o gabarito que já existia.'
       : `Gabarito gravado${r.material_criado ? ' no material novo' : ' no material'} e escolhido no item.`);
-    if (d.destino === 'material' && r.sugestao_para_item && !r.sugestao_e_o_mesmo)
+    if (d.destino !== 'item' && r.sugestao_para_item && !r.sugestao_e_o_mesmo)
       toast(`Pelas regras, o sistema sugeriria "${r.sugestao_para_item}" para este item; ele ficou com o gabarito escolhido.`);
     recarregar(); return r;
   };
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = coletar();
-    if (d.destino === 'material' && !d.grupo_id && !(d.material_novo || '').trim()) return toast('Escolha o material ou escreva o nome de um material novo.', true);
+    if (d.destino !== 'item' && !d.grupo_id && !(d.material_novo || '').trim()) return toast('Escolha o material ou escreva o nome de um material novo.', true);
     try { await enviar(d); } catch (e) {}
   };
 }
@@ -4347,7 +4368,7 @@ function modalGabaritoRepetido(r, d, enviar) {
                   ['Sangria', g => fmtMm(g.sangria_mm || 0) + ' mm', true], ['Segurança', g => fmtMm(g.seguranca_mm || 0) + ' mm', true],
                   ['Páginas', g => (g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ' · última = faca' : ''), true], ['Arte final', g => esc(textoFormatos(g)), false]];
   const m = abrirModal({ titulo: r.mesmo_nome ? 'Já existe um gabarito com esse nome' : 'Já existe um gabarito com essas regras', largo: true, corpo: `
-    <p class="small" style="margin:0 0 10px">No material <b>${esc(r.material_nome || '')}</b> já existe <b>${esc(ex.nome)}</b>${pend ? ' (ainda sem medidas)' : ''}. Compare e escolha:</p>
+    <p class="small" style="margin:0 0 10px">No material <b>${esc(r.material_nome || '')}</b> já existe <b>${esc(ex.nome)}</b>${ex.cliente_nome ? ` (gabarito do cliente ${esc(ex.cliente_nome)})` : ''}${pend ? ' (ainda sem medidas)' : ''}. Compare e escolha:</p>
     <div class="tabela-wrap"><table><thead><tr><th></th><th>Já existe: ${esc(ex.nome)}</th><th>O seu${d.nome ? ': ' + esc(d.nome) : ''}</th></tr></thead><tbody>
       ${linhas.map(([n, fn, medida]) => `<tr><td class="small muted">${n}</td><td class="small">${pend && medida ? '—' : fn(ex)}</td><td class="small">${fn(nv)}</td></tr>`).join('')}
     </tbody></table></div>
@@ -4452,8 +4473,8 @@ rota('gabaritos', async (_p, el) => {
     </div>
     ${gr.observacoes ? `<div class="small" style="margin-bottom:8px">${esc(gr.observacoes)}</div>` : ''}
     ${gr.gabaritos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Gabarito</th><th>Quando usar</th><th>Tamanho final</th><th></th></tr></thead><tbody>
-      ${gr.gabaritos.map(g => `<tr class="clicavel" data-gab-linha data-pend="${g.medidas_pendentes ? 1 : 0}" data-txt="${esc(g.nome.toLowerCase())}" data-gb-ver="${g.id}" data-gb-gr="${gr.id}" style="${g.ativo ? '' : 'opacity:.55'}">
-        <td><b>${esc(g.nome)}</b> ${g.ativo ? '' : badge('Inativo', 'b-cinza')}${textoOrigemGabarito(g) ? `<div class="small muted">${textoOrigemGabarito(g)}</div>` : ''}</td>
+      ${gr.gabaritos.map(g => `<tr class="clicavel" data-gab-linha data-pend="${g.medidas_pendentes ? 1 : 0}" data-txt="${esc((g.nome + ' ' + (g.cliente_nome || '')).toLowerCase())}" data-gb-ver="${g.id}" data-gb-gr="${gr.id}" style="${g.ativo ? '' : 'opacity:.55'}">
+        <td><b>${esc(g.nome)}</b> ${g.cliente_nome ? badge('Cliente: ' + g.cliente_nome, 'b-azul') : ''} ${g.ativo ? '' : badge('Inativo', 'b-cinza')}${textoOrigemGabarito(g) ? `<div class="small muted">${textoOrigemGabarito(g)}</div>` : ''}</td>
         <td class="small">${esc(textoCondicao(g))}</td>
         <td class="small">${textoMedidas(g)}</td>
         <td class="small dir">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}</td>
@@ -4519,6 +4540,7 @@ function modalVerGabarito(grupoId, id) {
   const pend = !!g.medidas_pendentes;
   const m = abrirModal({ titulo: `${gr.nome || 'Material'} · ${g.nome}`, corpo: `
     ${pend ? '<div class="alerta" style="margin-bottom:12px">As medidas deste gabarito ainda não foram cadastradas no sistema. Use o arquivo do Drive como referência.</div>' : ''}
+    ${g.cliente_nome ? `<p class="small" style="margin:0 0 10px">Gabarito do cliente <b>${esc(g.cliente_nome)}</b>: vale só nos pedidos dele e vem antes dos gerais (o item pede confirmação).</p>` : ''}
     <div class="grade g3" style="row-gap:14px">
       ${campo('Quando usar', esc(textoCondicao(g)))}
       ${campo('Tamanho final', textoMedidas(g))}
@@ -4604,6 +4626,7 @@ function modalGabarito(grupoId, id) {
       <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(g.instrucoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo</label>` : ''}
     </div>
+    ${id && g.cliente_nome ? `<p class="small" style="margin:10px 0 0">Gabarito do cliente <b>${esc(g.cliente_nome)}</b>: vale só nos pedidos dele e vem antes dos gerais (o item pede confirmação).</p>` : ''}
     ${id && textoOrigemGabarito(g) ? `<p class="small muted" style="margin:10px 0 0">${textoOrigemGabarito(g)}.</p>` : ''}
     ${id && g.alteracoes ? `<div style="margin-top:8px">${blocoExp('gb-hist-' + id, `Alterações anteriores (${g.alteracoes})`, '<div data-gb-hist class="small muted">Carregando…</div>', false, 'leve')}</div>` : ''}
     </form>`,
