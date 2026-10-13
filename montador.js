@@ -1,0 +1,407 @@
+/* =====================================================================
+   MONTADOR DE PROVAS (AR3c) — Gráfica Venda Hoje
+   Carregado só quando alguém clica em "Montar prova" (index.html → montarProva).
+   Tudo roda no navegador: lê o PDF/imagem da arte, confere com o gabarito do item,
+   mostra as linhas de corte e segurança (só para a equipe) e gera a PROVA do cliente:
+   JPG leve, sem sangria, com marca d'água "PROVA — não use para impressão" e o logo da GVH.
+   A prova sobe para o Drive do pedido (tipo "prova") e fica registrada na arte (versão).
+   Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
+   fmtMm, badge, recarregar.
+   ===================================================================== */
+(function () {
+  const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+  const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const TOL = 1.5;            // mm de folga na comparação de tamanhos
+  const LADO_PROVA = 1600;    // px do lado maior da prova do cliente
+  const LADO_CONF = 560;      // px do lado maior da conferência na tela
+  const PT_MM = 25.4 / 72;
+  let carregandoPdf = null;
+
+  function carregarPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve();
+    if (carregandoPdf) return carregandoPdf;
+    carregandoPdf = new Promise((ok, falha) => {
+      const s = document.createElement('script');
+      s.src = PDFJS;
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; ok(); };
+      s.onerror = () => { carregandoPdf = null; falha(new Error('Não foi possível carregar o leitor de PDF. Confira a internet e tente de novo.')); };
+      document.head.appendChild(s);
+    });
+    return carregandoPdf;
+  }
+
+  const perto = (a, b) => Math.abs(a - b) <= TOL;
+  const mm = v => fmtMm(Math.round(v * 10) / 10);
+  const num = v => (v === '' || v == null) ? null : Number(String(v).replace(',', '.'));
+
+  /* ---------- leitura dos arquivos ---------- */
+  async function lerArquivos(files) {
+    const paginas = [];
+    for (const file of files) {
+      const ehPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      if (ehPdf) {
+        await carregarPdfJs();
+        const doc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        for (let p = 1; p <= doc.numPages; p++) {
+          const pg = await doc.getPage(p);
+          const vp = pg.getViewport({ scale: 1 });
+          paginas.push({ fonte: 'pdf', file, doc, pagina: p, w: vp.width * PT_MM, h: vp.height * PT_MM,
+                         nome: file.name + (doc.numPages > 1 ? ` — pág. ${p}` : ''), papel: '' });
+        }
+      } else if (/^image\//.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)) {
+        const img = await carregarImagem(URL.createObjectURL(file));
+        paginas.push({ fonte: 'img', file, img, w: null, h: null, pxw: img.naturalWidth, pxh: img.naturalHeight, nome: file.name, papel: '' });
+      } else {
+        toast(`"${file.name}" não é PDF nem imagem: ficou de fora. CDR precisa ser exportado em PDF para montar a prova.`, true);
+      }
+    }
+    return paginas;
+  }
+  function carregarImagem(src) {
+    return new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => falha(new Error('Imagem inválida.')); i.src = src; });
+  }
+  // Desenha a página inteira (do arquivo) num canvas com "k" pixels por mm
+  async function rasterizar(p, k) {
+    const c = document.createElement('canvas');
+    if (p.fonte === 'pdf') {
+      const pg = await p.doc.getPage(p.pagina);
+      const vp = pg.getViewport({ scale: (k * PT_MM) });
+      c.width = Math.max(1, Math.round(vp.width)); c.height = Math.max(1, Math.round(vp.height));
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+    } else {
+      c.width = p.pxw; c.height = p.pxh;
+      c.getContext('2d').drawImage(p.img, 0, 0);
+    }
+    return c;
+  }
+
+  /* ---------- regra: o que o gabarito pede × o que veio ---------- */
+  // Devolve { fw, fh (tamanho final em mm), s (sangria no arquivo, mm), seg, encaixe: 'corte'|'conter'|'cobrir'|'inteiro', avisos[] }
+  function analisar(p, g) {
+    const av = [];
+    if (g.modo === 'fixo' || g.modo === 'definido') {
+      const W = g.w, H = g.h, s = g.s;
+      if (p.fonte === 'img') {
+        av.push({ nivel: 'amarelo', txt: 'Imagem não traz medida: foi encaixada no tamanho final do gabarito (sem conferir sangria).' });
+        return { fw: W, fh: H, s: 0, seg: g.seg, encaixe: 'cobrir', avisos: av };
+      }
+      if (perto(p.w, W + 2 * s) && perto(p.h, H + 2 * s)) return { fw: W, fh: H, s, seg: g.seg, encaixe: 'corte', avisos: av };
+      if (s > 0 && perto(p.w, W) && perto(p.h, H)) {
+        av.push({ nivel: 'amarelo', txt: `Arquivo sem sangria: veio no tamanho final (${mm(W)} × ${mm(H)} mm). Falta ${mm(s)} mm de cada lado.` });
+        return { fw: W, fh: H, s: 0, seg: g.seg, encaixe: 'corte', avisos: av };
+      }
+      if ((perto(p.w, H + 2 * s) && perto(p.h, W + 2 * s)) || (perto(p.w, H) && perto(p.h, W))) {
+        av.push({ nivel: 'vermelho', txt: `A arte está girada em relação ao gabarito (veio ${mm(p.w)} × ${mm(p.h)} mm; o gabarito é ${mm(W)} × ${mm(H)} mm).` });
+      } else {
+        av.push({ nivel: 'vermelho', txt: `Tamanho diferente do gabarito: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm; o gabarito pede ${mm(W + 2 * s)} × ${mm(H + 2 * s)} mm (com sangria) ou ${mm(W)} × ${mm(H)} mm (final).` });
+      }
+      return { fw: W, fh: H, s: 0, seg: g.seg, encaixe: 'conter', avisos: av, tamanhoErrado: true };
+    }
+    // tamanho livre (gabarito) ou tamanho do próprio arquivo (sem gabarito)
+    if (p.fonte === 'img') {
+      av.push({ nivel: 'amarelo', txt: 'Imagem não traz medida: para conferir o tamanho, envie em PDF.' });
+      return { fw: null, fh: null, s: 0, seg: 0, encaixe: 'inteiro', avisos: av };
+    }
+    const s = g.s || 0;
+    if (s && (p.w <= 2 * s || p.h <= 2 * s)) return { fw: p.w, fh: p.h, s: 0, seg: g.seg, encaixe: 'corte', avisos: av };
+    return { fw: p.w - 2 * s, fh: p.h - 2 * s, s, seg: g.seg, encaixe: 'corte', avisos: av };
+  }
+
+  /* ---------- imagens ---------- */
+  // Conferência (equipe): arquivo inteiro + sangria sombreada + corte (vermelho) + segurança (verde)
+  async function desenharConferencia(p, a) {
+    const k0 = p.fonte === 'pdf' ? LADO_CONF / Math.max(p.w, p.h) : null;
+    const base = await rasterizar(p, k0 || 1);
+    const c = document.createElement('canvas');
+    if (a.encaixe === 'conter') {
+      // mostra a área do gabarito com a arte encaixada no meio
+      const k = LADO_CONF / Math.max(a.fw, a.fh);
+      c.width = Math.round(a.fw * k); c.height = Math.round(a.fh * k);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#f1f3f4'; ctx.fillRect(0, 0, c.width, c.height);
+      const esc_ = Math.min(c.width / base.width, c.height / base.height);
+      const w = base.width * esc_, h = base.height * esc_;
+      ctx.drawImage(base, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      linhas(ctx, k, 0, a.seg, c.width, c.height);
+      return c;
+    }
+    if (a.encaixe === 'cobrir') {
+      const k = LADO_CONF / Math.max(a.fw, a.fh);
+      c.width = Math.round(a.fw * k); c.height = Math.round(a.fh * k);
+      cobrir(c.getContext('2d'), base, c.width, c.height);
+      linhas(c.getContext('2d'), k, 0, a.seg, c.width, c.height);
+      return c;
+    }
+    c.width = base.width; c.height = base.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(base, 0, 0);
+    if (a.encaixe === 'inteiro') return c;
+    const k = base.width / p.w;
+    linhas(ctx, k, a.s, a.seg, c.width, c.height);
+    return c;
+  }
+  function linhas(ctx, k, s, seg, W, H) {
+    const lw = Math.max(1.5, W / 400);
+    if (s > 0) {           // sangria: faixa sombreada fora do corte
+      ctx.save(); ctx.fillStyle = 'rgba(214,69,69,.18)';
+      const sp = s * k;
+      ctx.fillRect(0, 0, W, sp); ctx.fillRect(0, H - sp, W, sp); ctx.fillRect(0, sp, sp, H - 2 * sp); ctx.fillRect(W - sp, sp, sp, H - 2 * sp);
+      ctx.restore();
+    }
+    ctx.save(); ctx.lineWidth = lw;
+    ctx.strokeStyle = 'rgba(214,69,69,.95)'; ctx.setLineDash([lw * 4, lw * 3]);
+    ctx.strokeRect(s * k, s * k, W - 2 * s * k, H - 2 * s * k);
+    if (seg > 0) {
+      ctx.strokeStyle = 'rgba(20,150,90,.95)'; ctx.setLineDash([]);
+      const i = (s + seg) * k; ctx.strokeRect(i, i, W - 2 * i, H - 2 * i);
+    }
+    ctx.restore();
+  }
+  function cobrir(ctx, src, W, H) {
+    const e = Math.max(W / src.width, H / src.height);
+    const w = src.width * e, h = src.height * e;
+    ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
+  }
+  // Prova do cliente: só a área final (sem sangria), lado maior = LADO_PROVA px, com marca d'água
+  async function desenharProva(p, a, comFaixa) {
+    const c = document.createElement('canvas');
+    if (a.encaixe === 'inteiro') {
+      const e = Math.min(1, LADO_PROVA / Math.max(p.pxw, p.pxh));
+      c.width = Math.round(p.pxw * e); c.height = Math.round(p.pxh * e);
+      c.getContext('2d').drawImage(p.img, 0, 0, c.width, c.height);
+    } else {
+      const k = LADO_PROVA / Math.max(a.fw, a.fh);
+      c.width = Math.round(a.fw * k); c.height = Math.round(a.fh * k);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      if (a.encaixe === 'corte') {
+        const base = await rasterizar(p, k);
+        ctx.drawImage(base, -a.s * k, -a.s * k);
+      } else if (a.encaixe === 'cobrir') {
+        cobrir(ctx, await rasterizar(p, 1), c.width, c.height);
+      } else { // conter
+        const base = await rasterizar(p, p.fonte === 'pdf' ? k : 1);
+        const e = Math.min(c.width / base.width, c.height / base.height);
+        ctx.drawImage(base, (c.width - base.width * e) / 2, (c.height - base.height * e) / 2, base.width * e, base.height * e);
+        if (comFaixa) faixaAviso(ctx, c.width, c.height, `ATENÇÃO: a arte enviada (${mm(p.w)} × ${mm(p.h)} mm) não está no tamanho pedido (${mm(a.fw)} × ${mm(a.fh)} mm)`);
+      }
+    }
+    await marcaDagua(c);
+    return c;
+  }
+  function faixaAviso(ctx, W, H, texto) {
+    const h = Math.max(Math.round(H * 0.08), 30);
+    ctx.save(); ctx.fillStyle = '#7A0000'; ctx.fillRect(0, H - h, W, h);
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(h * 0.38)}px Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(texto, W / 2, H - h / 2, W * 0.96); ctx.restore();
+  }
+  let logoCache = null;
+  async function marcaDagua(c) {
+    const ctx = c.getContext('2d'), W = c.width, H = c.height;
+    const fs = Math.max(14, Math.round(Math.max(W, H) * 0.032));
+    const texto = 'PROVA — NÃO USE PARA IMPRESSÃO';
+    ctx.save();
+    ctx.translate(W / 2, H / 2); ctx.rotate(-Math.atan2(H, W));
+    ctx.font = `700 ${fs}px Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(19,42,50,.16)'; ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = Math.max(1, fs / 14);
+    const diag = Math.sqrt(W * W + H * H), passoY = fs * 3.2, larg = ctx.measureText(texto).width + fs * 3;
+    for (let y = -diag / 2; y <= diag / 2; y += passoY) {
+      const desl = (Math.round(y / passoY) % 2) * larg / 2;
+      for (let x = -diag / 2 - larg; x <= diag / 2 + larg; x += larg) { ctx.strokeText(texto, x + desl, y); ctx.fillText(texto, x + desl, y); }
+    }
+    ctx.restore();
+    // logo GVH no canto de cima
+    try {
+      if (!logoCache) { const el = document.getElementById('logo-gvh'); if (el && el.src) logoCache = await carregarImagem(el.src); }
+      if (logoCache) {
+        const lh = Math.max(18, Math.round(Math.min(W, H) * 0.075)), lw = logoCache.naturalWidth * lh / logoCache.naturalHeight;
+        const pad = Math.round(lh * 0.35), x = W - lw - pad * 2 - pad, y = pad;
+        ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.85)';
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, lw + pad * 2, lh + pad * 2, pad) : ctx.rect(x, y, lw + pad * 2, lh + pad * 2); ctx.fill();
+        ctx.drawImage(logoCache, x + pad, y + pad, lw, lh); ctx.restore();
+      }
+    } catch (e) { /* sem logo, segue só com o texto */ }
+  }
+  const paraBlob = c => new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.84));
+
+  /* ---------- tela ---------- */
+  window.abrirMontador = async function (arteId) {
+    let a;
+    try { a = (await api('obter_arte', { id: arteId })).arte; } catch (e) { return; }
+    const u = a.urgencia || {};
+    const gm = u.gabarito_medidas;
+    // gabarito: fixo (com medidas) | livre (tamanho livre) | sem (sem gabarito com medidas)
+    let g;
+    if (gm && !gm.medidas_pendentes && !gm.tamanho_livre) g = { modo: 'fixo', w: +gm.corte_largura_mm, h: +gm.corte_altura_mm, s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
+    else if (gm && !gm.medidas_pendentes && gm.tamanho_livre) g = { modo: 'livre', s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
+    else g = { modo: 'arquivo', s: 0, seg: 3, faca: false };
+    const nomeGab = u.gabarito_nome ? `${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}` : '';
+    const linhaGab = g.modo === 'fixo'
+      ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
+      : g.modo === 'livre' ? `<b>${nomeGab}</b> · tamanho livre (vem do arquivo) · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
+      : `<span class="muted">Sem gabarito com medidas neste item.</span>`;
+    const ehCartao = /cart[ãa]o/i.test(u.grupo_nome || '') || (g.modo === 'fixo' && Math.max(g.w, g.h) <= 100);
+    let paginas = [], analise = {}, enviando = false;
+
+    const m = abrirModal({ titulo: `Montar prova · ${a.item_descricao || ''}`, largo: true, corpo: `
+      <style>
+        .mt-drop{border:2px dashed var(--linha);border-radius:12px;padding:18px;text-align:center;color:var(--texto-2);cursor:pointer;font-size:13px}
+        .mt-drop.sobre{border-color:var(--verde);background:var(--verde-bg)}
+        .mt-pags{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+        .mt-pag{width:140px;font-size:11px;border:1px solid var(--linha);border-radius:8px;padding:6px;background:#fff}
+        .mt-pag canvas,.mt-pag img{width:100%;height:96px;object-fit:contain;background:var(--linha-2);display:block;border-radius:4px}
+        .mt-pag select{width:100%;margin-top:4px;font-size:12px;padding:3px}
+        .mt-conf{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px}
+        .mt-conf figure{margin:0}.mt-conf canvas{width:100%;height:auto;border:1px solid var(--linha);border-radius:6px;background:#fff}
+        .mt-conf figcaption{font-size:12px;color:var(--texto-2);margin-bottom:4px}
+        .mt-av{font-size:13px;padding:6px 10px;border-radius:8px;margin-top:6px}
+        .mt-av.vermelho{background:var(--vermelho-bg);color:var(--vermelho)}.mt-av.amarelo{background:var(--ambar-bg);color:#7d520d}.mt-av.verde{background:var(--verde-bg);color:#007a61}
+      </style>
+      <div class="small" style="margin-bottom:8px">Gabarito: ${linhaGab}</div>
+      ${g.modo === 'arquivo' ? `<div class="grade g3" style="margin-bottom:8px">
+        <label class="campo" style="grid-column:1/-1;margin:0"><span>Tamanho final</span>
+          <select id="mt-tam"><option value="arquivo">Usar o tamanho do arquivo (PDF)</option><option value="definido">Definir o tamanho</option></select></label>
+        <label class="campo mt-def" style="display:none">Largura final (mm)<input type="text" inputmode="decimal" id="mt-w"></label>
+        <label class="campo mt-def" style="display:none">Altura final (mm)<input type="text" inputmode="decimal" id="mt-h"></label>
+      </div>` : ''}
+      <div class="mt-drop" id="mt-drop">Arraste aqui o <b>PDF</b> ou as <b>imagens</b> da arte (frente e verso), ou clique para escolher.
+        <input type="file" id="mt-arq" multiple accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" style="display:none"></div>
+      <div class="mt-pags" id="mt-pags"></div>
+      <div id="mt-res"></div>`,
+      rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button><button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>` });
+    const $m = sel => m.el.querySelector(sel);
+    $m('[data-v]').onclick = m.fechar;
+    const drop = $m('#mt-drop'), inp = $m('#mt-arq');
+    drop.onclick = e => { if (e.target !== inp) inp.click(); };
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('sobre'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('sobre'); }));
+    drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) receber([...e.dataTransfer.files]); });
+    inp.onchange = () => { if (inp.files.length) receber([...inp.files]); };
+    if ($m('#mt-tam')) {
+      $m('#mt-tam').onchange = () => { m.el.querySelectorAll('.mt-def').forEach(x => x.style.display = $m('#mt-tam').value === 'definido' ? '' : 'none'); montar(); };
+      ['#mt-w', '#mt-h'].forEach(s => $m(s).oninput = () => { clearTimeout(montar.t); montar.t = setTimeout(montar, 400); });
+    }
+
+    async function receber(files) {
+      drop.innerHTML = 'Lendo arquivos…';
+      try { paginas = await lerArquivos(files); }
+      catch (e) { toast(e.message || 'Não foi possível ler o arquivo.', true); paginas = []; }
+      drop.innerHTML = 'Trocar arquivos: arraste aqui ou clique.';
+      drop.appendChild(inp);
+      // sugestão: 1ª página = frente, 2ª = verso; com faca na última página, ela fica de fora
+      const usaveis = paginas.filter((p, i) => !(g.faca && paginas.length > 1 && i === paginas.length - 1));
+      if (usaveis[0]) usaveis[0].papel = 'frente';
+      if (usaveis[1]) usaveis[1].papel = 'verso';
+      const box = $m('#mt-pags'); box.innerHTML = '';
+      for (const [i, p] of paginas.entries()) {
+        const d = document.createElement('div'); d.className = 'mt-pag';
+        const th = await rasterizar(p, p.fonte === 'pdf' ? 140 / Math.max(p.w, p.h) : 1);
+        const faca = g.faca && paginas.length > 1 && i === paginas.length - 1;
+        d.innerHTML = `<div title="${esc(p.nome)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</div>`;
+        d.appendChild(th);
+        d.insertAdjacentHTML('beforeend', `<div class="muted">${p.w ? `${mm(p.w)} × ${mm(p.h)} mm` : `${p.pxw} × ${p.pxh} px`}${faca ? ' · faca' : ''}</div>
+          <select data-i="${i}"><option value="">Não usar</option><option value="frente" ${p.papel === 'frente' ? 'selected' : ''}>Frente</option><option value="verso" ${p.papel === 'verso' ? 'selected' : ''}>Verso</option></select>`);
+        box.appendChild(d);
+      }
+      box.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => {
+        const p = paginas[+s.dataset.i];
+        if (s.value) paginas.forEach((o, j) => { if (j !== +s.dataset.i && o.papel === s.value) { o.papel = ''; const x = box.querySelector(`select[data-i="${j}"]`); if (x) x.value = ''; } });
+        p.papel = s.value; montar();
+      });
+      montar();
+    }
+
+    function gabaritoEfetivo() {
+      if (g.modo !== 'arquivo') return g;
+      if ($m('#mt-tam') && $m('#mt-tam').value === 'definido') {
+        const w = num($m('#mt-w').value), h = num($m('#mt-h').value);
+        if (w > 0 && h > 0) return { modo: 'definido', w, h, s: 0, seg: 3 };
+      }
+      return { modo: 'arquivo', s: 0, seg: 3 };
+    }
+
+    async function montar() {
+      const res = $m('#mt-res'), bt = $m('[data-enviar]');
+      const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
+      bt.disabled = true; analise = {};
+      if (!fr) { res.innerHTML = paginas.length ? '<p class="small muted" style="margin-top:10px">Escolha qual página é a frente.</p>' : ''; return; }
+      res.innerHTML = '<p class="small muted" style="margin-top:10px">Montando…</p>';
+      const ge = gabaritoEfetivo();
+      try {
+        analise.frente = analisar(fr, ge); if (ve) analise.verso = analisar(ve, ge);
+        const confF = await desenharConferencia(fr, analise.frente), confV = ve ? await desenharConferencia(ve, analise.verso) : null;
+        const avisos = [...analise.frente.avisos.map(x => ({ ...x, txt: (ve ? 'Frente: ' : '') + x.txt })), ...(ve ? analise.verso.avisos.map(x => ({ ...x, txt: 'Verso: ' + x.txt })) : [])];
+        const fw = analise.frente.fw, fh = analise.frente.fh;
+        const tamErrado = analise.frente.tamanhoErrado || (analise.verso && analise.verso.tamanhoErrado);
+        res.innerHTML = `
+          <div class="mt-conf"><figure><figcaption>Frente — conferência da equipe</figcaption></figure>${ve ? '<figure><figcaption>Verso — conferência da equipe</figcaption></figure>' : ''}</div>
+          <p class="small muted" style="margin:6px 0 0">Vermelho tracejado = corte · área sombreada = sangria · verde = margem de segurança. <b>Essas linhas não vão para o cliente.</b></p>
+          ${avisos.length ? avisos.map(x => `<div class="mt-av ${x.nivel}">${esc(x.txt)}</div>`).join('') : '<div class="mt-av verde">Tamanho confere com o gabarito.</div>'}
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
+            ${ve ? `<label class="check" style="margin:0"><input type="checkbox" id="mt-3d" ${ehCartao ? 'checked' : ''}> Mostrar ao cliente em 3D (gira frente e verso)</label>` : ''}
+            ${tamErrado ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
+          </div>
+          ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}`;
+        const figs = res.querySelectorAll('.mt-conf figure');
+        figs[0].appendChild(confF); if (confV) figs[1].appendChild(confV);
+        bt.disabled = false;
+      } catch (e) {
+        console.error(e);
+        res.innerHTML = '<div class="mt-av vermelho">Não foi possível montar a prova com esse arquivo. Tente exportar de novo em PDF.</div>';
+      }
+    }
+
+    $m('[data-enviar]').onclick = async () => {
+      if (enviando) return;
+      const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
+      if (!fr || !analise.frente) return;
+      const bt = $m('[data-enviar]'); enviando = true; bt.disabled = true; bt.textContent = 'Gerando a prova…';
+      try {
+        const faixa = !!($m('#mt-faixa') && $m('#mt-faixa').checked);
+        const cF = await desenharProva(fr, analise.frente, faixa), cV = ve ? await desenharProva(ve, analise.verso, faixa) : null;
+        const base = String(a.item_descricao || 'arte').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60).trim();
+        bt.textContent = 'Enviando ao Drive…';
+        const subir = async (c, lado) => {
+          const blob = await paraBlob(c);
+          const file = new File([blob], `Prova ${base} - ${lado}.jpg`, { type: 'image/jpeg' });
+          return enviarArquivoDrive(a.pedido_id, file, 'prova', a.item_id, 'Prova ' + lado, null, null, { arte_id: a.id });
+        };
+        const idF = await subir(cF, 'frente'), idV = cV ? await subir(cV, 'verso') : null;
+        const avisos = [...analise.frente.avisos, ...(analise.verso ? analise.verso.avisos : [])].map(x => x.txt);
+        const r = await api('prova_registrar', { arte_id: a.id, frente_id: idF, verso_id: idV,
+          modo: ($m('#mt-3d') && $m('#mt-3d').checked) ? '3d' : 'imagem',
+          largura_mm: analise.frente.fw, altura_mm: analise.frente.fh, avisos });
+        mostrarLink(r, cF);
+      } catch (e) {
+        console.error(e);
+        if (e && e.message) toast(e.message, true);
+        bt.disabled = false; bt.textContent = 'Enviar prova ao cliente'; enviando = false;
+      }
+    };
+
+    function mostrarLink(r, cF) {
+      const link = location.origin + location.pathname + '#/prova/' + r.chave;
+      const nome = (a.cliente_nome || '').split(' ')[0];
+      const msg = `Olá${nome ? ', ' + nome : ''}! Segue a prova do seu pedido ${a.pedido_numero} (${a.item_descricao}) para conferir e aprovar:\n${link}\n\nÉ só abrir o link, conferir com calma e clicar em Aprovar (ou pedir alteração).`;
+      const zap = a.cliente_whatsapp ? `https://wa.me/${String(a.cliente_whatsapp).replace(/\D/g, '')}?text=${encodeURIComponent(msg)}` : '';
+      const corpo = $m('.modal-corpo');
+      corpo.innerHTML = $m('.modal-corpo style').outerHTML + `
+        <div class="mt-av verde" style="margin-bottom:12px">Prova v${r.versao} enviada. A arte passou para <b>Com o cliente</b>.</div>
+        <label class="campo">Link de aprovação do pedido ${esc(a.pedido_numero)} <span class="muted">(sempre o mesmo para o pedido)</span>
+          <input type="text" readonly value="${esc(link)}" id="mt-link"></label>
+        <label class="campo" style="margin-top:10px">Mensagem para o cliente<textarea rows="4" id="mt-msg">${esc(msg)}</textarea></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn prim" id="mt-copiar">Copiar mensagem</button>
+          ${zap ? `<a class="btn" href="${esc(zap)}" target="_blank" rel="noopener">Abrir no WhatsApp</a>` : '<span class="small muted" style="align-self:center">Cliente sem WhatsApp no cadastro.</span>'}
+          <a class="btn" id="mt-baixar" download="prova.jpg">Baixar a imagem</a>
+        </div>`;
+      $m('#mt-baixar').href = cF.toDataURL('image/jpeg', 0.84);
+      $m('#mt-copiar').onclick = async () => {
+        const t = $m('#mt-msg').value;
+        try { await navigator.clipboard.writeText(t); } catch (e) { $m('#mt-msg').select(); document.execCommand('copy'); }
+        toast('Mensagem copiada.');
+      };
+      const bt = $m('[data-enviar]'); if (bt) bt.remove();
+      $m('[data-v]').onclick = () => { m.fechar(); recarregar(); };
+    }
+  };
+})();
