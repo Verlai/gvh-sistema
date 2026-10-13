@@ -123,6 +123,18 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .alerta{border-radius:var(--raio-s);padding:10px 14px;font-size:13px;background:var(--ambar-bg);color:#7d520d}
 .alerta.erro{background:var(--vermelho-bg);color:var(--vermelho)}
 
+/* ===== Padrão de tela: resumo primeiro, detalhe ao expandir ===== */
+details.exp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 6px;border-radius:var(--raio-s)}
+details.exp>summary::-webkit-details-marker{display:none}
+details.exp>summary:hover{background:var(--linha-2)}
+details.exp>summary::before{content:'';width:6px;height:6px;border-right:2px solid var(--texto-3);border-bottom:2px solid var(--texto-3);transform:rotate(-45deg);transition:transform .15s;flex:0 0 auto;margin:0 4px 0 2px}
+details.exp[open]>summary::before{transform:rotate(45deg)}
+details.exp>.exp-corpo{padding:2px 6px 14px 24px}
+details.exp.leve>summary{padding:4px 0;font-size:13px;color:var(--verde);display:inline-flex}
+details.exp.leve>summary:hover{background:none;text-decoration:underline}
+details.exp.leve>.exp-corpo{padding:4px 0 0}
+.lista-exp>*+*{border-top:1px solid var(--linha-2)}
+
 /* ===== Trilho de produção (elemento central) ===== */
 .trilho{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;min-width:180px}
 .trilho span{height:8px;border-radius:2px;background:#e3e8ea;position:relative}
@@ -260,7 +272,28 @@ const API_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-sistema';
 const SUPABASE_URL = 'https://zvcvdfkumjlvwqjdbiiw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_B8Rn0FkmxWafKLo4pog7qA_s3evDks4';
 const INTERVALO_SEGURANCA_MS = 300000; // 5 min: só cobre queda do Realtime
-const S = { token: null, usuario: null, perm: {}, base: null, cache: {}, parcelas: {}, feriados: {} };
+const S = { token: null, usuario: null, perm: {}, base: null, cache: {}, parcelas: {}, feriados: {}, exp: {} };
+
+/* PADRÃO DE TELA (decisão do dono, 13/10): a tela mostra o principal; o resto fica em blocos que a pessoa abre.
+   blocoExp(chave, resumo, corpo, abertoPadrao, classe) → <details> que lembra se a pessoa abriu ou fechou
+   (vale enquanto a aba estiver aberta). Botões e campos ficam no corpo, nunca no resumo. */
+function expAberto(chave, padrao) { return chave in S.exp ? S.exp[chave] : !!padrao; }
+function blocoExp(chave, resumo, corpo, padrao, classe) {
+  return `<details class="exp ${classe || ''}" data-exp="${esc(chave)}" ${expAberto(chave, padrao) ? 'open' : ''}><summary>${resumo}</summary><div class="exp-corpo">${corpo}</div></details>`;
+}
+// "Ver mais N": mostra os primeiros e guarda o resto num bloco que abre
+function listaComMais(chave, itens, primeiros, nome) {
+  if (itens.length <= primeiros) return itens.join('');
+  const resto = itens.length - primeiros;
+  return itens.slice(0, primeiros).join('') + blocoExp(chave, `Ver mais ${resto} ${nome}`, itens.slice(primeiros).join(''), false, 'leve');
+}
+// Só o clique da pessoa é lembrado (abrir/fechar feito pela busca não conta)
+document.addEventListener('click', e => {
+  const sm = e.target.closest && e.target.closest('details[data-exp] > summary'); if (!sm) return;
+  const d = sm.parentElement; S.exp[d.dataset.exp] = !d.open;
+});
+// Nome da categoria sem a lista entre parênteses: "Impressos publicitários (folhetos, …)" → "Impressos publicitários"
+const catCurta = n => String(n || '').replace(/\s*\(.*\)\s*$/, '');
 
 /* ---------- utilitários ---------- */
 // Sem "el", procura primeiro dentro da tela aberta (as telas ficam guardadas lado a lado)
@@ -786,7 +819,7 @@ rota('pedido', async (id, el) => {
         <tbody>${p.itens.map(i => `
           <tr>
             <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
-            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · <span title="' + esc(i.categoria_nome) + '">' + esc(catCurta(i.categoria_nome)) + '</span>' : ''}</div>
                 ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}
                 ${i.status === 'cancelado' && i.cancel_motivo ? `<div class="small" style="margin-top:4px;color:var(--vermelho)">Cancelado: ${esc(i.cancel_motivo)}</div>` : ''}
                 ${i.cancel_solicitado_em && i.status !== 'cancelado' ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px"><b>Pedido de cancelamento</b> por ${esc(i.cancel_solicitado_por_nome || '')}: ${esc(i.cancel_motivo || '')}
@@ -849,11 +882,11 @@ rota('pedido', async (id, el) => {
           <input type="text" name="texto" placeholder="Escreva uma observação para a equipe" required style="flex:3">
           <button class="btn" style="flex:0">Adicionar</button>
         </form>
-        <div class="tempo">${(p.observacoes_lista || []).map(o => `<div class="obs">${esc(o.texto)}<small>${esc(o.usuario_nome || '')} · ${dataHora(o.created_at)}</small></div>`).join('') || '<span class="muted small">Nenhuma observação.</span>'}</div>
+        <div class="tempo">${listaComMais('obs-' + p.id, (p.observacoes_lista || []).map(o => `<div class="obs">${esc(o.texto)}<small>${esc(o.usuario_nome || '')} · ${dataHora(o.created_at)}</small></div>`), 3, 'observações') || '<span class="muted small">Nenhuma observação.</span>'}</div>
       </div>
       <div class="painel" style="margin:0">
         <div class="painel-cab"><h2>Histórico</h2></div>
-        <div class="tempo" style="max-height:380px;overflow:auto">${(p.historico || []).map(h => `<div>${descHistorico(h)}<small>${esc(h.usuario_nome || 'Automático')} · ${dataHora(h.created_at)}</small></div>`).join('')}</div>
+        <div class="tempo">${listaComMais('hist-' + p.id, (p.historico || []).map(h => `<div>${descHistorico(h)}<small>${esc(h.usuario_nome || 'Automático')} · ${dataHora(h.created_at)}</small></div>`), 5, 'registros')}</div>
       </div>
     </div>`;
 
@@ -3193,7 +3226,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
         const it = as[0];
         return `<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
           <div><b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
-            ${it.categoria_nome ? `<span class="small muted"> · ${esc(it.categoria_nome)}</span>` : ''}
+            ${it.categoria_nome ? `<span class="small muted" title="${esc(it.categoria_nome)}"> · ${esc(catCurta(it.categoria_nome))}</span>` : ''}
             ${as.length > 1 ? `<span class="small muted"> · ${as.length} artes</span>` : ''} ${badgeUrgencia(it.urgencia)}</div>
           ${it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, it.urgencia,
               as.some(a => ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao'].includes(a.situacao))
@@ -3443,19 +3476,20 @@ async function preencherArtesPedido(el, p) {
         </select></label>
         ${desPedido ? `<div style="align-self:flex-end;padding-bottom:10px">${tagPessoa((designers.find(d => d.id === desPedido) || {}).nome, (designers.find(d => d.id === desPedido) || {}).cor, 'designer')}</div>` : ''}` : ''}
     </div>
-    ${itens.length ? itens.map(i => {
+    ${itens.length ? `<div class="lista-exp">${itens.map(i => {
       const as = artes.filter(a => a.item_id === i.id && a.situacao !== 'cancelada');
       const naArte = ['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao'].includes(i.status);
       if (i.sem_arte) return `
-        <div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
-          <div><b>${esc(i.descricao)}</b> ${badge('Não precisa de arte', 'b-cinza')}</div>
-          ${podeMexer && naArte ? `<button class="btn peq" style="margin-top:8px" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
+        <div style="padding:10px 6px 10px 24px">
+          <b>${esc(i.descricao)}</b> ${badge('Não precisa de arte', 'b-cinza')}
+          ${podeMexer && naArte ? `<button class="btn link peq" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
         </div>`;
-      return `
-        <div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
+      const gNome = i.gabarito_grupo_id ? (gruposGabarito().find(g => g.id === i.gabarito_grupo_id) || {}).nome : '';
+      const resumo = `<b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span>
+        ${resumoArtes(as)} ${as.some(a => a.urgente) ? badge('URGENTE', 'b-vermelho') : ''} ${badgeUrgencia(i.urgencia)} ${gNome ? `<span class="small muted">· ${esc(gNome)}</span>` : ''}`;
+      const corpo = `
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
-            <div><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span> ${badgeUrgencia(i.urgencia)}
-              ${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}</div>
+            <div>${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}</div>
             ${podeMexer && naArte ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <label class="small muted">Qtde de artes
                 <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
@@ -3476,10 +3510,10 @@ async function preencherArtesPedido(el, p) {
                 ${acoesVendedorArte(a, podeMexer && p.status !== 'cancelado')}
                 <button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>
               </div>
-            </div>`).join('') : '<p class="small muted" style="margin:8px 0 0">Nenhuma arte neste item.</p>'}
-        </div>`;
-    }).join('') : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
-    <p class="small muted" style="margin-top:14px">O item sai da etapa de arte quando todas as artes dele estiverem aprovadas pelo cliente. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>`;
+            </div>`).join('') : '<p class="small muted" style="margin:8px 0 0">Nenhuma arte neste item.</p>'}`;
+      return `<div>${blocoExp('arte-item-' + i.id, resumo, corpo, itens.length === 1)}</div>`;
+    }).join('')}</div>` : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
+    <div style="margin-top:10px">${blocoExp('ajuda-artes', 'Como funciona', '<p class="small muted" style="margin:0">O item sai da etapa de arte quando todas as artes dele estiverem aprovadas pelo cliente. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>', false, 'leve')}</div>`;
 
   const sel = alvo.querySelector('#des-pedido');
   if (sel) sel.onchange = async () => {
@@ -4234,13 +4268,38 @@ rota('gabaritos', async (_p, el) => {
   const dados = todos ? await api('gabaritos', { todos: true }, true) : r;
   definirTopoEm(el, 'Gabaritos', ed ? `<label class="check" style="margin:0"><input type="checkbox" ${todos ? 'checked' : ''} onchange="S.cache.gabTodos=this.checked;recarregar()"> Mostrar inativos</label>
     <button class="btn prim" onclick="modalGrupoGabarito(null)">Novo material</button>` : '');
-  vistaDoEl(el).gabaritos = dados.grupos;
-  const todosGab = (dados.grupos || []).flatMap(gr => gr.gabaritos.filter(g => g.ativo));
+  const grupos = dados.grupos || [];
+  vistaDoEl(el).gabaritos = grupos;
+  const todosGab = grupos.flatMap(gr => gr.gabaritos.filter(g => g.ativo));
   const nPend = todosGab.filter(g => g.medidas_pendentes).length;
   const filtro = S.cache.gabFiltro || 'todos';
-  el.innerHTML = `<div class="painel"><p class="small muted" style="margin:0">Cada <b>material</b> tem um ou mais <b>gabaritos</b>. O sistema sugere o gabarito pela <b>urgência da produção</b> e pela <b>quantidade</b> do item; a designer abre o <code>.cdr</code> pelo link. As medidas daqui são as que a conferência da arte final vai usar. Arquivo acima de <b>${num(dados.limite_mb || 100)} MB</b> vai para o checklist.</p>
-      <p class="small" style="margin:8px 0 0"><b>${num((dados.grupos || []).length)}</b> materiais · <b>${num(todosGab.length)}</b> gabaritos · ${nPend ? `${badge(num(nPend) + ' com medidas pendentes', 'b-ambar')} <span class="muted">(o sistema só sugere gabarito com medidas preenchidas)</span>` : badge('todos com medidas', 'b-verde')}</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+  // Fechado: nome do material, quantos gabaritos e se falta medida. Aberto: links, ações e a lista curta dos gabaritos.
+  const resumoGrupo = gr => {
+    const n = gr.gabaritos.length, pend = gr.gabaritos.filter(g => g.medidas_pendentes).length;
+    return `<b>${esc(gr.nome)}</b> <span class="small muted">${n} ${n === 1 ? 'gabarito' : 'gabaritos'}</span>
+      ${gr.ativo ? '' : badge('Inativo', 'b-cinza')}
+      ${!n ? '' : pend === n ? badge('Medidas pendentes', 'b-ambar') : pend ? badge(`${pend} ${pend === 1 ? 'pendente' : 'pendentes'}`, 'b-ambar') : badge('Medidas ok', 'b-verde')}`;
+  };
+  const corpoGrupo = gr => `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span class="small muted" style="margin-right:6px">${esc(gr.categoria_nome || 'Sem categoria')}${gr.itens_usando ? ` · usado em ${gr.itens_usando} ${gr.itens_usando == 1 ? 'item' : 'itens'}` : ''}</span>
+      ${gr.pasta_url ? `<a class="btn peq" href="${esc(gr.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
+      ${gr.instrucoes_url ? `<a class="btn peq" href="${esc(gr.instrucoes_url)}" target="_blank" rel="noopener">Instruções</a>` : ''}
+      ${ed ? `<button class="btn peq" data-gr-ed="${gr.id}">Editar material</button><button class="btn peq prim" data-gb-novo="${gr.id}">Novo gabarito</button>` : ''}
+    </div>
+    ${gr.observacoes ? `<div class="small" style="margin-bottom:8px">${esc(gr.observacoes)}</div>` : ''}
+    ${gr.gabaritos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Gabarito</th><th>Quando usar</th><th>Tamanho final</th><th></th></tr></thead><tbody>
+      ${gr.gabaritos.map(g => `<tr class="clicavel" data-gab-linha data-pend="${g.medidas_pendentes ? 1 : 0}" data-txt="${esc(g.nome.toLowerCase())}" data-gb-ver="${g.id}" data-gb-gr="${gr.id}" style="${g.ativo ? '' : 'opacity:.55'}">
+        <td><b>${esc(g.nome)}</b> ${g.ativo ? '' : badge('Inativo', 'b-cinza')}</td>
+        <td class="small">${esc(textoCondicao(g))}</td>
+        <td class="small">${textoMedidas(g)}</td>
+        <td class="small dir">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>
+      <p class="small muted" style="margin:6px 0 0">Clique num gabarito para ver sangria, segurança, páginas e formatos${ed ? ' e editar' : ''}.</p>`
+    : '<p class="small muted" style="margin:0">Nenhum gabarito neste material ainda.</p>'}`;
+  el.innerHTML = `
+    <div class="painel">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input type="search" id="gab-busca" placeholder="Buscar material ou gabarito…" value="${esc(S.cache.gabBusca || '')}" style="flex:1;min-width:200px;max-width:360px">
         <select id="gab-filtro" style="width:auto">
           <option value="todos" ${filtro === 'todos' ? 'selected' : ''}>Todos</option>
@@ -4248,54 +4307,66 @@ rota('gabaritos', async (_p, el) => {
           <option value="prontos" ${filtro === 'prontos' ? 'selected' : ''}>Com medidas preenchidas</option>
         </select>
         <span class="small muted" id="gab-contagem"></span>
-      </div></div>
-    ${(dados.grupos || []).map(gr => `
-    <div class="painel" data-gab-painel style="${gr.ativo ? '' : 'opacity:.6'}">
-      <div class="painel-cab">
-        <div><h2 style="margin:0">${esc(gr.nome)} ${gr.ativo ? '' : badge('Inativo', 'b-cinza')}</h2>
-          <div class="small muted">${esc(gr.categoria_nome || 'Sem categoria')}${gr.itens_usando ? ` · usado em ${gr.itens_usando} ${gr.itens_usando == 1 ? 'item' : 'itens'}` : ''}
-            ${gr.pasta_url ? ` · <a href="${esc(gr.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
-            ${gr.instrucoes_url ? ` · <a href="${esc(gr.instrucoes_url)}" target="_blank" rel="noopener">Instruções</a>` : ''}</div>
-          ${gr.observacoes ? `<div class="small" style="margin-top:4px">${esc(gr.observacoes)}</div>` : ''}</div>
-        ${ed ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq" data-gr-ed="${gr.id}">Editar material</button><button class="btn peq prim" data-gb-novo="${gr.id}">Novo gabarito</button></div>` : ''}
       </div>
-      ${gr.gabaritos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Gabarito</th><th>Quando usar</th><th>Tamanho final</th><th>Sangria</th><th>Segurança</th><th>Páginas</th><th>Arte final</th><th></th></tr></thead><tbody>
-        ${gr.gabaritos.map(g => `<tr data-gab-linha data-pend="${g.medidas_pendentes ? 1 : 0}" data-txt="${esc((gr.nome + ' ' + g.nome).toLowerCase())}" class="${ed ? 'clicavel' : ''}" ${ed ? `data-gb-ed="${g.id}" data-gb-gr="${gr.id}"` : ''} style="${g.ativo ? '' : 'opacity:.55'}">
-          <td><b>${esc(g.nome)}</b> ${g.ativo ? '' : badge('Inativo', 'b-cinza')}${g.instrucoes ? `<div class="small muted" style="max-width:320px">${esc(g.instrucoes)}</div>` : ''}</td>
-          <td class="small">${esc(textoCondicao(g))}</td>
-          <td class="small">${textoMedidas(g)}</td>
-          <td class="small num">${g.medidas_pendentes ? '—' : fmtMm(g.sangria_mm) + ' mm'}</td>
-          <td class="small num">${g.medidas_pendentes ? '—' : fmtMm(g.seguranca_mm) + ' mm'}</td>
-          <td class="small">${g.paginas || 'Qualquer'}${g.ultima_pagina_faca ? `<div class="muted">última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}</div>` : ''}</td>
-          <td class="small">${(g.formatos || []).map(f => (FORMATOS_ARQ.find(x => x[0] === f) || [, f])[1].replace(' (.cdr)', '').replace(' (JPG/PNG)', '')).join(', ')}${g.dpi_min ? `<div class="muted">mín. ${g.dpi_min} dpi</div>` : ''}</td>
-          <td class="small">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}</td>
-        </tr>`).join('')}</tbody></table></div>` : '<p class="small muted" style="margin:0">Nenhum gabarito neste material ainda.</p>'}
-    </div>`).join('') || '<div class="painel"><div class="vazio">Nenhum material cadastrado.</div></div>'}`;
-  // Busca e filtro sem ir ao servidor: esconde linhas e materiais que não batem
+      <div class="small" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span><b>${num(grupos.length)}</b> materiais · <b>${num(todosGab.length)}</b> gabaritos</span>
+        ${nPend ? badge(num(nPend) + ' com medidas pendentes', 'b-ambar') : badge('todos com medidas', 'b-verde')}
+        ${blocoExp('gab-ajuda', 'Como funciona', `<p class="small muted" style="margin:0;max-width:760px">Cada <b>material</b> tem um ou mais <b>gabaritos</b>. O sistema sugere o gabarito pela <b>urgência da produção</b> e pela <b>quantidade</b> do item; a designer abre o arquivo pelo link. As medidas daqui são as que a conferência da arte final vai usar. Gabarito com <b>medidas pendentes</b> ainda não é sugerido. Arquivo acima de <b>${num(dados.limite_mb || 100)} MB</b> vai para o checklist.</p>`, false, 'leve')}
+      </div>
+    </div>
+    <div class="painel" style="padding:8px 14px">
+      <div class="lista-exp">${grupos.map(gr => `<div data-gab-painel data-nome="${esc(gr.nome.toLowerCase())}" style="${gr.ativo ? '' : 'opacity:.6'}">${blocoExp('gab-' + gr.id, resumoGrupo(gr), corpoGrupo(gr), false)}</div>`).join('')}</div>
+      ${grupos.length ? '' : '<div class="vazio">Nenhum material cadastrado.</div>'}
+    </div>`;
+  // Busca e filtro sem ir ao servidor. Se a busca deixar até 3 materiais, eles abrem sozinhos.
   const aplicar = () => {
     const q = ($('#gab-busca', el).value || '').trim().toLowerCase();
     const f = $('#gab-filtro', el).value;
     S.cache.gabBusca = q; S.cache.gabFiltro = f;
     let nMat = 0, nLin = 0;
+    const visiveis = [];
     el.querySelectorAll('[data-gab-painel]').forEach(pn => {
-      const nomeMat = (pn.querySelector('h2')?.textContent || '').toLowerCase();
+      const d = pn.querySelector('details');
+      const casaMat = !!q && pn.dataset.nome.includes(q);
       const linhas = [...pn.querySelectorAll('[data-gab-linha]')];
       let vis = 0;
       linhas.forEach(tr => {
-        const ok = (!q || tr.dataset.txt.includes(q)) && (f === 'todos' || (f === 'pendentes') === (tr.dataset.pend === '1'));
+        const ok = (!q || casaMat || tr.dataset.txt.includes(q)) && (f === 'todos' || (f === 'pendentes') === (tr.dataset.pend === '1'));
         tr.style.display = ok ? '' : 'none'; if (ok) vis++;
       });
-      const mostra = linhas.length ? vis > 0 : (f === 'todos' && (!q || nomeMat.includes(q)));
+      const mostra = linhas.length ? vis > 0 : (f === 'todos' && (!q || casaMat));
       pn.style.display = mostra ? '' : 'none';
-      if (mostra) { nMat++; nLin += vis; }
+      d.open = expAberto(d.dataset.exp, false);
+      if (mostra) { nMat++; nLin += vis; visiveis.push(d); }
     });
+    if (q && visiveis.length <= 3) visiveis.forEach(d => d.open = true);
     $('#gab-contagem', el).textContent = q || f !== 'todos' ? `${nMat} ${nMat === 1 ? 'material' : 'materiais'}, ${nLin} ${nLin === 1 ? 'gabarito' : 'gabaritos'}` : '';
   };
   $('#gab-busca', el).oninput = aplicar; $('#gab-filtro', el).onchange = aplicar; aplicar();
   el.querySelectorAll('[data-gr-ed]').forEach(b => b.onclick = () => modalGrupoGabarito(b.dataset.grEd));
   el.querySelectorAll('[data-gb-novo]').forEach(b => b.onclick = () => modalGabarito(b.dataset.gbNovo, null));
-  el.querySelectorAll('[data-gb-ed]').forEach(tr => tr.onclick = () => modalGabarito(tr.dataset.gbGr, tr.dataset.gbEd));
+  el.querySelectorAll('[data-gb-ver]').forEach(tr => tr.onclick = () => ed ? modalGabarito(tr.dataset.gbGr, tr.dataset.gbVer) : modalVerGabarito(tr.dataset.gbGr, tr.dataset.gbVer));
 });
+const textoFormatos = g => (g.formatos || []).map(f => (FORMATOS_ARQ.find(x => x[0] === f) || [, f])[1].replace(' (.cdr)', '').replace(' (JPG/PNG)', '')).join(', ');
+// Detalhe do gabarito só para leitura (designer e quem não edita)
+function modalVerGabarito(grupoId, id) {
+  const gr = grupoDaTela(grupoId) || {}; const g = (gr.gabaritos || []).find(x => x.id === id); if (!g) return;
+  const campo = (rot, val) => `<div><div class="small muted">${rot}</div>${val}</div>`;
+  const pend = !!g.medidas_pendentes;
+  const m = abrirModal({ titulo: `${gr.nome || 'Material'} · ${g.nome}`, corpo: `
+    ${pend ? '<div class="alerta" style="margin-bottom:12px">As medidas deste gabarito ainda não foram cadastradas no sistema. Use o arquivo do Drive como referência.</div>' : ''}
+    <div class="grade g3" style="row-gap:14px">
+      ${campo('Quando usar', esc(textoCondicao(g)))}
+      ${campo('Tamanho final', textoMedidas(g))}
+      ${campo('Sangria (cada lado)', pend ? '—' : fmtMm(g.sangria_mm) + ' mm')}
+      ${campo('Segurança', pend ? '—' : fmtMm(g.seguranca_mm) + ' mm')}
+      ${campo('Páginas', (g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ` · última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}` : ''))}
+      ${campo('Arte final', esc(textoFormatos(g)) + (g.dpi_min ? ` · mín. ${g.dpi_min} dpi` : ''))}
+    </div>
+    ${g.instrucoes ? `<p class="small" style="margin:14px 0 0"><span class="muted">Instruções:</span> ${esc(g.instrucoes)}</p>` : ''}`,
+    rodape: `${g.arquivo_url ? `<a class="btn" href="${esc(g.arquivo_url)}" target="_blank" rel="noopener">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}<button class="btn prim" data-v>Fechar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+}
 function grupoDaTela(id) { return (S.vistaAtual?.gabaritos || gruposGabarito()).find(g => g.id === id); }
 async function modalGrupoGabarito(id) {
   await carregarBase();
