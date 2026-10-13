@@ -4134,7 +4134,9 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
   const grupos = gruposGabarito();
   const sug = u && u.gabarito_sugerido_id
     ? `<span>→ <b>${esc(u.gabarito_sugerido_nome)}</b>${u.gabarito_sugerido_url ? ` · <a href="${esc(u.gabarito_sugerido_url)}" target="_blank" rel="noopener">Abrir gabarito</a>` : ''}</span>`
-    : (grupoId ? '<span class="muted">→ nenhuma variação vale para esta urgência/quantidade</span>' : '');
+    : (grupoId ? (gabaritoSoPendente(grupoId)
+        ? `<span class="muted">→ gabaritos ainda sem medidas no sistema${gabaritoSoPendente(grupoId).pasta_url ? ` · <a href="${esc(gabaritoSoPendente(grupoId).pasta_url)}" target="_blank" rel="noopener">Abrir pasta</a>` : ''}</span>`
+        : '<span class="muted">→ nenhuma variação vale para esta urgência/quantidade</span>') : '');
   if (podeEscolher) {
     return `<div class="small" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="muted">Gabarito:</span>
@@ -4146,6 +4148,13 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
   }
   if (!grupoId) return '';
   return `<div class="small" style="margin-top:6px"><span class="muted">Gabarito:</span> ${esc(u?.grupo_nome || '')} ${sug}</div>`;
+}
+// Material cujos gabaritos ativos ainda estão todos com medidas pendentes (devolve o material)
+function gabaritoSoPendente(grupoId) {
+  const g = gruposGabarito().find(x => x.id === grupoId);
+  if (!g) return null;
+  const ativos = (g.gabaritos || []).filter(x => x.ativo);
+  return ativos.length && ativos.every(x => x.medidas_pendentes) ? g : null;
 }
 // Liga os selects de gabarito de uma área da tela
 function ligarSelectsGabarito(raiz) {
@@ -4213,6 +4222,7 @@ function textoCondicao(g) {
   return urg || q;
 }
 function textoMedidas(g) {
+  if (g.medidas_pendentes) return badge('Medidas pendentes', 'b-ambar');
   const tam = g.tamanho_livre ? 'Tamanho livre' : `${fmtMm(g.corte_largura_mm)} × ${fmtMm(g.corte_altura_mm)} mm`;
   const arq = !g.tamanho_livre && Number(g.sangria_mm) ? ` <span class="muted">(arquivo ${fmtMm(Number(g.corte_largura_mm) + 2 * Number(g.sangria_mm))} × ${fmtMm(Number(g.corte_altura_mm) + 2 * Number(g.sangria_mm))})</span>` : '';
   return tam + arq;
@@ -4225,9 +4235,22 @@ rota('gabaritos', async (_p, el) => {
   definirTopoEm(el, 'Gabaritos', ed ? `<label class="check" style="margin:0"><input type="checkbox" ${todos ? 'checked' : ''} onchange="S.cache.gabTodos=this.checked;recarregar()"> Mostrar inativos</label>
     <button class="btn prim" onclick="modalGrupoGabarito(null)">Novo material</button>` : '');
   vistaDoEl(el).gabaritos = dados.grupos;
-  el.innerHTML = `<div class="painel"><p class="small muted" style="margin:0">Cada <b>material</b> tem um ou mais <b>gabaritos</b>. O sistema sugere o gabarito pela <b>urgência da produção</b> e pela <b>quantidade</b> do item; a designer abre o <code>.cdr</code> pelo link. As medidas daqui são as que a conferência da arte final vai usar. Arquivo acima de <b>${num(dados.limite_mb || 100)} MB</b> vai para o checklist.</p></div>
+  const todosGab = (dados.grupos || []).flatMap(gr => gr.gabaritos.filter(g => g.ativo));
+  const nPend = todosGab.filter(g => g.medidas_pendentes).length;
+  const filtro = S.cache.gabFiltro || 'todos';
+  el.innerHTML = `<div class="painel"><p class="small muted" style="margin:0">Cada <b>material</b> tem um ou mais <b>gabaritos</b>. O sistema sugere o gabarito pela <b>urgência da produção</b> e pela <b>quantidade</b> do item; a designer abre o <code>.cdr</code> pelo link. As medidas daqui são as que a conferência da arte final vai usar. Arquivo acima de <b>${num(dados.limite_mb || 100)} MB</b> vai para o checklist.</p>
+      <p class="small" style="margin:8px 0 0"><b>${num((dados.grupos || []).length)}</b> materiais · <b>${num(todosGab.length)}</b> gabaritos · ${nPend ? `${badge(num(nPend) + ' com medidas pendentes', 'b-ambar')} <span class="muted">(o sistema só sugere gabarito com medidas preenchidas)</span>` : badge('todos com medidas', 'b-verde')}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+        <input type="search" id="gab-busca" placeholder="Buscar material ou gabarito…" value="${esc(S.cache.gabBusca || '')}" style="flex:1;min-width:200px;max-width:360px">
+        <select id="gab-filtro" style="width:auto">
+          <option value="todos" ${filtro === 'todos' ? 'selected' : ''}>Todos</option>
+          <option value="pendentes" ${filtro === 'pendentes' ? 'selected' : ''}>Com medidas pendentes</option>
+          <option value="prontos" ${filtro === 'prontos' ? 'selected' : ''}>Com medidas preenchidas</option>
+        </select>
+        <span class="small muted" id="gab-contagem"></span>
+      </div></div>
     ${(dados.grupos || []).map(gr => `
-    <div class="painel" style="${gr.ativo ? '' : 'opacity:.6'}">
+    <div class="painel" data-gab-painel style="${gr.ativo ? '' : 'opacity:.6'}">
       <div class="painel-cab">
         <div><h2 style="margin:0">${esc(gr.nome)} ${gr.ativo ? '' : badge('Inativo', 'b-cinza')}</h2>
           <div class="small muted">${esc(gr.categoria_nome || 'Sem categoria')}${gr.itens_usando ? ` · usado em ${gr.itens_usando} ${gr.itens_usando == 1 ? 'item' : 'itens'}` : ''}
@@ -4237,17 +4260,38 @@ rota('gabaritos', async (_p, el) => {
         ${ed ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq" data-gr-ed="${gr.id}">Editar material</button><button class="btn peq prim" data-gb-novo="${gr.id}">Novo gabarito</button></div>` : ''}
       </div>
       ${gr.gabaritos.length ? `<div class="tabela-wrap"><table><thead><tr><th>Gabarito</th><th>Quando usar</th><th>Tamanho final</th><th>Sangria</th><th>Segurança</th><th>Páginas</th><th>Arte final</th><th></th></tr></thead><tbody>
-        ${gr.gabaritos.map(g => `<tr class="${ed ? 'clicavel' : ''}" ${ed ? `data-gb-ed="${g.id}" data-gb-gr="${gr.id}"` : ''} style="${g.ativo ? '' : 'opacity:.55'}">
+        ${gr.gabaritos.map(g => `<tr data-gab-linha data-pend="${g.medidas_pendentes ? 1 : 0}" data-txt="${esc((gr.nome + ' ' + g.nome).toLowerCase())}" class="${ed ? 'clicavel' : ''}" ${ed ? `data-gb-ed="${g.id}" data-gb-gr="${gr.id}"` : ''} style="${g.ativo ? '' : 'opacity:.55'}">
           <td><b>${esc(g.nome)}</b> ${g.ativo ? '' : badge('Inativo', 'b-cinza')}${g.instrucoes ? `<div class="small muted" style="max-width:320px">${esc(g.instrucoes)}</div>` : ''}</td>
           <td class="small">${esc(textoCondicao(g))}</td>
           <td class="small">${textoMedidas(g)}</td>
-          <td class="small num">${fmtMm(g.sangria_mm)} mm</td>
-          <td class="small num">${fmtMm(g.seguranca_mm)} mm</td>
+          <td class="small num">${g.medidas_pendentes ? '—' : fmtMm(g.sangria_mm) + ' mm'}</td>
+          <td class="small num">${g.medidas_pendentes ? '—' : fmtMm(g.seguranca_mm) + ' mm'}</td>
           <td class="small">${g.paginas || 'Qualquer'}${g.ultima_pagina_faca ? `<div class="muted">última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}</div>` : ''}</td>
           <td class="small">${(g.formatos || []).map(f => (FORMATOS_ARQ.find(x => x[0] === f) || [, f])[1].replace(' (.cdr)', '').replace(' (JPG/PNG)', '')).join(', ')}${g.dpi_min ? `<div class="muted">mín. ${g.dpi_min} dpi</div>` : ''}</td>
-          <td class="small">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Abrir .cdr</a>` : ''}</td>
+          <td class="small">${g.arquivo_url ? `<a href="${esc(g.arquivo_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}</td>
         </tr>`).join('')}</tbody></table></div>` : '<p class="small muted" style="margin:0">Nenhum gabarito neste material ainda.</p>'}
     </div>`).join('') || '<div class="painel"><div class="vazio">Nenhum material cadastrado.</div></div>'}`;
+  // Busca e filtro sem ir ao servidor: esconde linhas e materiais que não batem
+  const aplicar = () => {
+    const q = ($('#gab-busca', el).value || '').trim().toLowerCase();
+    const f = $('#gab-filtro', el).value;
+    S.cache.gabBusca = q; S.cache.gabFiltro = f;
+    let nMat = 0, nLin = 0;
+    el.querySelectorAll('[data-gab-painel]').forEach(pn => {
+      const nomeMat = (pn.querySelector('h2')?.textContent || '').toLowerCase();
+      const linhas = [...pn.querySelectorAll('[data-gab-linha]')];
+      let vis = 0;
+      linhas.forEach(tr => {
+        const ok = (!q || tr.dataset.txt.includes(q)) && (f === 'todos' || (f === 'pendentes') === (tr.dataset.pend === '1'));
+        tr.style.display = ok ? '' : 'none'; if (ok) vis++;
+      });
+      const mostra = linhas.length ? vis > 0 : (f === 'todos' && (!q || nomeMat.includes(q)));
+      pn.style.display = mostra ? '' : 'none';
+      if (mostra) { nMat++; nLin += vis; }
+    });
+    $('#gab-contagem', el).textContent = q || f !== 'todos' ? `${nMat} ${nMat === 1 ? 'material' : 'materiais'}, ${nLin} ${nLin === 1 ? 'gabarito' : 'gabaritos'}` : '';
+  };
+  $('#gab-busca', el).oninput = aplicar; $('#gab-filtro', el).onchange = aplicar; aplicar();
   el.querySelectorAll('[data-gr-ed]').forEach(b => b.onclick = () => modalGrupoGabarito(b.dataset.grEd));
   el.querySelectorAll('[data-gb-novo]').forEach(b => b.onclick = () => modalGabarito(b.dataset.gbNovo, null));
   el.querySelectorAll('[data-gb-ed]').forEach(tr => tr.onclick = () => modalGabarito(tr.dataset.gbGr, tr.dataset.gbEd));
@@ -4293,8 +4337,9 @@ function modalGabarito(grupoId, id) {
           <option value="ou" ${g.cond_modo === 'ou' ? 'selected' : ''}>Basta uma valer (urgência OU quantidade)</option></select></label>
     </div>
     <h3 style="margin:14px 0 6px">Medidas (mm)</h3>
+    ${g.medidas_pendentes ? `<div class="alerta" style="margin-bottom:8px">Este gabarito veio da pasta do Drive e ainda está com <b>medidas pendentes</b>: o sistema não sugere ele até alguém salvar as medidas. Ao salvar, ele deixa de ser pendente.</div>` : ''}
     <div class="grade g4">
-      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="tamanho_livre" ${g.tamanho_livre ? 'checked' : ''}> Tamanho livre (a medida vem do pedido, como adesivo de recorte e lona)</label>
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" name="tamanho_livre" ${g.tamanho_livre && !g.medidas_pendentes ? 'checked' : ''}> Tamanho livre (a medida vem do pedido, como adesivo de recorte e lona)</label>
       <label class="campo">Largura final<input type="text" inputmode="decimal" name="corte_largura_mm" value="${esc(fmtMm(g.corte_largura_mm))}"></label>
       <label class="campo">Altura final<input type="text" inputmode="decimal" name="corte_altura_mm" value="${esc(fmtMm(g.corte_altura_mm))}"></label>
       <label class="campo">Sangria (cada lado)<input type="text" inputmode="decimal" name="sangria_mm" value="${esc(fmtMm(g.sangria_mm))}"></label>
@@ -4312,7 +4357,7 @@ function modalGabarito(grupoId, id) {
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${FACA_CORES.map(([v, n]) => `<label class="check" style="margin:0"><input type="checkbox" name="faca_cores" value="${v}" ${marc(g.faca_cores, v)}> ${n}</label>`).join('')}</div></div>
     </div>
     <div class="grade g2" style="margin-top:10px">
-      <label class="campo" style="grid-column:1/-1">Link do gabarito (.cdr no Drive)<input type="url" name="arquivo_url" value="${esc(g.arquivo_url || '')}" placeholder="https://drive.google.com/file/d/…"></label>
+      <label class="campo" style="grid-column:1/-1">Link do gabarito (arquivo ou pasta no Drive)<input type="url" name="arquivo_url" value="${esc(g.arquivo_url || '')}" placeholder="https://drive.google.com/file/d/…"></label>
       <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(g.instrucoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo</label>` : ''}
     </div></form>`,
