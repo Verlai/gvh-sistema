@@ -3422,12 +3422,14 @@ function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
           ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}
           ${detalhe ? '' : `<a class="btn peq prim" href="#/arte-pedido/${p.pedido_id}">Abrir</a>`}</div>
       </div>
-      ${!aberto ? '' : [...porItem.values()].map(as => {
+      ${!aberto ? '' : `<div class="lista-exp" style="border-top:1px solid var(--linha);margin-top:12px">${[...porItem.values()].map(as => {
         const it = as[0];
-        return `<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:12px">
-          <div><b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
-            ${it.categoria_nome ? `<span class="small muted" title="${esc(it.categoria_nome)}"> · ${esc(catCurta(it.categoria_nome))}</span>` : ''}
-            ${as.length > 1 ? `<span class="small muted"> · ${as.length} artes</span>` : ''} ${badgeUrgencia(it.urgencia)} ${seloSemGabarito(it.urgencia)}</div>
+        // resumo do item (fechado); ao abrir: gabarito, observação e cada arte com as ações
+        const resumoItem = `<b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
+            ${as.length > 1 ? `<span class="small muted">· ${as.length} artes</span>` : ''} ${resumoArtes(as)} ${badgeUrgencia(it.urgencia)} ${seloSemGabarito(it.urgencia)}
+            ${it.urgencia && it.urgencia.gabarito_nome ? `<span class="small muted">· ${esc(it.urgencia.grupo_nome || '')}${it.urgencia.grupo_nome ? ' — ' : ''}${esc(it.urgencia.gabarito_nome)}</span>` : ''}`;
+        return `<div>${blocoExp('arte-ped-item-' + (it.item_id || it.id), resumoItem, `
+          ${it.categoria_nome ? `<div class="small muted">${esc(catCurta(it.categoria_nome))}</div>` : ''}
           ${it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, it.urgencia,
               as.some(a => ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao'].includes(a.situacao))
               && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
@@ -3448,9 +3450,8 @@ function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
                 ${a.item_id && modo === 'designer' && a.situacao !== 'cancelada' ? `<button class="btn peq" onclick="modalEnviarArteDesigner('${a.id}')">Enviar arquivo</button>` : ''}
                 ${a.item_id ? `<button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>` : ''}
               </div>
-            </div>`).join('')}
-        </div>`;
-      }).join('')}
+            </div>`).join('')}`, porItem.size === 1)}</div>`;
+      }).join('')}</div>`}
     </div>`;
   }).join('');
 }
