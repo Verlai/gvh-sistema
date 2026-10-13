@@ -597,7 +597,8 @@ async function rotear() {
   const chave = chaveRota();
   const [nome, ...resto] = chave.split('/');
   const param = resto.length ? decodeURIComponent(resto.join('/')) : null;
-  const nomeMenu = nome === 'novo' || nome === 'pedido' ? 'pedidos' : nome === 'orcamento' ? 'orcamentos' : nome;
+  const nomeMenu = nome === 'novo' || nome === 'pedido' ? 'pedidos' : nome === 'orcamento' ? 'orcamentos'
+    : nome === 'arte-pedido' ? (S.cache.voltarArte || (S.perm.so_painel_arte ? 'minhas-artes' : 'arte')) : nome;
   $$('#menu a', document).forEach(a => a.classList.toggle('ativo', a.dataset.rota === '#/' + nomeMenu));
   VISTAS.forEach(v => v.el.hidden = true);
   let v = VISTAS.get(chave);
@@ -3170,6 +3171,7 @@ function abrirImpressao(html, titulo) {
 
 /* ---------- ARTE ---------- */
 rota('arte', async (_p, el) => {
+  S.cache.voltarArte = 'arte';
   const designers = S.base?.designers || [];
   definirTopoEm(el, 'Arte', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.abaArte || (S.cache.abaArte = 'em_andamento');
@@ -3382,7 +3384,9 @@ function resumoArtes(lista) {
 
 // Um card por pedido, com as artes dele agrupadas por item — é assim que a equipe de arte trabalha hoje.
 // Fechado mostra só o resumo; "Ver mais" abre os itens.
-function cardsArtesPorPedido(artes, modo, nomeTela) {
+// Lista: um card-resumo por pedido; clicar abre a tela "Artes do pedido" (uma de cada vez, como em Pedidos).
+// detalhe = true: é a própria tela do pedido, com tudo aberto.
+function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
   if (!artes.length) return '<div class="vazio">Nenhuma arte por aqui.</div>';
   const porPedido = new Map();
   artes.forEach(a => { if (!porPedido.has(a.pedido_id)) porPedido.set(a.pedido_id, []); porPedido.get(a.pedido_id).push(a); });
@@ -3392,7 +3396,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
     lista.forEach(a => { const k = a.item_id || a.id; if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(a); });
     const urgente = lista.some(a => a.urgente);
     const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>` : '';
-    const aberto = abertoArte(nomeTela, p.pedido_id);
+    const aberto = !!detalhe;
     const nItens = porItem.size, nArtes = lista.length;
     const urgProd = lista.find(a => a.urgencia?.nivel === 'muito_urgente') || lista.find(a => a.urgencia?.nivel === 'urgente');
     const alertas = [lista.some(a => a.entrega_atrasada) ? badge('ATRASADO', 'b-vermelho') : '',
@@ -3401,7 +3405,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
                      lista.some(a => a.tempo_estourado) ? badge('Passou do tempo previsto', 'b-ambar') : '',
                      lista.some(a => a.falta_pagamento) ? badge('Falta pagamento', 'b-ambar') : ''].filter(Boolean).join(' ');
     return `
-    <div class="painel" style="${urgente || urgProd ? 'border-left:3px solid var(--vermelho)' : ''}">
+    <div class="painel ${detalhe ? '' : 'clicavel'}" ${detalhe ? '' : `data-abrir-arte="${p.pedido_id}"`} style="${urgente || urgProd ? 'border-left:3px solid var(--vermelho)' : ''}">
       <div class="painel-cab">
         <div>
           <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
@@ -3416,7 +3420,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${zap}
           ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}
-          <button class="btn peq" onclick="alternarPedidoArte('${nomeTela}','${p.pedido_id}')">${aberto ? 'Ver menos' : 'Ver mais'}</button></div>
+          ${detalhe ? '' : `<a class="btn peq prim" href="#/arte-pedido/${p.pedido_id}">Abrir</a>`}</div>
       </div>
       ${!aberto ? '' : [...porItem.values()].map(as => {
         const it = as[0];
@@ -3571,6 +3575,7 @@ function modalEnviarArteDesigner(arteId) {
 
 /* ---------- painel da designer ---------- */
 rota('minhas-artes', async (_p, el) => {
+  S.cache.voltarArte = 'minhas-artes';
   definirTopoEm(el, 'Minhas artes', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroMinhasArtes || (S.cache.filtroMinhasArtes = 'todos');
   const b = S.cache.buscaMinhasArtes || '';
@@ -3587,6 +3592,22 @@ rota('minhas-artes', async (_p, el) => {
   ligarFiltroArte(el, '#f-vend-minhas', 'vendMinhasArtes');
   preencherArquivosArte(el);
 });
+// Tela "Artes do pedido": tudo do pedido aberto (itens, gabarito, artes, provas, arquivos e ações)
+rota('arte-pedido', async (id, el) => {
+  const voltar = S.cache.voltarArte || (soPainelArte() ? 'minhas-artes' : 'arte');
+  const r = await api('listar_artes', { situacao: 'todas', pedido_id: id, limite: 200 });
+  const artes = (r.artes || []).filter(a => a.situacao !== 'cancelada');
+  vistaDoEl(el).artes = artes;
+  await carregarGabaritos().catch(() => {});
+  const p = artes[0];
+  definirTopoEm(el, p ? `Artes · Pedido ${p.pedido_numero}` : 'Artes do pedido', `<a class="btn" href="#/${voltar}">Voltar</a>
+    ${p && !soPainelArte() ? `<a class="btn" href="#/pedido/${id}">Abrir pedido</a>` : ''}
+    ${p && p.prova_chave ? `<button class="btn" onclick="copiarLinkProva('${p.prova_chave}')">Copiar link de aprovação</button>` : ''}
+    <button class="btn" onclick="recarregar()">Atualizar</button>`);
+  el.innerHTML = artes.length ? cardsArtesPorPedido(artes, soPainelArte() ? 'designer' : 'interno', 'arte-pedido', true)
+    : '<div class="painel"><div class="vazio">Nenhuma arte deste pedido para você.</div></div>';
+  preencherArquivosArte(el);
+});
 function filtrarMinhasArtes(k) { S.cache.filtroMinhasArtes = k; recarregar(); }
 // Busca das telas de arte: procura ao sair do campo ou com Enter, como na tela de Pedidos.
 function ligarBuscaArte(el, sel, chave) {
@@ -3596,6 +3617,7 @@ function ligarBuscaArte(el, sel, chave) {
   i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); buscar(); } };
 }
 rota('artes-feitas', async (_p, el) => {
+  S.cache.voltarArte = 'artes-feitas';
   definirTopoEm(el, 'Artes concluídas', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const busca = S.cache.buscaArtesFeitas || '';
   const f = S.cache.filtroArtesFeitas || (S.cache.filtroArtesFeitas = 'todos');
@@ -3637,6 +3659,10 @@ const addDiasISO = (iso, d) => { const x = new Date(String(iso).slice(0, 10) + '
 // mostra os arquivos de arte de cada arte (material do cliente, prova, arte final)
 async function preencherArquivosArte(el) {
   ligarSelectsGabarito(el);
+  el.querySelectorAll('[data-abrir-arte]').forEach(c => c.onclick = e => {
+    if (e.target.closest('a,button,select,input,textarea,label')) return;
+    location.hash = '#/arte-pedido/' + c.dataset.abrirArte;
+  });
   const caixas = [...el.querySelectorAll('[data-arte-item]')].filter(c => c.dataset.arteItem);
   if (!caixas.length) return;
   let r; try { r = await api('listar_arquivos_itens', { item_ids: [...new Set(caixas.map(c => c.dataset.arteItem))] }, true); } catch { return; }
