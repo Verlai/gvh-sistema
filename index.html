@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://zvcvdfkumjlvwqjdbiiw.supabase.co; connect-src https://gvh-n8n.kjb64n.easypanel.host https://brasilapi.com.br https://zvcvdfkumjlvwqjdbiiw.supabase.co wss://zvcvdfkumjlvwqjdbiiw.supabase.co https://www.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://zvcvdfkumjlvwqjdbiiw.supabase.co; connect-src https://gvh-n8n.kjb64n.easypanel.host https://brasilapi.com.br https://zvcvdfkumjlvwqjdbiiw.supabase.co wss://zvcvdfkumjlvwqjdbiiw.supabase.co https://www.googleapis.com; worker-src 'self' blob: https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>GVH · Sistema de Pedidos</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,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">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -356,7 +356,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|previa_cancelamento|gabaritos$|gabarito_historico$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -1129,7 +1129,7 @@ function modalEnviarArquivo(p, podeTipos) {
 }
 async function enviarArquivoDrive(pedidoId, arquivo, tipo, itemId, rotulo, aoProgresso, recebimentoId, opts = {}) {
   const mime = arquivo.type || 'application/octet-stream';
-  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, recebimento_id: recebimentoId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size, substitui_id: opts.substitui_id || null }, true);
+  const r = await api('arquivo_enviar', { pedido_id: pedidoId, item_id: itemId || null, recebimento_id: recebimentoId || null, tipo, rotulo: rotulo || null, nome_arquivo: arquivo.name, mime, tamanho: arquivo.size, substitui_id: opts.substitui_id || null, arte_id: opts.arte_id || null }, true);
   if (opts.info) opts.info.troca_pendente = !!r.troca_pendente;
   if (!r.upload_url) throw new Error('O Drive não devolveu o endereço de envio.');
   const resp = await new Promise((ok, falha) => {
@@ -2634,6 +2634,156 @@ async function paginaPublicaOrcamento(chave) {
   catch (e) { raiz.innerHTML = `<div class="folha"><div class="corpo"><h1 style="font-size:20px">Não foi possível abrir o orçamento</h1><p>${esc(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor. Tente de novo em instantes.' : e.message)}</p></div></div>`; }
 }
 
+/* ---------- AR3d: PÁGINA PÚBLICA DE APROVAÇÃO DAS PROVAS (um link por pedido) ---------- */
+const CONDICOES_PROVA = [
+  'Confira com atenção: tamanho, layout, textos e todas as informações antes de aprovar.',
+  'Após a aprovação da arte, não nos responsabilizamos por tamanhos ou informações incorretas, erros de grafia ou qualquer detalhe que não tenha sido pedido como alteração antes da aprovação.',
+  'Os tons das cores podem variar até 5% (mais claro ou mais escuro) na impressão final.',
+  'Os textos foram redigitados pela nossa equipe para garantir a qualidade na impressão — confira de novo com atenção.',
+  'Não refazemos nem aceitamos devolução de materiais aprovados com erro.'
+];
+async function paginaPublicaProva(chave) {
+  document.title = 'Prova para aprovação · Gráfica Venda Hoje';
+  const logo = $('#logo-gvh', document)?.src || '';
+  const raiz = document.createElement('div'); raiz.id = 'pub'; document.body.appendChild(raiz);
+  aplicarEstiloPublico();
+  if (!document.getElementById('estilo-prova')) {
+    const st = document.createElement('style'); st.id = 'estilo-prova';
+    st.textContent = `
+      #pub .item { border: 1px solid #e2e6e8; border-radius: 12px; margin-top: 16px; overflow: hidden; }
+      #pub .item-cab { padding: 12px 16px; background: #f6f6f6; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+      #pub .arte { padding: 14px 16px; border-top: 1px solid #eef1f2; }
+      #pub .selo { display: inline-block; border-radius: 20px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; }
+      #pub .selo.aguardando { background: #fdf3e1; color: #9a6410; } #pub .selo.aprovada { background: #e3f6f1; color: #00795f; }
+      #pub .selo.alteracao { background: #fde8e6; color: #c0453b; } #pub .selo.indisponivel { background: #eef1f2; color: #5a6770; }
+      #pub .imgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; }
+      #pub .imgs figure { margin: 0; } #pub .imgs figcaption { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8a959c; margin-bottom: 4px; }
+      #pub .imgs img { width: 100%; height: auto; display: block; border-radius: 8px; box-shadow: 0 2px 12px rgba(29,38,45,.12); background: #fff; }
+      #pub .carregando { height: 160px; border-radius: 8px; background: linear-gradient(90deg,#eef1f2,#f7f8f9,#eef1f2); background-size: 200% 100%; animation: pubcar 1.2s infinite; display: flex; align-items: center; justify-content: center; color: #8a959c; font-size: 12px; }
+      @keyframes pubcar { to { background-position: -200% 0; } }
+      #pub .cond { font-size: 13px; color: #5a6770; margin: 12px 0 0; padding-left: 18px; } #pub .cond li { margin-bottom: 4px; }
+      #pub .chk { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; font-weight: 600; margin-top: 12px; cursor: pointer; }
+      #pub .chk input { width: 18px; height: 18px; margin-top: 2px; accent-color: #00a986; }
+      #pub .bt.alt { background: #fff; color: #c0453b; border: 1px solid #e8b4ae; }
+      #pub details.vista3d > summary { cursor: pointer; color: #00795f; font-size: 13.5px; font-weight: 600; margin-top: 10px; }
+      #pub .palco3d { width: 100%; height: 340px; border-radius: 10px; overflow: hidden; background: #1d262d; margin-top: 8px; touch-action: none; }`;
+    document.head.appendChild(st);
+  }
+  const imagens = {}; // prova_id+lado → data URI
+  const SIT = { aguardando: 'Aguardando a sua aprovação', aprovada: 'Aprovada', alteracao: 'Alteração pedida', indisponivel: 'Em revisão pela gráfica' };
+  const tam = x => x.largura_mm && x.altura_mm ? `${String(Math.round(x.largura_mm) / 10).replace('.', ',')} × ${String(Math.round(x.altura_mm) / 10).replace('.', ',')} cm` : '';
+  const desenhar = (p, aviso) => {
+    const pend = [], resto = [];
+    (p.itens || []).forEach(i => (i.artes.some(x => x.situacao === 'aguardando') ? pend : resto).push(i));
+    const nPend = pend.reduce((n, i) => n + i.artes.filter(x => x.situacao === 'aguardando').length, 0);
+    const arteHtml = (i, x) => `<div class="arte" data-prova="${x.prova_id}">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+          <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${x.situacao}">${SIT[x.situacao] || x.situacao}</span></div>
+          <div style="font-size:12px;color:#8a959c">Versão ${x.versao}${tam(x) ? ' · tamanho final ' + tam(x) : ''}</div></div>
+        ${(() => { const imgs = `<div class="imgs">${['frente'].concat(x.tem_verso ? ['verso'] : []).map(l => `<figure><figcaption>${x.tem_verso ? l : 'arte'}</figcaption><div class="carregando" data-img="${x.prova_id}|${l}">carregando a prova…</div></figure>`).join('')}</div>`;
+           return x.situacao === 'aguardando' ? imgs : `<details class="vista3d"><summary>Ver a arte</summary>${imgs}</details>`; })()}
+        ${x.modo === '3d' && x.tem_verso && x.situacao === 'aguardando' ? `<details class="vista3d" data-3d="${x.prova_id}"><summary>Ver em 3D (girar frente e verso)</summary><div class="palco3d"></div></details>` : ''}
+        ${x.situacao === 'aprovada' ? `<div class="ok" style="margin-top:12px"><b>Aprovada ✓</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}.</div>` : ''}
+        ${x.situacao === 'alteracao' ? `<div class="aviso" style="margin-top:12px"><b>Alteração pedida</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}: ${esc(x.texto_alteracao || '')}<br><span style="font-size:12.5px;color:#5a6770">A nova versão aparece aqui neste mesmo link.</span></div>` : ''}
+        ${x.situacao === 'aguardando' ? `<div class="aprovar">
+            <h2>Confira antes de aprovar</h2>
+            <ul class="cond">${CONDICOES_PROVA.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+            <label class="chk"><input type="checkbox" data-aceite> Li e estou de acordo com as condições acima</label>
+            <label>Seu nome *<input type="text" data-nome maxlength="120" autocomplete="name"></label>
+            <div class="erro" data-erro></div>
+            <div class="acoes"><button class="bt prim" data-aprovar>Aprovar esta arte</button><button class="bt alt" data-abrir-alt>Pedir alteração</button></div>
+            <div data-caixa-alt style="display:none"><label>O que precisa mudar? *<textarea data-texto maxlength="2000" placeholder="Ex.: trocar o telefone, aumentar o logo…"></textarea></label>
+              <div class="acoes"><button class="bt sec" data-enviar-alt>Enviar pedido de alteração</button></div></div>
+          </div>` : ''}
+      </div>`;
+    const itemHtml = i => `<div class="item"><div class="item-cab"><b>${esc(i.descricao)}</b><span style="font-size:12.5px;color:#5a6770">${num(i.quantidade)} un</span></div>
+        ${i.artes.map(x => arteHtml(i, x)).join('')}</div>`;
+    raiz.innerHTML = `<div class="folha">
+      <div class="cab">${logo ? `<img src="${logo}" alt="Gráfica Venda Hoje">` : `<b>${esc(EMPRESA.nome)}</b>`}
+        <div class="emp"><b>${esc(EMPRESA.nome)}</b><br>${esc(EMPRESA.telefone)}<br>${esc(EMPRESA.site)}</div></div>
+      <div class="corpo">
+        <div class="linha-tit"><h1>PROVA <span>· Pedido Nº ${esc(p.numero)}</span></h1>
+          <div class="datas">${p.cliente ? `Cliente: <b>${esc(p.cliente)}</b>` : ''}${p.vendedor ? `<br>Atendimento: <b>${esc(p.vendedor)}</b>` : ''}</div></div>
+        ${aviso ? `<div class="ok" style="margin-top:0">${aviso}</div>` : ''}
+        ${nPend ? `<div class="caixa"><b>${nPend === 1 ? '1 arte aguardando' : nPend + ' artes aguardando'} a sua aprovação.</b> Confira cada uma com calma e aprove (ou peça alteração) logo abaixo da imagem.</div>`
+          : `<div class="caixa">Nenhuma arte aguardando aprovação agora. Quando a gráfica enviar uma nova prova, ela aparece neste mesmo link.</div>`}
+        ${pend.map(itemHtml).join('')}
+        ${resto.length ? `<h2 style="font-size:15px;margin:26px 0 0">${pend.length ? 'Outros itens do pedido' : 'Itens do pedido'}</h2>${resto.map(itemHtml).join('')}` : ''}
+        <p style="font-size:12px;color:#8a959c;margin-top:22px">As imagens são uma prova digital com marca d'água: servem só para conferência e não podem ser usadas para impressão.</p>
+      </div></div>
+      <div class="rod">${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</div>`;
+    // imagens (uma por vez, pelo sistema — o Drive da gráfica não fica público)
+    (async () => {
+      for (const box of raiz.querySelectorAll('[data-img]')) {
+        const [pid, lado] = box.dataset.img.split('|');
+        try {
+          if (!imagens[box.dataset.img]) imagens[box.dataset.img] = (await api('prova_publica_imagem', { chave, prova_id: pid, lado }, true)).imagem;
+          if (!box.isConnected) continue;
+          const img = document.createElement('img'); img.alt = 'Prova ' + lado; img.src = imagens[box.dataset.img];
+          box.replaceWith(img);
+        } catch (e) { if (box.isConnected) box.textContent = 'Não foi possível carregar a imagem. Atualize a página.'; }
+      }
+    })();
+    raiz.querySelectorAll('[data-3d]').forEach(det => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ok) { det.dataset.ok = 1; vista3dProva(det.querySelector('.palco3d'), chave, det.dataset['3d'], imagens); } }));
+    raiz.querySelectorAll('.arte[data-prova]').forEach(bx => {
+      const pid = bx.dataset.prova, err = bx.querySelector('[data-erro]');
+      const nome = () => (bx.querySelector('[data-nome]') || {}).value?.trim() || '';
+      const falha = e => { if (err) err.textContent = e.message === 'Failed to fetch' ? 'Sem conexão. Tente de novo.' : e.message; };
+      const ap = bx.querySelector('[data-aprovar]');
+      if (ap) ap.onclick = async () => {
+        if (!bx.querySelector('[data-aceite]').checked) return falha(new Error('Marque que leu e concorda com as condições.'));
+        if (nome().length < 3) { bx.querySelector('[data-nome]').focus(); return falha(new Error('Informe o seu nome para aprovar.')); }
+        ap.disabled = true; ap.textContent = 'Enviando…';
+        try { const r = await api('prova_publica_aprovar', { chave, prova_id: pid, nome: nome(), aceite: true }, true); desenhar(r.pedido, '<b>Arte aprovada ✓</b> Obrigado! A gráfica já recebeu a sua aprovação.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        catch (e) { ap.disabled = false; ap.textContent = 'Aprovar esta arte'; falha(e); }
+      };
+      const ab = bx.querySelector('[data-abrir-alt]');
+      if (ab) ab.onclick = () => { const c = bx.querySelector('[data-caixa-alt]'); c.style.display = c.style.display === 'none' ? '' : 'none'; if (c.style.display === '') c.querySelector('textarea').focus(); };
+      const ea = bx.querySelector('[data-enviar-alt]');
+      if (ea) ea.onclick = async () => {
+        const texto = bx.querySelector('[data-texto]').value.trim();
+        if (!texto) return falha(new Error('Escreva o que precisa mudar.'));
+        if (nome().length < 3) { bx.querySelector('[data-nome]').focus(); return falha(new Error('Informe o seu nome.')); }
+        ea.disabled = true; ea.textContent = 'Enviando…';
+        try { const r = await api('prova_publica_alterar', { chave, prova_id: pid, nome: nome(), texto }, true); desenhar(r.pedido, '<b>Pedido de alteração enviado.</b> A gráfica vai ajustar e a nova versão aparece neste mesmo link.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        catch (e) { ea.disabled = false; ea.textContent = 'Enviar pedido de alteração'; falha(e); }
+      };
+    });
+  };
+  try { const r = await api('prova_publica', { chave }, true); desenhar(r.pedido); }
+  catch (e) { raiz.innerHTML = `<div class="folha"><div class="corpo"><h1 style="font-size:20px">Não foi possível abrir a prova</h1><p>${esc(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor. Tente de novo em instantes.' : e.message)}</p></div></div>`; }
+}
+// Cartão em 3D (frente e verso), igual ao Visualizador antigo
+async function vista3dProva(palco, chave, pid, imagens) {
+  palco.innerHTML = '<div class="carregando" style="height:100%">carregando o 3D…</div>';
+  try {
+    if (!window.THREE) await new Promise((ok, falha) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js'; s.onload = ok; s.onerror = falha; document.head.appendChild(s); });
+    const pega = async lado => imagens[pid + '|' + lado] || (imagens[pid + '|' + lado] = (await api('prova_publica_imagem', { chave, prova_id: pid, lado }, true)).imagem);
+    const [srcF, srcV] = await Promise.all([pega('frente'), pega('verso')]);
+    palco.innerHTML = '';
+    const T = window.THREE, W = palco.clientWidth, H = palco.clientHeight;
+    const cena = new T.Scene(); cena.background = new T.Color(0x1d262d);
+    const cam = new T.PerspectiveCamera(35, W / H, 0.1, 100); cam.position.set(0, 0, 4.2);
+    const rend = new T.WebGLRenderer({ antialias: true }); rend.setPixelRatio(Math.min(window.devicePixelRatio, 2)); rend.setSize(W, H); palco.appendChild(rend.domElement);
+    cena.add(new T.AmbientLight(0xffffff, 0.75));
+    const l1 = new T.DirectionalLight(0xffffff, 0.6); l1.position.set(2, 3, 4); cena.add(l1);
+    const l2 = new T.DirectionalLight(0xffffff, 0.3); l2.position.set(-3, -2, -3); cena.add(l2);
+    const tex = src => new Promise(ok => new T.TextureLoader().load(src, ok, undefined, () => ok(null)));
+    const [tf, tv] = await Promise.all([tex(srcF), tex(srcV)]);
+    const asp = tf && tf.image ? tf.image.width / tf.image.height : 1.8;
+    const larg = asp >= 1 ? 2.2 : 2.2 * asp, alt = larg / asp;
+    const borda = new T.MeshStandardMaterial({ color: 0xe7edef, roughness: 0.6 });
+    const mF = new T.MeshStandardMaterial({ map: tf, roughness: 0.35 }), mV = new T.MeshStandardMaterial({ map: tv || tf, roughness: 0.35 });
+    const peca = new T.Mesh(new T.BoxGeometry(larg, alt, 0.035), [borda, borda, borda, borda, mF, mV]); cena.add(peca);
+    let ry = -0.35, rx = 0.12, arr = false, auto = true, ux = 0, uy = 0;
+    rend.domElement.addEventListener('pointerdown', e => { arr = true; auto = false; ux = e.clientX; uy = e.clientY; });
+    window.addEventListener('pointermove', e => { if (!arr) return; ry += (e.clientX - ux) * 0.008; rx = Math.max(-1.1, Math.min(1.1, rx + (e.clientY - uy) * 0.008)); ux = e.clientX; uy = e.clientY; });
+    window.addEventListener('pointerup', () => { arr = false; });
+    (function anima() { if (!palco.isConnected) return; requestAnimationFrame(anima); if (auto) ry += 0.0035;
+      peca.rotation.y += (ry - peca.rotation.y) * 0.15; peca.rotation.x += (rx - peca.rotation.x) * 0.15; rend.render(cena, cam); })();
+  } catch (e) { palco.innerHTML = '<div class="carregando" style="height:100%">Não foi possível abrir o 3D neste aparelho. As imagens acima mostram a frente e o verso.</div>'; }
+}
+
 /* validação de CPF / CNPJ (inclusive CNPJ alfanumérico) no navegador — o banco valida de novo */
 function docValido(v) {
   const d = String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
@@ -3125,10 +3275,35 @@ function etiquetasArte(a) {
   return e.join(' ');
 }
 // Botões da designer: um passo por vez, na ordem do trabalho dela.
+/* ---------- AR3c: montador de provas (arquivo montador.js, carregado só no clique) ---------- */
+const podeMontarProva = a => ['a_fazer', 'em_criacao', 'em_alteracao', 'aguardando_cliente'].includes(a.situacao) && !!a.item_id;
+let carregandoMontador = null;
+async function copiarLinkProva(chave) {
+  const link = location.origin + location.pathname + '#/prova/' + chave;
+  try { await navigator.clipboard.writeText(link); toast('Link de aprovação copiado.'); } catch (e) { prompt('Copie o link:', link); }
+}
+async function montarProva(arteId) {
+  if (!window.abrirMontador) {
+    carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261013';
+      sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
+      document.head.appendChild(sc);
+    });
+    try { await carregandoMontador; } catch (e) { return toast(e.message, true); }
+  }
+  window.abrirMontador(arteId);
+}
+// Linha "Prova v2 · com o cliente desde…" no quadro da arte
+function linhaProva(a) {
+  const pv = a.prova; if (!pv) return '';
+  const sit = { enviada: 'com o cliente', aprovada: 'aprovada', alteracao: 'cliente pediu alteração', substituida: 'substituída' }[pv.situacao] || pv.situacao;
+  return `<div class="small muted" style="margin-top:6px">Prova v${pv.versao}${pv.modo === '3d' ? ' (3D)' : ''} · ${sit}${pv.decidido_nome ? ' por ' + esc(pv.decidido_nome) : ''} · ${dataHora(pv.decidido_em || pv.em)}</div>`;
+}
 function acoesDesigner(a) {
   const b = [];
   if (a.situacao === 'a_fazer') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','em_criacao')">Começar a arte</button>`);
-  if (a.situacao === 'em_criacao' || a.situacao === 'em_alteracao') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aguardando_cliente')">Enviei a prova ao cliente</button>`);
+  if (podeMontarProva(a)) b.push(`<button class="btn prim peq" onclick="montarProva('${a.id}')">${a.situacao === 'aguardando_cliente' ? 'Nova versão da prova' : 'Montar prova'}</button>`);
+  if (a.situacao === 'em_criacao' || a.situacao === 'em_alteracao') b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','aguardando_cliente')" title="Use quando a prova foi mandada por fora do sistema">Enviei a prova por fora</button>`);
   if (a.situacao === 'aguardando_cliente') {
     b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
     b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Cliente pediu alteração</button>`);
@@ -3138,6 +3313,7 @@ function acoesDesigner(a) {
 function acoesVendedorArte(a, pode) {
   if (!pode) return '';
   const b = [];
+  if (podeMontarProva(a) && a.designer_id) b.push(`<button class="btn peq" onclick="montarProva('${a.id}')">${a.situacao === 'aguardando_cliente' ? 'Nova versão da prova' : 'Montar prova'}</button>`);
   if (a.situacao === 'aguardando_cliente') {
     b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
     b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Cliente pediu alteração</button>`);
@@ -3260,7 +3436,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela) {
                 ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
               </div>
               ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
-              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}</div>
+              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}</div>${linhaProva(a)}
               ${modo !== 'designer' && a.designer_nome ? `<div style="margin-top:6px">${tagPessoa(a.designer_nome, a.designer_cor, 'designer')}</div>` : ''}
               <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
@@ -3488,7 +3664,8 @@ async function preencherArtesPedido(el, p) {
   const itens = p.itens.filter(i => i.status !== 'cancelado');
 
   alvo.innerHTML = `
-    <div class="painel-cab"><h2>Artes ${artes.length && artes[0].vendedor_nome ? tagPessoa(artes[0].vendedor_nome, artes[0].vendedor_cor, 'vendedor') : ''}</h2>
+    <div class="painel-cab"><h2>Artes ${artes.length && artes[0].vendedor_nome ? tagPessoa(artes[0].vendedor_nome, artes[0].vendedor_cor, 'vendedor') : ''}
+        ${p.prova_chave ? `<button class="btn link peq" onclick="copiarLinkProva('${p.prova_chave}')" title="Link de aprovação das provas deste pedido (sempre o mesmo)">Copiar link de aprovação</button>` : ''}</h2>
       ${podeMexer && designers.length ? `<label class="campo" style="margin:0;min-width:220px">Designer do pedido
         <select id="des-pedido">
           <option value="">Sem designer</option>
@@ -3525,7 +3702,7 @@ async function preencherArtesPedido(el, p) {
                 ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
               </div>
               ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
-              <div class="small muted" style="margin-top:6px">Designer ${tempoCurto(a.seg_designer)} · Cliente ${tempoCurto(a.seg_cliente)}</div>
+              <div class="small muted" style="margin-top:6px">Designer ${tempoCurto(a.seg_designer)} · Cliente ${tempoCurto(a.seg_cliente)}</div>${linhaProva(a)}
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                 ${acoesVendedorArte(a, podeMexer && p.status !== 'cancelado')}
                 <button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>
@@ -4178,11 +4355,20 @@ function textoUrgencia(u) {
 // Selo da urgência da produção. Prazo normal não mostra nada (para não poluir).
 function badgeUrgencia(u, sempre) {
   if (!u || !u.nivel) return '';
-  if (u.nivel === 'normal' && !sempre) return '';
+  if (u.nivel === 'normal' && !sempre) return badgeEntregaQuando(u).trim();
   const cls = u.nivel === 'muito_urgente' ? 'b-vermelho' : u.nivel === 'urgente' ? 'b-ambar' : 'b-cinza';
   const txt = (URG_NOME[u.nivel] || u.nivel) + (u.nivel === 'normal' ? '' : ' · produção') + (u.definitiva ? '' : ' (provável)');
   const tit = textoUrgencia(u) + (u.manual ? ` · Marcado à mão por ${u.manual_por_nome || '—'}: ${u.manual_motivo || ''}` : '');
-  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>`;
+  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>${badgeEntregaQuando(u)}`;
+}
+// "Entrega hoje / amanhã / atrasada" pela previsão para o cliente (dias corridos)
+function badgeEntregaQuando(u) {
+  if (!u || u.dias_para_entrega == null) return '';
+  const d = Number(u.dias_para_entrega);
+  if (d < 0) return ' ' + badge('Entrega atrasada', 'b-vermelho');
+  if (d === 0) return ' ' + badge('Entrega hoje', 'b-vermelho');
+  if (d === 1) return ' ' + badge('Entrega amanhã', 'b-ambar');
+  return '';
 }
 const urgenteProducao = u => !!u && (u.nivel === 'urgente' || u.nivel === 'muito_urgente');
 
@@ -4754,6 +4940,8 @@ function modalUsuario(id) {
 /* ---------- inicialização ---------- */
 (async () => {
   if (/^#\/cadastro\/?$/.test(location.hash)) { window.removeEventListener('hashchange', rotear); return paginaPublicaCadastro(); }
+  const mProva = location.hash.match(/^#\/prova\/([0-9a-fA-F]{32})$/);
+  if (mProva) { window.removeEventListener('hashchange', rotear); return paginaPublicaProva(mProva[1].toLowerCase()); }
   const mPub = location.hash.match(/^#\/o\/([0-9a-fA-F]{32})$/);
   if (mPub) { window.removeEventListener('hashchange', rotear); return paginaPublicaOrcamento(mPub[1].toLowerCase()); }
   let t = null; try { t = localStorage.getItem('gvh_token'); } catch {}
