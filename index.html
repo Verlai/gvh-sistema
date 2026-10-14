@@ -120,6 +120,30 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .desc-tipo button:disabled{cursor:default}
 
 .vazio{text-align:center;padding:40px 16px;color:var(--texto-2)}
+/* telas de arte simples (14/10) */
+.lista-artes .linha-arte{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.4fr) auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--linha-2);color:inherit;text-decoration:none}
+.lista-artes .linha-arte:last-child{border-bottom:0}
+.lista-artes .linha-arte:hover{background:#fafbfb}
+.proximo{display:inline-flex;align-items:center;font-weight:600;font-size:12.5px;border-radius:20px;padding:4px 12px;white-space:nowrap}
+.prox-alerta{background:var(--vermelho-bg);color:var(--vermelho)}
+.prox-acao{background:var(--verde);color:#fff}
+.prox-fazer{background:var(--azul-bg);color:var(--azul)}
+.prox-espera{background:var(--linha-2);color:var(--texto-2)}
+.prox-ok{background:var(--verde-bg);color:#007a61}
+.material-arte{border:1px solid var(--linha);border-radius:12px;padding:14px 16px;background:#fff}
+.material-arte + .material-arte{margin-top:12px}
+.passos{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:12px 0 4px}
+.passos div{border-top:4px solid #e3e8ea;padding-top:5px;font-size:11px;color:var(--texto-3);line-height:1.25}
+.passos .feito{border-color:var(--verde);color:var(--grafite)}
+.passos .atual{border-color:var(--grafite);color:var(--grafite);font-weight:700}
+.passos .atual.alerta{border-color:var(--vermelho);color:var(--vermelho)}
+.caixa-alteracao{border:2px solid var(--vermelho);background:var(--vermelho-bg);border-radius:10px;padding:12px 14px;margin:10px 0}
+.caixa-alteracao .tit{font-weight:700;color:var(--vermelho)}
+.caixa-alteracao .txt{font-size:15px;margin-top:4px;white-space:pre-wrap;color:var(--grafite)}
+.proximo-passo{background:#f4f6f7;border-radius:10px;padding:12px 14px;margin:10px 0 4px}
+.proximo-passo .o-que{font-weight:600;margin-bottom:8px}
+.proximo-passo .o-que:last-child{margin-bottom:0}
+@media (max-width:640px){ .lista-artes .linha-arte{grid-template-columns:1fr;gap:6px} .lista-artes .linha-arte .dir{text-align:left} .passos div{font-size:10px} }
 .alerta{border-radius:var(--raio-s);padding:10px 14px;font-size:13px;background:var(--ambar-bg);color:#7d520d}
 .alerta.erro{background:var(--vermelho-bg);color:var(--vermelho)}
 
@@ -489,7 +513,7 @@ async function iniciarApp() {
   montarMenu();
   iniciarAtualizacaoAutomatica();
   const inicial = S.perm.so_painel_arte ? '#/minhas-artes' : '#/inicio';
-  if (!location.hash || (S.perm.so_painel_arte && !/^#\/(minhas-artes|artes-feitas|meus-pagamentos)/.test(location.hash))) location.hash = inicial;
+  if (!location.hash || (S.perm.so_painel_arte && !/^#\/(minhas-artes|artes-feitas|meus-pagamentos|arte-pedido|gabaritos)/.test(location.hash))) location.hash = inicial;
   else rotear();
 }
 
@@ -565,17 +589,19 @@ function aplicarTopo(t) {
 // vista que está sendo desenhada agora (ou a atual, se nenhuma)
 const vistaRender = () => S.vistaEmRender || S.vistaAtual;
 
-async function renderVista(v) {
+async function renderVista(v, manter) {
   // nunca desenha a mesma tela duas vezes ao mesmo tempo (o aviso do Realtime chegava no meio e quebrava a tela)
   if (v.renderizando) { v.renderDeNovo = true; return v.renderizando; }
   v.renderizando = (async () => {
     do {
       v.renderDeNovo = false;
       S.vistaEmRender = v;
-      v.sujo = false; v.editando = false; v.el.innerHTML = '';
+      // atualizar a mesma tela: o conteúdo antigo fica até o novo chegar e a rolagem continua onde estava
+      const y = window.scrollY, mesma = manter && v.el.innerHTML && v === S.vistaAtual;
+      v.sujo = false; v.editando = false; if (!mesma) v.el.innerHTML = '';
       esconderAvisoNovidades();
       const fn = ROTAS[v.nome] || ROTAS.inicio;
-      try { await fn(v.param, v.el); }
+      try { await fn(v.param, v.el); if (mesma) requestAnimationFrame(() => window.scrollTo(0, y)); }
       catch (e) { v.el.innerHTML = `<div class="alerta erro">${esc(e.message)}</div>`; }
       finally { if (S.vistaEmRender === v) S.vistaEmRender = null; }
     } while (v.renderDeNovo && VISTAS.get(chaveDe(v)) === v);
@@ -624,7 +650,7 @@ async function rotear() {
 }
 window.addEventListener('hashchange', rotear);
 // "Atualizar": refaz a tela atual na hora
-function recarregar() { const v = S.vistaAtual; if (v) renderVista(v); }
+function recarregar() { const v = S.vistaAtual; if (v) renderVista(v, true); }
 
 /* ---------- atualização automática (Realtime + rede de segurança) ---------- */
 function marcarTelasDesatualizadas() {
@@ -641,7 +667,7 @@ function podeAtualizarSozinha(v) {
 }
 function tentarAtualizarTelaAtual() {
   const v = S.vistaAtual; if (!v || !v.sujo) return;
-  if (podeAtualizarSozinha(v)) renderVista(v);
+  if (podeAtualizarSozinha(v)) renderVista(v, true);
   else if (!v.form || v.nome !== 'novo') mostrarAvisoNovidades();
 }
 function mostrarAvisoNovidades() {
@@ -819,8 +845,7 @@ rota('pedido', async (id, el) => {
         return `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite);margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
           <span><b>Arquivo pronto para impressão</b> em ${pr.length === 1 ? esc(pr[0].descricao) : pr.length + ' itens'}. Confira e envie para a pré-impressão.</span>
           <button class="btn prim peq" onclick="enviarPreImpressao('${pr.map(i => i.id).join(',')}')">${pr.length > 1 ? `Enviar os ${pr.length} para pré-impressão` : 'Enviar para pré-impressão'}</button></div>`; })()}
-      ${(() => { const pz = p.itens.filter(i => i.status === 'arte_pausada'); if (!pz.length || cancelado) return '';
-        return `<div class="alerta erro" style="margin-bottom:12px"><b>Arte pausada · com o vendedor:</b> o cliente pediu alteração no material em ${pz.map(i => esc(i.descricao)).join(', ')}. Ajuste o item e, no bloco Artes, clique em "Material ajustado · devolver para a designer".</div>`; })()}
+
       <div class="tabela-wrap"><table>
         <thead><tr><th style="width:28px"><input type="checkbox" id="sel-todos" aria-label="Selecionar todos"></th>
           <th>Item</th><th>Status</th><th>Produção</th><th>Arte</th>
@@ -847,8 +872,7 @@ rota('pedido', async (id, el) => {
             ${pode('ve_custo') ? `<td class="dir num">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
             <td class="dir" style="white-space:nowrap">${i.status !== 'cancelado' ? `<button class="btn peq" onclick="modalItem('${i.id}')">Editar</button>` : ''}
               ${podeCancelarItem(p, i) ? `<button class="btn peq perigo" onclick="modalCancelarItem('${i.id}')">Cancelar item</button>` : ''}
-              ${i.status === 'cancelado' && p.status !== 'cancelado' && (pode('cria_pedidos') || p.confirma_producao) ? `<button class="btn peq" onclick="excluirItemCancelado('${i.id}')">Excluir</button>` : ''}
-              ${i.status === 'arte_aprovada' && !cancelado && podeStatus('pre_impressao') ? `<button class="btn peq prim" onclick="enviarPreImpressao('${i.id}')">Enviar para pré-impressão</button>` : ''}</td>
+              ${i.status === 'cancelado' && p.status !== 'cancelado' && (pode('cria_pedidos') || p.confirma_producao) ? `<button class="btn peq" onclick="excluirItemCancelado('${i.id}')">Excluir</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>
       ${!cancelado && podeMover.length ? `
       <div class="barra-acao">
@@ -3236,7 +3260,7 @@ rota('arte', async (_p, el) => {
     ${barraFiltroArte({ artes: r.artes, filtro: fl, busca: b, aoFiltrar: 'filtrarFilaArte', idBusca: 'b-arte',
       vendedores: S.base?.vendedores || [], vendSel: vd, idVend: 'f-vend-arte', designers, desSel: des, idDes: 'f-des-arte' })}
     <p class="small muted">${r.total} arte(s)${b || vd || des ? ' no filtro' : ''}.</p>
-    ${cardsArtesPorPedido(r.artes.filter(filtroArteFn(fl)), 'interno', 'arte')}`;
+    ${listaArtesResumo(r.artes.filter(filtroArteFn(fl)), 'interno')}`;
   ligarBuscaArte(el, '#b-arte', 'buscaArte');
   ligarFiltroArte(el, '#f-vend-arte', 'vendArte');
   ligarFiltroArte(el, '#f-des-arte', 'desArte');
@@ -3336,7 +3360,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261014b';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261014c';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3523,6 +3547,155 @@ function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
       }).join('')}</div>`}
     </div>`;
   }).join('');
+}
+
+/* ---------- telas de arte simples (14/10, teste do dono): lista curta e, no pedido, o passo a passo de cada material ---------- */
+const ITEM_NA_ARTE = ['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao', 'arte_pausada', 'arte_fechando', 'arte_aprovada'];
+const ORDEM_PRINCIPAL = {
+  designer: ['em_alteracao', 'aprovada', 'a_fazer', 'em_criacao', 'aguardando_cliente', 'pausada', 'pronta', 'resolvida_vendedor', 'cancelada'],
+  interno: ['pausada', 'aguardando_cliente', 'pronta', 'em_alteracao', 'aprovada', 'a_fazer', 'em_criacao', 'resolvida_vendedor', 'cancelada'] };
+function chipArte(a, modo) {
+  const d = modo === 'designer', paraEnviar = !d && a.situacao === 'pronta' && a.item_status === 'arte_aprovada';
+  const m = { a_fazer: [d ? 'Começar' : 'Arte pendente', 'prox-fazer'], em_criacao: ['Em andamento', 'prox-fazer'],
+    em_alteracao: ['Alteração pedida', 'prox-alerta'], aguardando_cliente: [d ? 'Esperando o cliente' : 'Com o cliente', 'prox-espera'],
+    pausada: d ? ['Pausada (com o vendedor)', 'prox-espera'] : ['Ajustar o material', 'prox-alerta'],
+    aprovada: d ? ['Fechar arquivo', 'prox-acao'] : ['Aprovado pelo cliente', 'prox-espera'],
+    pronta: paraEnviar ? ['Enviar para pré-impressão', 'prox-acao'] : ['Arquivo pronto', 'prox-ok'],
+    resolvida_vendedor: ['Resolvida pelo vendedor', 'prox-ok'], cancelada: ['Cancelada', 'prox-espera'] }[a.situacao] || [a.situacao, 'prox-espera'];
+  return `<span class="proximo ${m[1]}">${esc(m[0])}</span>`;
+}
+const artePrincipal = (lista, modo) => { const o = ORDEM_PRINCIPAL[modo === 'designer' ? 'designer' : 'interno']; return [...lista].sort((x, y) => o.indexOf(x.situacao) - o.indexOf(y.situacao))[0]; };
+function entregaCurta(lista) {
+  const p = lista[0], u = lista.map(a => a.urgencia).find(x => x && x.dias_para_entrega != null) || {}, d = u.dias_para_entrega;
+  const txt = d == null ? (p.data_prevista_entrega ? 'Entrega ' + data(p.data_prevista_entrega) : 'Sem previsão')
+    : d < 0 ? 'Entrega atrasada' : d === 0 ? 'Entrega hoje' : d === 1 ? 'Entrega amanhã' : 'Entrega ' + data(p.data_prevista_entrega);
+  const forte = d != null && d <= 1, cor = d != null && d <= 0 ? 'var(--vermelho)' : d === 1 ? '#9a6410' : 'var(--texto-2)';
+  const urg = lista.some(a => a.urgente || urgenteProducao(a.urgencia));
+  return `<span class="small" style="color:${cor};font-weight:${forte ? 600 : 400};white-space:nowrap">${txt}</span>${urg ? ' ' + badge('URGENTE', 'b-vermelho') : ''}`;
+}
+// Lista: uma linha por pedido — cliente, materiais, o próximo passo e a entrega
+function listaArtesResumo(artes, modo) {
+  if (!artes.length) return '<div class="painel"><div class="vazio">Nenhuma arte por aqui.</div></div>';
+  const porPedido = new Map();
+  artes.forEach(a => { if (!porPedido.has(a.pedido_id)) porPedido.set(a.pedido_id, []); porPedido.get(a.pedido_id).push(a); });
+  return `<div class="painel lista-artes" style="padding:0">${[...porPedido.values()].map(lista => {
+    const p = lista[0], prin = artePrincipal(lista, modo), mats = [...new Set(lista.map(a => a.item_descricao))];
+    const iguais = lista.filter(a => a !== prin && a.situacao === prin.situacao).length;
+    return `<a class="linha-arte" href="#/arte-pedido/${p.pedido_id}">
+      <div style="min-width:0"><b>Pedido ${esc(p.pedido_numero)}</b> · ${esc(p.cliente_nome || 'Sem cliente')}
+        <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(mats.slice(0, 2).join(' · '))}${mats.length > 2 ? ` · +${mats.length - 2}` : ''}</div></div>
+      <div>${chipArte(prin, modo)}${iguais ? ` <span class="small muted">+${iguais}</span>` : ''}${modo !== 'designer' && prin.designer_nome ? `<div class="small muted" style="margin-top:3px">${esc(prin.designer_nome)}</div>` : ''}</div>
+      <div class="dir">${entregaCurta(lista)}</div></a>`;
+  }).join('')}</div>`;
+}
+const PASSOS_ARTE = [['Pendente', ['a_fazer']], ['Em andamento', ['em_criacao', 'em_alteracao', 'pausada']], ['Em aprovação', ['aguardando_cliente']],
+                     ['Aprovado pelo cliente', ['aprovada']], ['Arquivo pronto', ['pronta', 'resolvida_vendedor']]];
+function passosArte(a) {
+  const at = PASSOS_ARTE.findIndex(x => x[1].includes(a.situacao)), alerta = a.situacao === 'em_alteracao' || a.situacao === 'pausada';
+  return `<div class="passos">${PASSOS_ARTE.map((x, i) => {
+    const cls = i < at || (i === at && at === PASSOS_ARTE.length - 1) ? 'feito' : i === at ? 'atual' + (alerta ? ' alerta' : '') : '';
+    const nome = i === at && a.situacao === 'pausada' ? 'Pausada (vendedor)' : i === at && a.situacao === 'em_alteracao' ? 'Alteração pedida' : x[0];
+    return `<div class="${cls}">${nome}</div>`; }).join('')}</div>`;
+}
+// O pedido de alteração em destaque (do cliente, ou a devolução do vendedor)
+function caixaAlteracao(a) {
+  if (a.situacao !== 'em_alteracao' && a.situacao !== 'pausada') return '';
+  const alt = a.alteracao || {}, bruto = String(alt.texto || '');
+  const titulo = a.situacao === 'pausada' ? 'O cliente pediu mudança no material'
+    : /^Arte devolvida:/.test(bruto) ? 'O vendedor devolveu a arte'
+    : /^Material ajustado pelo vendedor:/.test(bruto) ? 'O vendedor ajustou o material'
+    : /^Alteração no material:/.test(bruto) ? 'Voltou do vendedor (o cliente tinha pedido mudança no material)'
+    : 'O cliente pediu alteração na arte';
+  const txt = bruto.replace(/^(Alteração no material|Material ajustado pelo vendedor|Arte devolvida): /, '');
+  return `<div class="caixa-alteracao"><div class="tit">${titulo}</div>${txt ? `<div class="txt">${esc(txt)}</div>` : ''}${alt.em ? `<div class="small muted" style="margin-top:4px">${dataHora(alt.em)}</div>` : ''}</div>`;
+}
+function linhaGabaritoCurta(u) {
+  if (!u) return '';
+  if (u.gabarito_nome) return `<div class="small" style="margin-top:4px"><span class="muted">Gabarito:</span> ${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}${u.gabarito_url ? ` · <a href="${esc(u.gabarito_url)}" target="_blank" rel="noopener">Abrir gabarito</a>` : ''}</div>`;
+  return u.sem_gabarito ? '<div class="small muted" style="margin-top:4px">Sem gabarito neste material.</div>' : '';
+}
+// O que fazer agora em cada arte: um texto, o botão principal e o resto em "Mais opções"
+function passoArteAcoes(a, modo, podeMexer) {
+  const d = modo === 'designer', id = a.id, s = a.situacao, naArte = ITEM_NA_ARTE.includes(a.item_status);
+  const B = (txt, fn, prim) => `<button class="btn ${prim ? 'prim' : ''} peq" onclick="${fn}">${txt}</button>`;
+  let texto = '', bot = [], mais = [];
+  const pausar = B('Pausar (alteração no material)', `modalAlteracaoCliente('${id}', true)`);
+  if (d) {
+    if (s === 'a_fazer') { texto = 'Comece quando for trabalhar nesta arte.'; bot.push(B('Começar a arte', `arteSituacao('${id}','em_criacao')`, 1)); }
+    else if (s === 'em_criacao') { texto = 'Faça a arte e envie a prova para o cliente aprovar.'; bot.push(B('Montar prova', `montarProva('${id}')`, 1));
+      mais.push(B('Enviei a prova por fora', `arteSituacao('${id}','aguardando_cliente')`), pausar); }
+    else if (s === 'em_alteracao') { texto = 'Faça a alteração e envie a nova prova.'; bot.push(B('Montar nova prova', `montarProva('${id}')`, 1));
+      mais.push(B('Enviei a prova por fora', `arteSituacao('${id}','aguardando_cliente')`), pausar); }
+    else if (s === 'aguardando_cliente') { texto = 'A prova está com o cliente. Quando ele responder pelo link, a arte muda sozinha.';
+      bot.push(B('Cliente aprovou', `arteSituacao('${id}','aprovada')`), B('Cliente pediu alteração', `modalAlteracaoCliente('${id}')`));
+      mais.push(B('Nova versão da prova', `montarProva('${id}')`)); }
+    else if (s === 'pausada') texto = 'A arte está com o vendedor. Quando ele ajustar o material, ela volta para você.';
+    else if (s === 'aprovada') { texto = 'O cliente aprovou. Agora feche o arquivo para impressão.'; bot.push(B('Enviar arquivo para impressão', `modalFecharArte('${id}')`, 1)); mais.push(pausar); }
+    else if (s === 'pronta') texto = a.item_status === 'arte_aprovada' ? 'Arquivo pronto. O vendedor vai enviar para a pré-impressão.' : 'Arquivo pronto. O material já seguiu para a pré-impressão.';
+    else if (s === 'resolvida_vendedor') texto = 'Resolvida pelo vendedor.';
+    if (a.item_id && naArte && s !== 'cancelada') mais.push(B('Enviar arquivo', `modalEnviarArteDesigner('${id}')`));
+  } else {
+    const comDesigner = a.designer_nome ? ` (${esc(a.designer_nome)})` : '';
+    if (!a.designer_id && ['a_fazer', 'em_criacao', 'em_alteracao'].includes(s)) texto = 'Arte sem designer: escolha a designer do pedido.';
+    else if (s === 'a_fazer') texto = `Com a designer${comDesigner}: ainda não começou.`;
+    else if (s === 'em_criacao' || s === 'em_alteracao') texto = `Com a designer${comDesigner}: fazendo a arte.`;
+    else if (s === 'aguardando_cliente') { texto = 'A prova está com o cliente.';
+      if (podeMexer) bot.push(B('Cliente aprovou', `arteSituacao('${id}','aprovada')`), B('Cliente pediu alteração', `modalAlteracaoCliente('${id}')`)); }
+    else if (s === 'pausada') { texto = 'O cliente pediu mudança no material. Ajuste o item no pedido e devolva para a designer.';
+      if (podeMexer) bot.push(B('Material ajustado · devolver para a designer', `arteSituacao('${id}','em_alteracao',2)`, 1)); }
+    else if (s === 'aprovada') texto = `Aprovado pelo cliente. A designer${comDesigner} vai fechar o arquivo para impressão.`;
+    else if (s === 'pronta') {
+      if (a.item_status === 'arte_aprovada' && podeStatus('pre_impressao')) { texto = 'Arquivo pronto para impressão. Confira e envie.'; bot.push(B('Enviar para pré-impressão', `enviarPreImpressao('${a.item_id}')`, 1)); }
+      else texto = naArte ? 'Arquivo pronto para impressão.' : 'Arquivo pronto. O item já está na pré-impressão ou adiante.'; }
+    else if (s === 'resolvida_vendedor') texto = 'Resolvida pelo vendedor.';
+    if (podeMexer) {
+      if (podeMontarProva(a) && a.designer_id) mais.push(B(s === 'aguardando_cliente' ? 'Nova versão da prova' : 'Montar prova', `montarProva('${id}')`));
+      if ((s === 'aprovada' || s === 'pronta') && naArte) mais.push(B('Devolver para a designer', `arteSituacao('${id}','em_alteracao',1)`));
+      if (['a_fazer', 'em_criacao', 'em_alteracao', 'aguardando_cliente', 'pausada', 'aprovada'].includes(s)) {
+        mais.push(B('Editar', `modalArteEditar('${id}')`), B('Resolvida pelo vendedor', `arteResolverVendedor('${id}')`)); }
+    } else bot = [];
+  }
+  if (a.item_id) mais.push(B('Conversa' + (a.ultima_mensagem_em ? ' •' : ''), `modalConversaArte('${id}')`));
+  if (!d && a.item_id) mais.push(B('Testar arquivo do cliente', `testarArquivo('${a.item_id}')`));
+  return { texto, bot, mais };
+}
+// Um material (item) com as artes dele: passo a passo, alteração em destaque e o próximo passo
+function blocoMaterialArte(as, modo, o = {}) {
+  const it = as[0], u = it.urgencia, podeMexer = o.podeMexer !== false;
+  const urg = as.some(a => a.urgente) || urgenteProducao(u);
+  const ativa = as.some(a => ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao', 'pausada', 'aprovada'].includes(a.situacao));
+  return `<div class="material-arte">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+      <h3 style="font-size:16px;font-weight:700;margin:0">${esc(it.item_descricao)} <span class="small muted" style="font-weight:400">${it.quantidade ? num(it.quantidade) + ' un' : ''}</span></h3>
+      <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}</div></div>
+    ${linhaGabaritoCurta(u)}
+    ${as.map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
+      return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Arte ${k + 1} de ${as.length}</div>` : ''}
+        ${passosArte(a)}
+        ${caixaAlteracao(a)}
+        ${a.instrucoes ? `<div class="small" style="margin-top:6px"><b>Instruções do vendedor:</b> ${esc(a.instrucoes)}</div>` : ''}
+        <div class="proximo-passo"><div class="o-que">${ac.texto}</div>${ac.bot.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${ac.bot.join('')}</div>` : ''}</div>
+        ${blocoExp('mais-arte-' + a.id, 'Mais opções e detalhes', `
+          ${ac.mais.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${ac.mais.join('')}</div>` : ''}
+          ${linhaProva(a)}
+          <div class="small muted" style="margin-top:6px">${esc(nomeTipoArte(a.tipo))} · designer ${tempoCurto(a.seg_designer)} · cliente ${tempoCurto(a.seg_cliente)}${a.seg_vendedor ? ' · vendedor ' + tempoCurto(a.seg_vendedor) : ''}${a.tempo_estourado ? ' · <b>passou do tempo previsto</b>' : ''}${a.valor != null ? ' · ' + brl(a.valor) : ''}</div>
+          ${modo !== 'designer' && a.designer_nome ? `<div class="small muted">Designer: ${esc(a.designer_nome)}</div>` : ''}
+          <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
+          ${k === 0 && it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, u, ativa && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
+          ${k === 0 && it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item:</span> ${esc(it.item_observacao)}</div>` : ''}
+          ${k === 0 && o.extraItem ? o.extraItem : ''}`, false, 'leve')}</div>`; }).join('')}
+  </div>`;
+}
+// Tela do pedido na arte: cabeçalho curto e um bloco por material
+function detalheArtesPedido(artes, modo) {
+  const p = artes[0];
+  const porItem = new Map();
+  artes.forEach(a => { const k = a.item_id || a.id; if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(a); });
+  const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp do cliente</a>` : '';
+  return `<div class="painel" style="padding:14px 18px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div><b style="font-size:17px">${esc(p.cliente_nome || 'Sem cliente')}</b>
+        <div class="small muted">Vendedor: ${esc(p.vendedor_nome || '—')} · ${entregaCurta(artes)}</div></div>${zap}</div></div>
+    ${[...porItem.values()].map(as => blocoMaterialArte(as, modo)).join('')}`;
 }
 
 async function arteSituacao(id, situacao, pedeObs) {
@@ -3717,7 +3890,7 @@ rota('minhas-artes', async (_p, el) => {
   el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca: b, aoFiltrar: 'filtrarMinhasArtes', idBusca: 'b-minhas',
       vendedores: S.base?.vendedores || [], vendSel: vd, idVend: 'f-vend-minhas' })}
     ${r.total > r.artes.length ? `<p class="small muted">Mostrando ${r.artes.length} de ${r.total}.</p>` : ''}
-    ${cardsArtesPorPedido(lista, 'designer', 'minhas-artes')}`;
+    ${listaArtesResumo(lista, 'designer')}`;
   ligarBuscaArte(el, '#b-minhas', 'buscaMinhasArtes');
   ligarFiltroArte(el, '#f-vend-minhas', 'vendMinhasArtes');
   preencherArquivosArte(el);
@@ -3738,7 +3911,7 @@ rota('arte-pedido', async (id, el) => {
   el.innerHTML = (prontos.length ? `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite);margin-bottom:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
       <span><b>Arquivo pronto para impressão</b> em ${prontos.length} ${prontos.length === 1 ? 'item' : 'itens'}.</span>
       <button class="btn prim peq" onclick="enviarPreImpressao('${prontos.join(',')}')">Enviar para pré-impressão</button></div>` : '')
-    + (artes.length ? cardsArtesPorPedido(artes, soPainelArte() ? 'designer' : 'interno', 'arte-pedido', true)
+    + (artes.length ? detalheArtesPedido(artes, soPainelArte() ? 'designer' : 'interno')
     : '<div class="painel"><div class="vazio">Nenhuma arte deste pedido para você.</div></div>');
   preencherArquivosArte(el);
 });
@@ -3762,7 +3935,7 @@ rota('artes-feitas', async (_p, el) => {
   el.innerHTML = `${barraFiltroArte({ artes: r.artes, filtro: f, busca, aoFiltrar: 'filtrarArtesFeitas', idBusca: 'b-artes',
       vendedores: S.base?.vendedores || [], vendSel: vdf, idVend: 'f-vend-feitas' })}
     <p class="small muted">${r.total} arte(s) concluída(s).</p>
-    ${cardsArtesPorPedido(r.artes.filter(filtroArteFn(f)), 'designer', 'artes-feitas')}`;
+    ${listaArtesResumo(r.artes.filter(filtroArteFn(f)), 'designer')}`;
   ligarBuscaArte(el, '#b-artes', 'buscaArtesFeitas');
   ligarFiltroArte(el, '#f-vend-feitas', 'vendArtesFeitas');
   preencherArquivosArte(el);
@@ -3833,46 +4006,21 @@ async function preencherArtesPedido(el, p) {
         </select></label>
         ${desPedido ? `<div style="align-self:flex-end;padding-bottom:10px">${tagPessoa((designers.find(d => d.id === desPedido) || {}).nome, (designers.find(d => d.id === desPedido) || {}).cor, 'designer')}</div>` : ''}` : ''}
     </div>
-    ${itens.length ? `<div class="lista-exp">${itens.map(i => {
+    ${itens.length ? itens.map(i => {
       const as = artes.filter(a => a.item_id === i.id && a.situacao !== 'cancelada');
-      const naArte = ['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao', 'arte_pausada', 'arte_fechando', 'arte_aprovada'].includes(i.status);
-      if (i.sem_arte) return `
-        <div style="padding:10px 6px 10px 24px">
-          <b>${esc(i.descricao)}</b> ${badge('Não precisa de arte', 'b-cinza')}
-          ${podeMexer && naArte ? `<button class="btn link peq" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
-          <button class="btn link peq" onclick="testarArquivo('${i.id}')">Testar arquivo do cliente</button>
-        </div>`;
-      const gNome = i.gabarito_grupo_id ? (gruposGabarito().find(g => g.id === i.gabarito_grupo_id) || {}).nome : '';
-      const resumo = `<b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span>
-        ${resumoArtes(as)} ${as.some(a => a.urgente) ? badge('URGENTE', 'b-vermelho') : ''} ${badgeUrgencia(i.urgencia)} ${seloSemGabarito(i.urgencia)} ${gNome ? `<span class="small muted">· ${esc(gNome)}${i.urgencia && i.urgencia.gabarito_nome ? ' — ' + esc(i.urgencia.gabarito_nome) : ''}</span>` : ''}`;
-      const corpo = `
-          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
-            <div>${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}
-              <button class="btn peq" style="margin-top:8px" onclick="testarArquivo('${i.id}')" title="Confere o arquivo do cliente com o gabarito do item. Nada é salvo nem enviado.">Testar arquivo do cliente</button></div>
-            ${podeMexer && naArte ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-              <label class="small muted">Qtde de artes
-                <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
-              <button class="btn peq" onclick="alternarSemArte('${i.id}',true)">Não precisa de arte</button>
-            </div>` : ''}
-          </div>
-          ${as.length ? as.map((a, k) => `
-            <div style="margin-top:8px;padding:10px;background:var(--linha-2);border-radius:8px">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                ${as.length > 1 ? `<span class="small muted">Arte ${k + 1}</span>` : ''}
-                ${badgeArte(a.situacao)} ${badge(nomeTipoArte(a.tipo), 'b-cinza')} ${etiquetasArte(a)}
-                ${a.designer_nome ? tagPessoa(a.designer_nome, a.designer_cor, 'designer') : badge('Sem designer', 'b-ambar')}
-                ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
-              </div>
-              ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
-              <div class="small muted" style="margin-top:6px">Designer ${tempoCurto(a.seg_designer)} · Cliente ${tempoCurto(a.seg_cliente)}</div>${linhaProva(a)}
-              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-                ${acoesVendedorArte(a, podeMexer && p.status !== 'cancelado')}
-                <button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>
-              </div>
-            </div>`).join('') : '<p class="small muted" style="margin:8px 0 0">Nenhuma arte neste item.</p>'}`;
-      return `<div>${blocoExp('arte-item-' + i.id, resumo, corpo, itens.length === 1)}</div>`;
-    }).join('')}</div>` : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
-    <div style="margin-top:10px">${blocoExp('ajuda-artes', 'Como funciona', '<p class="small muted" style="margin:0">O item sai da etapa de arte quando todas as artes dele estiverem aprovadas pelo cliente. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>', false, 'leve')}</div>`;
+      const naArte = ITEM_NA_ARTE.includes(i.status);
+      if (i.sem_arte || !as.length) return `
+        <div class="material-arte"><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un</span>
+          ${i.sem_arte ? badge('Não precisa de arte', 'b-cinza') : '<span class="small muted">· sem arte</span>'}
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+            ${podeMexer && naArte && i.sem_arte ? `<button class="btn peq" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
+            <button class="btn peq" onclick="testarArquivo('${i.id}')">Testar arquivo do cliente</button></div></div>`;
+      const extra = podeMexer && naArte && p.status !== 'cancelado' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <label class="small muted">Qtde de artes <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
+          <button class="btn peq" onclick="alternarSemArte('${i.id}',true)">Não precisa de arte</button></div>` : '';
+      return blocoMaterialArte(as, 'interno', { podeMexer: podeMexer && p.status !== 'cancelado', extraItem: extra });
+    }).join('') : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
+    <div style="margin-top:10px">${blocoExp('ajuda-artes', 'Como funciona', '<p class="small muted" style="margin:0">O item sai da etapa de arte quando todas as artes dele tiverem o arquivo pronto para impressão. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>', false, 'leve')}</div>`;
 
   const sel = alvo.querySelector('#des-pedido');
   if (sel) sel.onchange = async () => {
