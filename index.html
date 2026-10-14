@@ -2690,7 +2690,9 @@ async function paginaPublicaProva(chave) {
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
           <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${x.situacao}">${SIT[x.situacao] || x.situacao}</span></div>
           <div style="font-size:12px;color:#8a959c">Versão ${x.versao}${tam(x) ? ' · tamanho final ' + tam(x) : ''}</div></div>
-        ${(() => { const imgs = `<div class="imgs">${['frente'].concat(x.tem_verso ? ['verso'] : []).map(l => `<figure><figcaption>${x.tem_verso ? l : 'arte'}</figcaption><div class="carregando" data-img="${x.prova_id}|${l}">carregando a prova…</div></figure>`).join('')}</div>`;
+        ${(() => { const imgs = x.formato === 'pdf'
+             ? `<div class="imgs" data-pdf="${x.prova_id}" data-verso="${x.tem_verso ? 1 : 0}"><div class="carregando">carregando a prova…</div></div>`
+             : `<div class="imgs">${['frente'].concat(x.tem_verso ? ['verso'] : []).map(l => `<figure><figcaption>${x.tem_verso ? l : 'arte'}</figcaption><div class="carregando" data-img="${x.prova_id}|${l}">carregando a prova…</div></figure>`).join('')}</div>`;
            return x.situacao === 'aguardando' ? imgs : `<details class="vista3d"><summary>Ver a arte</summary>${imgs}</details>`; })()}
         ${x.modo === '3d' && x.tem_verso && x.situacao === 'aguardando' ? `<details class="vista3d" data-3d="${x.prova_id}"><summary>Ver em 3D (girar frente e verso)</summary><div class="palco3d"></div></details>` : ''}
         ${x.situacao === 'aprovada' ? `<div class="ok" style="margin-top:12px"><b>Aprovada ✓</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}.</div>` : ''}
@@ -2733,6 +2735,14 @@ async function paginaPublicaProva(chave) {
           box.replaceWith(img);
         } catch (e) { if (box.isConnected) box.textContent = 'Não foi possível carregar a imagem. Atualize a página.'; }
       }
+      for (const box of raiz.querySelectorAll('[data-pdf]')) {
+        try {
+          const pags = await paginasProvaPdf(chave, box.dataset.pdf, imagens);
+          if (!box.isConnected) continue;
+          const verso = box.dataset.verso === '1';
+          box.innerHTML = pags.map((src, i) => `<figure><figcaption>${pags.length === 1 ? 'arte' : i === 0 ? (verso ? 'frente' : 'página 1') : (i === 1 && verso ? 'verso' : 'página ' + (i + 1))}</figcaption><img alt="Prova página ${i + 1}" src="${src}"></figure>`).join('');
+        } catch (e) { if (box.isConnected) box.innerHTML = '<div class="carregando">Não foi possível abrir a prova. Atualize a página.</div>'; }
+      }
     })();
     raiz.querySelectorAll('[data-3d]').forEach(det => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ok) { det.dataset.ok = 1; vista3dProva(det.querySelector('.palco3d'), chave, det.dataset['3d'], imagens); } }));
     raiz.querySelectorAll('.arte[data-prova]').forEach(bx => {
@@ -2764,12 +2774,41 @@ async function paginaPublicaProva(chave) {
   catch (e) { raiz.innerHTML = `<div class="folha"><div class="corpo"><h1 style="font-size:20px">Não foi possível abrir a prova</h1><p>${esc(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor. Tente de novo em instantes.' : e.message)}</p></div></div>`; }
 }
 // Cartão em 3D (frente e verso), igual ao Visualizador antigo
+// Prova em PDF: lê o arquivo pelo sistema e desenha cada página como imagem (o Drive continua privado)
+let carregandoPdfPub = null;
+function carregarPdfJsPub() {
+  if (window.pdfjsLib) return Promise.resolve();
+  return carregandoPdfPub || (carregandoPdfPub = new Promise((ok, falha) => {
+    const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; ok(); };
+    sc.onerror = () => { carregandoPdfPub = null; falha(new Error('Não foi possível abrir o leitor de PDF.')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function paginasProvaPdf(chave, pid, cache) {
+  if (cache[pid + '|pdf']) return cache[pid + '|pdf'];
+  const uri = (await api('prova_publica_imagem', { chave, prova_id: pid, lado: 'frente' }, true)).imagem;
+  await carregarPdfJsPub();
+  const bin = atob(uri.slice(uri.indexOf(',') + 1)), dados = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) dados[i] = bin.charCodeAt(i);
+  const doc = await window.pdfjsLib.getDocument({ data: dados }).promise, pags = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const pg = await doc.getPage(n), v0 = pg.getViewport({ scale: 1 });
+    const vp = pg.getViewport({ scale: 1600 / Math.max(v0.width, v0.height) });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    pags.push(c.toDataURL('image/jpeg', 0.9));
+  }
+  return (cache[pid + '|pdf'] = pags);
+}
 async function vista3dProva(palco, chave, pid, imagens) {
   palco.innerHTML = '<div class="carregando" style="height:100%">carregando o 3D…</div>';
   try {
     if (!window.THREE) await new Promise((ok, falha) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js'; s.onload = ok; s.onerror = falha; document.head.appendChild(s); });
     const pega = async lado => imagens[pid + '|' + lado] || (imagens[pid + '|' + lado] = (await api('prova_publica_imagem', { chave, prova_id: pid, lado }, true)).imagem);
-    const [srcF, srcV] = await Promise.all([pega('frente'), pega('verso')]);
+    let srcF, srcV;
+    if (palco.closest('.arte') && palco.closest('.arte').querySelector('[data-pdf]')) { const pg = await paginasProvaPdf(chave, pid, imagens); srcF = pg[0]; srcV = pg[1] || pg[0]; }
+    else [srcF, srcV] = await Promise.all([pega('frente'), pega('verso')]);
     palco.innerHTML = '';
     const T = window.THREE, W = palco.clientWidth, H = palco.clientHeight;
     const cena = new T.Scene(); cena.background = new T.Color(0x1d262d);
@@ -3294,22 +3333,32 @@ async function copiarLinkProva(chave) {
   const link = location.origin + location.pathname + '#/prova/' + chave;
   try { await navigator.clipboard.writeText(link); toast('Link de aprovação copiado.'); } catch (e) { prompt('Copie o link:', link); }
 }
-async function montarProva(arteId) {
+async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261013';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261014b';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
-    try { await carregandoMontador; } catch (e) { return toast(e.message, true); }
+    try { await carregandoMontador; } catch (e) { toast(e.message, true); return false; }
   }
-  window.abrirMontador(arteId);
+  return true;
+}
+async function montarProva(arteId) { if (await carregarMontador()) window.abrirMontador(arteId); }
+// Vendedor (ou quem for) testa o arquivo do cliente contra o gabarito do item: só na tela, nada é salvo nem enviado
+async function testarArquivo(itemId) {
+  const v = S.vistaAtual || {};
+  const i = ((v.dados && v.dados.itens) || []).find(x => x.id === itemId);
+  const a = (v.artes || []).find(x => x.item_id === itemId);
+  const item = i ? { item_descricao: i.descricao, urgencia: i.urgencia } : a ? { item_descricao: a.item_descricao, urgencia: a.urgencia } : null;
+  if (!item) return toast('Item não encontrado. Atualize a tela.', true);
+  if (await carregarMontador()) window.abrirMontador(null, { teste: true, item });
 }
 // Linha "Prova v2 · com o cliente desde…" no quadro da arte
 function linhaProva(a) {
   const pv = a.prova; if (!pv) return '';
   const sit = { enviada: 'com o cliente', aprovada: 'aprovada', alteracao: 'cliente pediu alteração', substituida: 'substituída' }[pv.situacao] || pv.situacao;
-  return `<div class="small muted" style="margin-top:6px">Prova v${pv.versao}${pv.modo === '3d' ? ' (3D)' : ''} · ${sit}${pv.decidido_nome ? ' por ' + esc(pv.decidido_nome) : ''} · ${dataHora(pv.decidido_em || pv.em)}</div>`;
+  return `<div class="small muted" style="margin-top:6px">Prova v${pv.versao}${pv.modo === '3d' ? ' (3D)' : ''}${pv.final ? ' · <b>arte pronta para impressão</b>' : ''} · ${sit}${pv.decidido_nome ? ' por ' + esc(pv.decidido_nome) : ''} · ${dataHora(pv.decidido_em || pv.em)}</div>`;
 }
 function acoesDesigner(a) {
   const b = [];
@@ -3467,6 +3516,7 @@ function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                 ${modo === 'designer' ? acoesDesigner(a) : acoesVendedorArte(a, true)}
                 ${a.item_id && modo === 'designer' && a.situacao !== 'cancelada' ? `<button class="btn peq" onclick="modalEnviarArteDesigner('${a.id}')">Enviar arquivo</button>` : ''}
+                ${a.item_id && modo !== 'designer' && k === 0 ? `<button class="btn peq" onclick="testarArquivo('${a.item_id}')">Testar arquivo do cliente</button>` : ''}
                 ${a.item_id ? `<button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>` : ''}
               </div>
             </div>`).join('')}`, porItem.size === 1)}</div>`;
@@ -3531,7 +3581,10 @@ function modalFecharArte(id) {
       catch (e) { toast(`${arq.name}: ${e.message}`, true); }
     }
     if (!ok) { bs.disabled = false; bs.classList.remove('ocupado'); st.textContent = ''; return; }
-    try { await api('arte_situacao', { id, situacao: 'pronta' }); m.fechar(); toast('Arte fechada: arquivo pronto para impressão.'); recarregar(); }
+    try { const r = await api('arte_situacao', { id, situacao: 'pronta' }); m.fechar();
+      toast(r.arte && r.arte.item_status === 'pre_impressao' ? 'Arte fechada. O pedido tem pagamento: o item já foi para a pré-impressão.'
+          : r.arte && r.arte.item_status === 'arte_aprovada' ? 'Arte fechada: arquivo pronto. Como o pedido ainda não tem pagamento, o vendedor envia para a pré-impressão.'
+          : 'Arte fechada: arquivo pronto para impressão.'); recarregar(); }
     catch (e) { bs.disabled = false; bs.classList.remove('ocupado'); st.textContent = 'O arquivo foi enviado, mas a arte não fechou. Tente de novo.'; }
   };
 }
@@ -3787,13 +3840,15 @@ async function preencherArtesPedido(el, p) {
         <div style="padding:10px 6px 10px 24px">
           <b>${esc(i.descricao)}</b> ${badge('Não precisa de arte', 'b-cinza')}
           ${podeMexer && naArte ? `<button class="btn link peq" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
+          <button class="btn link peq" onclick="testarArquivo('${i.id}')">Testar arquivo do cliente</button>
         </div>`;
       const gNome = i.gabarito_grupo_id ? (gruposGabarito().find(g => g.id === i.gabarito_grupo_id) || {}).nome : '';
       const resumo = `<b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un · ${as.length} ${as.length === 1 ? 'arte' : 'artes'}</span>
         ${resumoArtes(as)} ${as.some(a => a.urgente) ? badge('URGENTE', 'b-vermelho') : ''} ${badgeUrgencia(i.urgencia)} ${seloSemGabarito(i.urgencia)} ${gNome ? `<span class="small muted">· ${esc(gNome)}${i.urgencia && i.urgencia.gabarito_nome ? ' — ' + esc(i.urgencia.gabarito_nome) : ''}</span>` : ''}`;
       const corpo = `
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
-            <div>${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}</div>
+            <div>${htmlGabaritoItem(i.id, i.gabarito_grupo_id, i.urgencia, (podeMexer || pode('gerencia_cadastros')) && p.status !== 'cancelado')}
+              <button class="btn peq" style="margin-top:8px" onclick="testarArquivo('${i.id}')" title="Confere o arquivo do cliente com o gabarito do item. Nada é salvo nem enviado.">Testar arquivo do cliente</button></div>
             ${podeMexer && naArte ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <label class="small muted">Qtde de artes
                 <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
