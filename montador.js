@@ -414,8 +414,12 @@
         const producao = [];
         if (final) {
           const arqs = [...new Set(lista.map(x => x.p.file))];
+          const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', extra: 'Faca' };
           for (const f of arqs) { bt.textContent = `Enviando a arte final: ${f.name}…`;
-            producao.push(await enviarArquivoDrive(a.pedido_id, f, 'producao', a.item_id, 'Arte final', null, null, { arte_id: a.id })); }
+            // o sistema renomeia para "<material> - <identificação>": a identificação diz o que tem no arquivo
+            const papeis = [...new Set(lista.filter(x => x.p.file === f).map(x => NOME_PAPEL[x.p.papel] || ''))].filter(Boolean);
+            const rot = arqs.length === 1 && papeis.length > 1 ? 'Arte final' : papeis.join(' e ') || 'Arte final';
+            producao.push(await enviarArquivoDrive(a.pedido_id, f, 'producao', a.item_id, rot, null, null, { arte_id: a.id })); }
         }
         const avisos = [...analise.frente.avisos, ...(analise.verso ? analise.verso.avisos : []), ...analise.extras.flatMap(x => x.avisos)].map(x => x.txt);
         const r = await api('prova_registrar', { arte_id: a.id, frente_id: idP, verso_id: null, formato: 'pdf', paginas: canv.length, tem_verso: !!ve,
