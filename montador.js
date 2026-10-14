@@ -3,14 +3,42 @@
    Carregado só quando alguém clica em "Montar prova" (index.html → montarProva).
    Tudo roda no navegador: lê o PDF/imagem da arte, confere com o gabarito do item,
    mostra as linhas de corte e segurança (só para a equipe) e gera a PROVA do cliente:
-   JPG leve, sem sangria, com marca d'água "PROVA — não use para impressão" e o logo da GVH.
-   A prova sobe para o Drive do pedido (tipo "prova") e fica registrada na arte (versão).
+   um PDF só (frente, verso, faca… em páginas), sem sangria, com marca d'água "PROVA — não use para impressão"
+   e o logo da GVH. A prova sobe para o Drive do pedido (tipo "prova") e fica registrada na arte (versão).
+   (14/10) A designer escolhe se está mandando só a prova ou já a ARTE PRONTA PARA IMPRESSÃO: nesse caso o
+   arquivo original sobe junto (tipo "producao") e, quando o cliente aprovar, a arte já fica pronta.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
 (function () {
   const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
   const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const JSPDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+  let carregandoJsPdf = null;
+  function carregarJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+    if (carregandoJsPdf) return carregandoJsPdf;
+    carregandoJsPdf = new Promise((ok, falha) => {
+      const s = document.createElement('script'); s.src = JSPDF; s.onload = ok;
+      s.onerror = () => { carregandoJsPdf = null; falha(new Error('Não foi possível carregar o gerador de PDF. Confira a internet e tente de novo.')); };
+      document.head.appendChild(s);
+    });
+    return carregandoJsPdf;
+  }
+  // Junta as páginas da prova (canvas) num PDF só; cada página no tamanho final em mm (ou 150 dpi quando não há medida)
+  async function montarPdf(itens) {
+    await carregarJsPdf();
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+    for (const { c, wmm, hmm } of itens) {
+      const w = wmm || c.width * 25.4 / 150, h = hmm || c.height * 25.4 / 150;
+      const ori = w >= h ? 'l' : 'p';
+      if (!doc) doc = new jsPDF({ unit: 'mm', format: [w, h], orientation: ori, compress: true });
+      else doc.addPage([w, h], ori);
+      doc.addImage(c.toDataURL('image/jpeg', 0.84), 'JPEG', 0, 0, w, h);
+    }
+    return doc.output('blob');
+  }
   const TOL = 1.5;            // mm de folga na comparação de tamanhos
   const LADO_PROVA = 1600;    // px do lado maior da prova do cliente
   const LADO_CONF = 560;      // px do lado maior da conferência na tela
@@ -224,9 +252,12 @@
   const paraBlob = c => new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.84));
 
   /* ---------- tela ---------- */
-  window.abrirMontador = async function (arteId) {
+  // opts.teste = só testar o arquivo do cliente contra o gabarito (não sobe nada, não gera link)
+  window.abrirMontador = async function (arteId, opts) {
+    const teste = !!(opts && opts.teste);
     let a;
-    try { a = (await api('obter_arte', { id: arteId })).arte; } catch (e) { return; }
+    if (teste) a = opts.item;
+    else { try { a = (await api('obter_arte', { id: arteId })).arte; } catch (e) { return; } }
     const u = a.urgencia || {};
     const gm = u.gabarito_medidas;
     // gabarito: fixo (com medidas) | livre (tamanho livre) | sem (sem gabarito com medidas)
@@ -242,7 +273,7 @@
     const ehCartao = /cart[ãa]o/i.test(u.grupo_nome || '') || (g.modo === 'fixo' && Math.max(g.w, g.h) <= 100);
     let paginas = [], analise = {}, enviando = false;
 
-    const m = abrirModal({ titulo: `Montar prova · ${a.item_descricao || ''}`, largo: true, corpo: `
+    const m = abrirModal({ titulo: `${teste ? 'Testar arquivo do cliente' : 'Montar prova'} · ${a.item_descricao || ''}`, largo: true, corpo: `
       <style>
         .mt-drop{border:2px dashed var(--linha);border-radius:12px;padding:18px;text-align:center;color:var(--texto-2);cursor:pointer;font-size:13px}
         .mt-drop.sobre{border-color:var(--verde);background:var(--verde-bg)}
@@ -257,6 +288,13 @@
         .mt-av.vermelho{background:var(--vermelho-bg);color:var(--vermelho)}.mt-av.amarelo{background:var(--ambar-bg);color:#7d520d}.mt-av.verde{background:var(--verde-bg);color:#007a61}
       </style>
       <div class="small" style="margin-bottom:8px">Gabarito: ${linhaGab}</div>
+      ${teste ? `<div class="mt-av amarelo" style="margin:0 0 10px">Só um teste: o arquivo é conferido aqui na tela, contra o gabarito do item. <b>Nada é salvo nem enviado ao cliente.</b></div>` : ''}
+      <div class="campo" style="margin-bottom:10px;${teste ? 'display:none' : ''}">O que você está enviando ao cliente?
+        <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="mt-tipo" value="prova" checked>
+          <span><b>Só a prova</b><br><span class="small muted">Depois que o cliente aprovar, você fecha o arquivo para impressão.</span></span></label>
+        <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="mt-tipo" value="final">
+          <span><b>Arte pronta para impressão</b><br><span class="small muted">O arquivo que você escolher aqui já é o final. Quando o cliente aprovar, a arte fica pronta e o item segue para a pré-impressão se o pedido tiver pagamento (ou autorização).</span></span></label>
+      </div>
       ${g.modo === 'arquivo' ? `<div class="grade g3" style="margin-bottom:8px">
         <label class="campo" style="grid-column:1/-1;margin:0"><span>Tamanho final</span>
           <select id="mt-tam"><option value="arquivo">Usar o tamanho do arquivo (PDF)</option><option value="definido">Definir o tamanho</option></select></label>
@@ -267,7 +305,7 @@
         <input type="file" id="mt-arq" multiple accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" style="display:none"></div>
       <div class="mt-pags" id="mt-pags"></div>
       <div id="mt-res"></div>`,
-      rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button><button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>` });
+      rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button>${teste ? '' : '<button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>'}` });
     const $m = sel => m.el.querySelector(sel);
     $m('[data-v]').onclick = m.fechar;
     const drop = $m('#mt-drop'), inp = $m('#mt-arq');
@@ -287,10 +325,12 @@
       catch (e) { toast(e.message || 'Não foi possível ler o arquivo.', true); paginas = []; }
       drop.innerHTML = 'Trocar arquivos: arraste aqui ou clique.';
       drop.appendChild(inp);
-      // sugestão: 1ª página = frente, 2ª = verso; com faca na última página, ela fica de fora
-      const usaveis = paginas.filter((p, i) => !(g.faca && paginas.length > 1 && i === paginas.length - 1));
+      // sugestão: 1ª página = frente, 2ª = verso; as demais (inclusive a faca) entram como outras páginas da prova
+      const ehFaca = i => g.faca && paginas.length > 1 && i === paginas.length - 1;
+      const usaveis = paginas.filter((p, i) => !ehFaca(i));
       if (usaveis[0]) usaveis[0].papel = 'frente';
       if (usaveis[1]) usaveis[1].papel = 'verso';
+      paginas.forEach(p => { if (!p.papel) p.papel = 'extra'; });
       const box = $m('#mt-pags'); box.innerHTML = '';
       for (const [i, p] of paginas.entries()) {
         const d = document.createElement('div'); d.className = 'mt-pag';
@@ -299,12 +339,12 @@
         d.innerHTML = `<div title="${esc(p.nome)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</div>`;
         d.appendChild(th);
         d.insertAdjacentHTML('beforeend', `<div class="muted">${p.w ? `${mm(p.w)} × ${mm(p.h)} mm` : `${p.pxw} × ${p.pxh} px`}${faca ? ' · faca' : ''}</div>
-          <select data-i="${i}"><option value="">Não usar</option><option value="frente" ${p.papel === 'frente' ? 'selected' : ''}>Frente</option><option value="verso" ${p.papel === 'verso' ? 'selected' : ''}>Verso</option></select>`);
+          <select data-i="${i}"><option value="">Não usar</option><option value="frente" ${p.papel === 'frente' ? 'selected' : ''}>Frente</option><option value="verso" ${p.papel === 'verso' ? 'selected' : ''}>Verso</option><option value="extra" ${p.papel === 'extra' ? 'selected' : ''}>Outra página (ex.: faca)</option></select>`);
         box.appendChild(d);
       }
       box.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => {
         const p = paginas[+s.dataset.i];
-        if (s.value) paginas.forEach((o, j) => { if (j !== +s.dataset.i && o.papel === s.value) { o.papel = ''; const x = box.querySelector(`select[data-i="${j}"]`); if (x) x.value = ''; } });
+        if (s.value && s.value !== 'extra') paginas.forEach((o, j) => { if (j !== +s.dataset.i && o.papel === s.value) { o.papel = ''; const x = box.querySelector(`select[data-i="${j}"]`); if (x) x.value = ''; } });
         p.papel = s.value; montar();
       });
       montar();
@@ -320,14 +360,16 @@
     }
 
     async function montar() {
-      const res = $m('#mt-res'), bt = $m('[data-enviar]');
+      const res = $m('#mt-res'), bt = $m('[data-enviar]') || document.createElement('button');
       const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
+      const extras = paginas.filter(p => p.papel === 'extra');
       bt.disabled = true; analise = {};
       if (!fr) { res.innerHTML = paginas.length ? '<p class="small muted" style="margin-top:10px">Escolha qual página é a frente.</p>' : ''; return; }
       res.innerHTML = '<p class="small muted" style="margin-top:10px">Montando…</p>';
       const ge = gabaritoEfetivo();
       try {
         analise.frente = analisar(fr, ge); if (ve) analise.verso = analisar(ve, ge);
+        analise.extras = extras.map(p => analisar(p, ge));
         const confF = await desenharConferencia(fr, analise.frente), confV = ve ? await desenharConferencia(ve, analise.verso) : null;
         const avisos = [...analise.frente.avisos.map(x => ({ ...x, txt: (ve ? 'Frente: ' : '') + x.txt })), ...(ve ? analise.verso.avisos.map(x => ({ ...x, txt: 'Verso: ' + x.txt })) : [])];
         const fw = analise.frente.fw, fh = analise.frente.fh;
@@ -337,10 +379,11 @@
           <p class="small muted" style="margin:6px 0 0">Vermelho tracejado = corte · área sombreada = sangria · verde = margem de segurança. <b>Essas linhas não vão para o cliente.</b></p>
           ${avisos.length ? avisos.map(x => `<div class="mt-av ${x.nivel}">${esc(x.txt)}</div>`).join('') : '<div class="mt-av verde">Tamanho confere com o gabarito.</div>'}
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
-            ${ve ? `<label class="check" style="margin:0"><input type="checkbox" id="mt-3d" ${ehCartao ? 'checked' : ''}> Mostrar ao cliente em 3D (gira frente e verso)</label>` : ''}
-            ${tamErrado ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
+            ${ve && !teste ? `<label class="check" style="margin:0"><input type="checkbox" id="mt-3d" ${ehCartao ? 'checked' : ''}> Mostrar ao cliente em 3D (gira frente e verso)</label>` : ''}
+            ${tamErrado && !teste ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
           </div>
-          ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}`;
+          ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}
+          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}.</p>`}`;
         const figs = res.querySelectorAll('.mt-conf figure');
         figs[0].appendChild(confF); if (confV) figs[1].appendChild(confV);
         bt.disabled = false;
@@ -350,27 +393,36 @@
       }
     }
 
-    $m('[data-enviar]').onclick = async () => {
+    if (!teste) $m('[data-enviar]').onclick = async () => {
       if (enviando) return;
       const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
+      const extras = paginas.filter(p => p.papel === 'extra');
       if (!fr || !analise.frente) return;
+      const final = (m.el.querySelector('[name=mt-tipo]:checked') || {}).value === 'final';
       const bt = $m('[data-enviar]'); enviando = true; bt.disabled = true; bt.textContent = 'Gerando a prova…';
       try {
         const faixa = !!($m('#mt-faixa') && $m('#mt-faixa').checked);
-        const cF = await desenharProva(fr, analise.frente, faixa), cV = ve ? await desenharProva(ve, analise.verso, faixa) : null;
-        const base = String(a.item_descricao || 'arte').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60).trim();
+        const lista = [{ p: fr, an: analise.frente }].concat(ve ? [{ p: ve, an: analise.verso }] : [], extras.map((p, i) => ({ p, an: analise.extras[i] })));
+        const canv = [];
+        for (const x of lista) canv.push({ c: await desenharProva(x.p, x.an, faixa), wmm: x.an.fw, hmm: x.an.fh });
+        const base = String(a.item_descricao || 'arte').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80).trim();
+        const pdf = await montarPdf(canv);
         bt.textContent = 'Enviando ao Drive…';
-        const subir = async (c, lado) => {
-          const blob = await paraBlob(c);
-          const file = new File([blob], `Prova ${base} - ${lado}.jpg`, { type: 'image/jpeg' });
-          return enviarArquivoDrive(a.pedido_id, file, 'prova', a.item_id, 'Prova ' + lado, null, null, { arte_id: a.id });
-        };
-        const idF = await subir(cF, 'frente'), idV = cV ? await subir(cV, 'verso') : null;
-        const avisos = [...analise.frente.avisos, ...(analise.verso ? analise.verso.avisos : [])].map(x => x.txt);
-        const r = await api('prova_registrar', { arte_id: a.id, frente_id: idF, verso_id: idV,
-          modo: ($m('#mt-3d') && $m('#mt-3d').checked) ? '3d' : 'imagem',
+        const idP = await enviarArquivoDrive(a.pedido_id, new File([pdf], `Prova - ${base}.pdf`, { type: 'application/pdf' }),
+                                             'prova', a.item_id, 'Prova', null, null, { arte_id: a.id });
+        // arte pronta para impressão: o(s) arquivo(s) original(is) sobem como arte final, ligados a esta arte
+        const producao = [];
+        if (final) {
+          const arqs = [...new Set(lista.map(x => x.p.file))];
+          for (const f of arqs) { bt.textContent = `Enviando a arte final: ${f.name}…`;
+            producao.push(await enviarArquivoDrive(a.pedido_id, f, 'producao', a.item_id, 'Arte final', null, null, { arte_id: a.id })); }
+        }
+        const avisos = [...analise.frente.avisos, ...(analise.verso ? analise.verso.avisos : []), ...analise.extras.flatMap(x => x.avisos)].map(x => x.txt);
+        const r = await api('prova_registrar', { arte_id: a.id, frente_id: idP, verso_id: null, formato: 'pdf', paginas: canv.length, tem_verso: !!ve,
+          modo: ($m('#mt-3d') && $m('#mt-3d').checked) ? '3d' : 'imagem', final, producao_ids: producao,
           largura_mm: analise.frente.fw, altura_mm: analise.frente.fh, avisos });
-        mostrarLink(r, cF);
+        r.final = final; r.pdfUrl = URL.createObjectURL(pdf);
+        mostrarLink(r, canv[0].c);
       } catch (e) {
         console.error(e);
         if (e && e.message) toast(e.message, true);
@@ -385,16 +437,16 @@
       const zap = a.cliente_whatsapp ? `https://wa.me/${String(a.cliente_whatsapp).replace(/\D/g, '')}?text=${encodeURIComponent(msg)}` : '';
       const corpo = $m('.modal-corpo');
       corpo.innerHTML = $m('.modal-corpo style').outerHTML + `
-        <div class="mt-av verde" style="margin-bottom:12px">Prova v${r.versao} enviada. A arte passou para <b>Com o cliente</b>.</div>
+        <div class="mt-av verde" style="margin-bottom:12px">Prova v${r.versao} enviada. A arte passou para <b>Em aprovação</b>.${r.final ? ' Como é a <b>arte pronta para impressão</b>, quando o cliente aprovar ela já fica pronta e o item segue para a pré-impressão se o pedido tiver pagamento.' : ' Depois da aprovação, feche o arquivo para impressão.'}</div>
         <label class="campo">Link de aprovação do pedido ${esc(a.pedido_numero)} <span class="muted">(sempre o mesmo para o pedido)</span>
           <input type="text" readonly value="${esc(link)}" id="mt-link"></label>
         <label class="campo" style="margin-top:10px">Mensagem para o cliente<textarea rows="4" id="mt-msg">${esc(msg)}</textarea></label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="btn prim" id="mt-copiar">Copiar mensagem</button>
           ${zap ? `<a class="btn" href="${esc(zap)}" target="_blank" rel="noopener">Abrir no WhatsApp</a>` : '<span class="small muted" style="align-self:center">Cliente sem WhatsApp no cadastro.</span>'}
-          <a class="btn" id="mt-baixar" download="prova.jpg">Baixar a imagem</a>
+          <a class="btn" id="mt-baixar" download="prova.pdf">Baixar a prova (PDF)</a>
         </div>`;
-      $m('#mt-baixar').href = cF.toDataURL('image/jpeg', 0.84);
+      $m('#mt-baixar').href = r.pdfUrl || cF.toDataURL('image/jpeg', 0.84);
       $m('#mt-copiar').onclick = async () => {
         const t = $m('#mt-msg').value;
         try { await navigator.clipboard.writeText(t); } catch (e) { $m('#mt-msg').select(); document.execCommand('copy'); }
