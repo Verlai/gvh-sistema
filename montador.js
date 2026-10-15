@@ -7,6 +7,9 @@
    e o logo da GVH. A prova sobe para o Drive do pedido (tipo "prova") e fica registrada na arte (versão).
    (14/10) A designer escolhe se está mandando só a prova ou já a ARTE PRONTA PARA IMPRESSÃO: nesse caso o
    arquivo original sobe junto (tipo "producao") e, quando o cliente aprovar, a arte já fica pronta.
+   (15/10) Páginas com papel: Faca (a linha de corte aparece sobre a frente e, espelhada, sobre o verso) e
+   Verniz da frente/verso (a área do verniz aparece com brilho). As máscaras de verniz vão no fim do PDF da prova
+   e os papéis de cada página ficam gravados na prova, para a página do cliente animar o brilho e o 3D refletir.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
@@ -40,7 +43,7 @@
     return doc.output('blob');
   }
   const TOL = 1.5;            // mm de folga na comparação de tamanhos
-  const LADO_PROVA = 1600;    // px do lado maior da prova do cliente
+  const LADO_PROVA_PADRAO = 1600;    // px do lado maior da prova do cliente
   const LADO_CONF = 560;      // px do lado maior da conferência na tela
   const PT_MM = 25.4 / 72;
   let carregandoPdf = null;
@@ -58,6 +61,9 @@
     return carregandoPdf;
   }
 
+  const PAPEIS = [['', 'Não usar'], ['frente', 'Frente'], ['verso', 'Verso'], ['faca', 'Faca (linha de corte)'],
+                  ['verniz_frente', 'Verniz da frente'], ['verniz_verso', 'Verniz do verso'], ['extra', 'Outra página']];
+  const UNICOS = ['frente', 'verso', 'faca', 'verniz_frente', 'verniz_verso'];
   const perto = (a, b) => Math.abs(a - b) <= TOL;
   const mm = v => fmtMm(Math.round(v * 10) / 10);
   const num = v => (v === '' || v == null) ? null : Number(String(v).replace(',', '.'));
@@ -189,8 +195,9 @@
     const w = src.width * e, h = src.height * e;
     ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
   }
-  // Prova do cliente: só a área final (sem sangria), lado maior = LADO_PROVA px, com marca d'água
-  async function desenharProva(p, a, comFaixa) {
+  // Área final (sem sangria) de uma página, lado maior = "lado" px, sem marca d'água
+  async function areaFinal(p, a, comFaixa, lado) {
+    const LADO_PROVA = lado || LADO_PROVA_PADRAO;
     const c = document.createElement('canvas');
     if (a.encaixe === 'inteiro') {
       const e = Math.min(1, LADO_PROVA / Math.max(p.pxw, p.pxh));
@@ -212,8 +219,84 @@
         if (comFaixa) faixaAviso(ctx, c.width, c.height, `ATENÇÃO: a arte enviada (${mm(p.w)} × ${mm(p.h)} mm) não está no tamanho pedido (${mm(a.fw)} × ${mm(a.fh)} mm)`);
       }
     }
+    return c;
+  }
+  // Prova do cliente: área final + faca + brilho do verniz + legenda + marca d'água
+  // extra = { faca: {p, an}, verniz: {p, an}, espelharFaca }
+  async function desenharProva(p, a, comFaixa, extra, lado) {
+    const c = await areaFinal(p, a, comFaixa, lado);
+    const leg = [];
+    if (extra && extra.verniz) { aplicarBrilho(c, mascaraVerniz(await areaFinal(extra.verniz.p, extra.verniz.an, false, lado))); leg.push('✦ brilho = verniz localizado'); }
+    if (extra && extra.faca) { aplicarFaca(c, linhaFaca(await areaFinal(extra.faca.p, extra.faca.an, false, lado)), extra.espelharFaca); leg.push('linha magenta = corte (faca)'); }
+    if (leg.length) legenda(c, leg);
     await marcaDagua(c);
     return c;
+  }
+  // Máscara de verniz para ir no PDF (sem marca d'água: a página do cliente usa para animar o brilho)
+  async function desenharMascara(p, a, lado) {
+    const c = await areaFinal(p, a, false, lado);
+    const m = mascaraVerniz(c), out = document.createElement('canvas');
+    out.width = c.width; out.height = c.height;
+    const ctx = out.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(pintar(m, '#000'), 0, 0);
+    return out;
+  }
+  // Pixels escuros da máscara (preto K100) viram área opaca
+  function mascaraVerniz(c) {
+    const W = c.width, H = c.height, src = c.getContext('2d').getImageData(0, 0, W, H).data;
+    const m = document.createElement('canvas'); m.width = W; m.height = H;
+    const mc = m.getContext('2d'), out = mc.createImageData(W, H), d = out.data;
+    for (let i = 0; i < src.length; i += 4) {
+      const lum = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
+      if (lum < 110) { d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+    }
+    mc.putImageData(out, 0, 0); return m;
+  }
+  // Linha da faca: pixels magenta ou pretos da página da faca
+  function linhaFaca(c) {
+    const W = c.width, H = c.height, src = c.getContext('2d').getImageData(0, 0, W, H).data;
+    const m = document.createElement('canvas'); m.width = W; m.height = H;
+    const mc = m.getContext('2d'), out = mc.createImageData(W, H), d = out.data;
+    for (let i = 0; i < src.length; i += 4) {
+      const r = src[i], g = src[i + 1], b = src[i + 2];
+      const magenta = r > 140 && g < 120 && b > 80 && r - g > 70;
+      const preto = r < 90 && g < 90 && b < 90;
+      if (magenta || preto) { d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+    }
+    mc.putImageData(out, 0, 0); return m;
+  }
+  function pintar(m, cor) {
+    const t = document.createElement('canvas'); t.width = m.width; t.height = m.height;
+    const tc = t.getContext('2d'); tc.drawImage(m, 0, 0);
+    tc.globalCompositeOperation = 'source-in'; tc.fillStyle = cor; tc.fillRect(0, 0, t.width, t.height);
+    return t;
+  }
+  function aplicarBrilho(c, m) {
+    const W = c.width, H = c.height, g = document.createElement('canvas'); g.width = W; g.height = H;
+    const gc = g.getContext('2d'), lg = gc.createLinearGradient(0, 0, W, H);
+    lg.addColorStop(0, 'rgba(255,255,255,.18)'); lg.addColorStop(0.35, 'rgba(255,255,255,.75)');
+    lg.addColorStop(0.5, 'rgba(255,255,255,.25)'); lg.addColorStop(0.7, 'rgba(255,255,255,.7)'); lg.addColorStop(1, 'rgba(255,255,255,.2)');
+    gc.fillStyle = lg; gc.fillRect(0, 0, W, H);
+    gc.globalCompositeOperation = 'destination-in'; gc.drawImage(m, 0, 0);
+    const ctx = c.getContext('2d'); ctx.save(); ctx.globalAlpha = 0.6; ctx.drawImage(g, 0, 0); ctx.restore();
+  }
+  function aplicarFaca(c, m, espelhar) {
+    const ctx = c.getContext('2d'), t = Math.max(1, Math.round(Math.max(c.width, c.height) / 500));
+    const branco = pintar(m, '#fff'), mag = pintar(m, '#E6007E');
+    ctx.save();
+    if (espelhar) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    for (let dx = -t - 1; dx <= t + 1; dx++) for (let dy = -t - 1; dy <= t + 1; dy++) ctx.drawImage(branco, dx, dy);
+    for (let dx = -t; dx <= t; dx++) for (let dy = -t; dy <= t; dy++) ctx.drawImage(mag, dx, dy);
+    ctx.restore();
+  }
+  function legenda(c, linhas) {
+    const ctx = c.getContext('2d'), fs = Math.max(11, Math.round(Math.min(c.width, c.height) * 0.04)), pad = Math.round(fs * 0.5);
+    ctx.save(); ctx.font = `600 ${fs}px Arial, sans-serif`;
+    const w = Math.max(...linhas.map(l => ctx.measureText(l).width)) + pad * 2, h = linhas.length * fs * 1.3 + pad;
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(pad, c.height - h - pad, w, h);
+    ctx.fillStyle = '#132A32'; ctx.textBaseline = 'top';
+    linhas.forEach((l, i) => ctx.fillText(l, pad * 2, c.height - h - pad + pad / 2 + i * fs * 1.3));
+    ctx.restore();
   }
   function faixaAviso(ctx, W, H, texto) {
     const h = Math.max(Math.round(H * 0.08), 30);
@@ -265,6 +348,9 @@
     if (gm && !gm.medidas_pendentes && !gm.tamanho_livre) g = { modo: 'fixo', w: +gm.corte_largura_mm, h: +gm.corte_altura_mm, s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
     else if (gm && !gm.medidas_pendentes && gm.tamanho_livre) g = { modo: 'livre', s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
     else g = { modo: 'arquivo', s: 0, seg: 3, faca: false };
+    // ordem das páginas do gabarito (frente, verso, verniz_frente, verniz_verso, hot_stamping, metalizado, calco_branco, faca)
+    g.ordem = (gm && Array.isArray(gm.paginas_ordem) && gm.paginas_ordem.length) ? gm.paginas_ordem : null;
+    if (g.ordem && g.ordem.includes('faca')) g.faca = true;
     const nomeGab = u.gabarito_nome ? `${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}` : '';
     const linhaGab = g.modo === 'fixo'
       ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
@@ -325,26 +411,27 @@
       catch (e) { toast(e.message || 'Não foi possível ler o arquivo.', true); paginas = []; }
       drop.innerHTML = 'Trocar arquivos: arraste aqui ou clique.';
       drop.appendChild(inp);
-      // sugestão: 1ª página = frente, 2ª = verso; as demais (inclusive a faca) entram como outras páginas da prova
+      // sugestão: pela ordem do gabarito (frente, verso, máscaras…); com faca, a última página é a faca
       const ehFaca = i => g.faca && paginas.length > 1 && i === paginas.length - 1;
       const usaveis = paginas.filter((p, i) => !ehFaca(i));
-      if (usaveis[0]) usaveis[0].papel = 'frente';
-      if (usaveis[1]) usaveis[1].papel = 'verso';
+      const ordem = (g.ordem || ['frente', 'verso']).filter(x => x !== 'faca');
+      const PAPEL_DA_ORDEM = { frente: 'frente', verso: 'verso', verniz_frente: 'verniz_frente', verniz_verso: 'verniz_verso' };
+      usaveis.forEach((p, i) => { p.papel = PAPEL_DA_ORDEM[ordem[i]] || 'extra'; });
+      paginas.forEach((p, i) => { if (ehFaca(i)) p.papel = 'faca'; });
       paginas.forEach(p => { if (!p.papel) p.papel = 'extra'; });
       const box = $m('#mt-pags'); box.innerHTML = '';
       for (const [i, p] of paginas.entries()) {
         const d = document.createElement('div'); d.className = 'mt-pag';
         const th = await rasterizar(p, p.fonte === 'pdf' ? 140 / Math.max(p.w, p.h) : 1);
-        const faca = g.faca && paginas.length > 1 && i === paginas.length - 1;
         d.innerHTML = `<div title="${esc(p.nome)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.nome)}</div>`;
         d.appendChild(th);
-        d.insertAdjacentHTML('beforeend', `<div class="muted">${p.w ? `${mm(p.w)} × ${mm(p.h)} mm` : `${p.pxw} × ${p.pxh} px`}${faca ? ' · faca' : ''}</div>
-          <select data-i="${i}"><option value="">Não usar</option><option value="frente" ${p.papel === 'frente' ? 'selected' : ''}>Frente</option><option value="verso" ${p.papel === 'verso' ? 'selected' : ''}>Verso</option><option value="extra" ${p.papel === 'extra' ? 'selected' : ''}>Outra página (ex.: faca)</option></select>`);
+        d.insertAdjacentHTML('beforeend', `<div class="muted">${p.w ? `${mm(p.w)} × ${mm(p.h)} mm` : `${p.pxw} × ${p.pxh} px`}</div>
+          <select data-i="${i}">${PAPEIS.map(([v, n]) => `<option value="${v}" ${p.papel === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`);
         box.appendChild(d);
       }
       box.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => {
         const p = paginas[+s.dataset.i];
-        if (s.value && s.value !== 'extra') paginas.forEach((o, j) => { if (j !== +s.dataset.i && o.papel === s.value) { o.papel = ''; const x = box.querySelector(`select[data-i="${j}"]`); if (x) x.value = ''; } });
+        if (s.value && UNICOS.includes(s.value)) paginas.forEach((o, j) => { if (j !== +s.dataset.i && o.papel === s.value) { o.papel = ''; const x = box.querySelector(`select[data-i="${j}"]`); if (x) x.value = ''; } });
         p.papel = s.value; montar();
       });
       montar();
@@ -359,10 +446,18 @@
       return { modo: 'arquivo', s: 0, seg: 3 };
     }
 
+    // faca e verniz para a frente ou o verso
+    function extrasDe(lado) {
+      const pFaca = paginas.find(p => p.papel === 'faca'), pV = paginas.find(p => p.papel === (lado === 'frente' ? 'verniz_frente' : 'verniz_verso'));
+      const an = lado === 'frente' ? analise.vf : analise.vv;
+      return { faca: pFaca && analise.faca ? { p: pFaca, an: analise.faca } : null, espelharFaca: lado === 'verso',
+               verniz: pV && an ? { p: pV, an } : null };
+    }
     async function montar() {
       const res = $m('#mt-res'), bt = $m('[data-enviar]') || document.createElement('button');
       const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
       const extras = paginas.filter(p => p.papel === 'extra');
+      const pFaca = paginas.find(p => p.papel === 'faca'), pVF = paginas.find(p => p.papel === 'verniz_frente'), pVV = paginas.find(p => p.papel === 'verniz_verso');
       bt.disabled = true; analise = {};
       if (!fr) { res.innerHTML = paginas.length ? '<p class="small muted" style="margin-top:10px">Escolha qual página é a frente.</p>' : ''; return; }
       res.innerHTML = '<p class="small muted" style="margin-top:10px">Montando…</p>';
@@ -370,6 +465,10 @@
       try {
         analise.frente = analisar(fr, ge); if (ve) analise.verso = analisar(ve, ge);
         analise.extras = extras.map(p => analisar(p, ge));
+        if (pFaca) analise.faca = analisar(pFaca, ge);
+        if (pVF) analise.vf = analisar(pVF, ge);
+        if (pVV) analise.vv = analisar(pVV, ge);
+        const especiais = [pFaca && 'faca', (pVF || pVV) && 'verniz'].filter(Boolean);
         const confF = await desenharConferencia(fr, analise.frente), confV = ve ? await desenharConferencia(ve, analise.verso) : null;
         const avisos = [...analise.frente.avisos.map(x => ({ ...x, txt: (ve ? 'Frente: ' : '') + x.txt })), ...(ve ? analise.verso.avisos.map(x => ({ ...x, txt: 'Verso: ' + x.txt })) : [])];
         const fw = analise.frente.fw, fh = analise.frente.fh;
@@ -383,9 +482,18 @@
             ${tamErrado && !teste ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
           </div>
           ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}
-          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}.</p>`}`;
+          ${especiais.length ? `<div class="mt-conf mt-cliente"><figure><figcaption>Frente — como o cliente vai ver</figcaption></figure>${ve ? '<figure><figcaption>Verso — como o cliente vai ver</figcaption></figure>' : ''}</div>
+            <p class="small muted" style="margin:6px 0 0">${pFaca ? 'Linha magenta = faca (no verso, espelhada). ' : ''}${pVF || pVV ? 'Área com brilho = verniz localizado; no link o brilho fica animado.' : ''}</p>` : ''}
+          ${(g.ordem || []).includes('faca') && !pFaca ? '<div class="mt-av amarelo">Este gabarito tem faca, mas nenhuma página foi marcada como <b>Faca</b>: o cliente não vai ver a linha de corte.</div>' : ''}
+          ${(g.ordem || []).some(x => x.startsWith('verniz')) && !pVF && !pVV ? '<div class="mt-av amarelo">Este gabarito tem verniz, mas nenhuma página foi marcada como <b>Verniz</b>: o cliente não vai ver onde vai o verniz.</div>' : ''}
+          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
         const figs = res.querySelectorAll('.mt-conf figure');
         figs[0].appendChild(confF); if (confV) figs[1].appendChild(confV);
+        if (especiais.length) {
+          const cli = res.querySelectorAll('.mt-cliente figure');
+          cli[0].appendChild(await desenharProva(fr, analise.frente, false, extrasDe('frente'), 700));
+          if (ve && cli[1]) cli[1].appendChild(await desenharProva(ve, analise.verso, false, extrasDe('verso'), 700));
+        }
         bt.disabled = false;
       } catch (e) {
         console.error(e);
@@ -402,9 +510,18 @@
       const bt = $m('[data-enviar]'); enviando = true; bt.disabled = true; bt.textContent = 'Gerando a prova…';
       try {
         const faixa = !!($m('#mt-faixa') && $m('#mt-faixa').checked);
-        const lista = [{ p: fr, an: analise.frente }].concat(ve ? [{ p: ve, an: analise.verso }] : [], extras.map((p, i) => ({ p, an: analise.extras[i] })));
-        const canv = [];
-        for (const x of lista) canv.push({ c: await desenharProva(x.p, x.an, faixa), wmm: x.an.fw, hmm: x.an.fh });
+        const lista = [{ p: fr, an: analise.frente, papel: 'frente' }].concat(ve ? [{ p: ve, an: analise.verso, papel: 'verso' }] : [], extras.map((p, i) => ({ p, an: analise.extras[i], papel: 'extra' })));
+        const canv = [], papeis = [];
+        for (const x of lista) {
+          canv.push({ c: await desenharProva(x.p, x.an, faixa, x.papel === 'extra' ? null : extrasDe(x.papel)), wmm: x.an.fw, hmm: x.an.fh });
+          papeis.push(x.papel);
+        }
+        // máscaras de verniz no fim do PDF (a página do cliente usa para o brilho animado e o 3D)
+        for (const [papel, an] of [['verniz_frente', analise.vf], ['verniz_verso', analise.vv]]) {
+          const pm = paginas.find(p => p.papel === papel);
+          if (pm && an && (papel === 'verniz_frente' || ve)) { canv.push({ c: await desenharMascara(pm, an), wmm: an.fw, hmm: an.fh }); papeis.push(papel); }
+        }
+        const usadas = paginas.filter(p => p.papel);
         const base = String(a.item_descricao || 'arte').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80).trim();
         const pdf = await montarPdf(canv);
         bt.textContent = 'Enviando ao Drive…';
@@ -413,16 +530,16 @@
         // arte pronta para impressão: o(s) arquivo(s) original(is) sobem como arte final, ligados a esta arte
         const producao = [];
         if (final) {
-          const arqs = [...new Set(lista.map(x => x.p.file))];
-          const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', extra: 'Faca' };
+          const arqs = [...new Set(usadas.map(p => p.file))];
+          const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz frente', verniz_verso: 'Verniz verso', extra: 'Outra página' };
           for (const f of arqs) { bt.textContent = `Enviando a arte final: ${f.name}…`;
             // o sistema renomeia para "<material> - <identificação>": a identificação diz o que tem no arquivo
-            const papeis = [...new Set(lista.filter(x => x.p.file === f).map(x => NOME_PAPEL[x.p.papel] || ''))].filter(Boolean);
-            const rot = arqs.length === 1 && papeis.length > 1 ? 'Arte final' : papeis.join(' e ') || 'Arte final';
+            const nomes = [...new Set(usadas.filter(p => p.file === f).map(p => NOME_PAPEL[p.papel] || ''))].filter(Boolean);
+            const rot = arqs.length === 1 && nomes.length > 1 ? 'Arte final' : nomes.join(' e ') || 'Arte final';
             producao.push(await enviarArquivoDrive(a.pedido_id, f, 'producao', a.item_id, rot, null, null, { arte_id: a.id })); }
         }
         const avisos = [...analise.frente.avisos, ...(analise.verso ? analise.verso.avisos : []), ...analise.extras.flatMap(x => x.avisos)].map(x => x.txt);
-        const r = await api('prova_registrar', { arte_id: a.id, frente_id: idP, verso_id: null, formato: 'pdf', paginas: canv.length, tem_verso: !!ve,
+        const r = await api('prova_registrar', { arte_id: a.id, frente_id: idP, verso_id: null, formato: 'pdf', paginas: canv.length, tem_verso: !!ve, papeis,
           modo: ($m('#mt-3d') && $m('#mt-3d').checked) ? '3d' : 'imagem', final, producao_ids: producao,
           largura_mm: analise.frente.fw, altura_mm: analise.frente.fh, avisos });
         r.final = final; r.pdfUrl = URL.createObjectURL(pdf);
