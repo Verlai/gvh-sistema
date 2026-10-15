@@ -2700,6 +2700,14 @@ async function paginaPublicaProva(chave) {
       #pub .chk input { width: 18px; height: 18px; margin-top: 2px; accent-color: #00a986; }
       #pub .bt.alt { background: #fff; color: #c0453b; border: 1px solid #e8b4ae; }
       #pub details.vista3d > summary { cursor: pointer; color: #00795f; font-size: 13.5px; font-weight: 600; margin-top: 10px; }
+      #pub .brilho-wrap { position: relative; }
+      #pub .brilho { position: absolute; inset: 0; pointer-events: none; border-radius: 8px;
+        background: linear-gradient(115deg, rgba(255,255,255,0) 35%, rgba(255,255,255,.95) 48%, rgba(255,255,255,.35) 53%, rgba(255,255,255,0) 62%);
+        background-size: 300% 100%; animation: pubbrilho 2.6s ease-in-out infinite;
+        -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+      @keyframes pubbrilho { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+      @media (prefers-reduced-motion: reduce) { #pub .brilho { animation: none; background: rgba(255,255,255,.45); } }
+      #pub .leg-brilho { font-size: 12px; color: #5a6770; margin-top: 4px; }
       #pub .palco3d { width: 100%; height: 340px; border-radius: 10px; overflow: hidden; background: #1d262d; margin-top: 8px; touch-action: none; }`;
     document.head.appendChild(st);
   }
@@ -2715,7 +2723,7 @@ async function paginaPublicaProva(chave) {
           <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${x.situacao}">${SIT[x.situacao] || x.situacao}</span></div>
           <div style="font-size:12px;color:#8a959c">Versão ${x.versao}${tam(x) ? ' · tamanho final ' + tam(x) : ''}</div></div>
         ${(() => { const imgs = x.formato === 'pdf'
-             ? `<div class="imgs" data-pdf="${x.prova_id}" data-verso="${x.tem_verso ? 1 : 0}"><div class="carregando">carregando a prova…</div></div>`
+             ? `<div class="imgs" data-pdf="${x.prova_id}" data-verso="${x.tem_verso ? 1 : 0}" data-papeis="${esc(JSON.stringify(x.papeis || null))}"><div class="carregando">carregando a prova…</div></div>`
              : `<div class="imgs">${['frente'].concat(x.tem_verso ? ['verso'] : []).map(l => `<figure><figcaption>${x.tem_verso ? l : 'arte'}</figcaption><div class="carregando" data-img="${x.prova_id}|${l}">carregando a prova…</div></figure>`).join('')}</div>`;
            return x.situacao === 'aguardando' ? imgs : `<details class="vista3d"><summary>Ver a arte</summary>${imgs}</details>`; })()}
         ${x.modo === '3d' && x.tem_verso && x.situacao === 'aguardando' ? `<details class="vista3d" data-3d="${x.prova_id}"><summary>Ver em 3D (girar frente e verso)</summary><div class="palco3d"></div></details>` : ''}
@@ -2764,6 +2772,21 @@ async function paginaPublicaProva(chave) {
           const pags = await paginasProvaPdf(chave, box.dataset.pdf, imagens);
           if (!box.isConnected) continue;
           const verso = box.dataset.verso === '1';
+          let papeis = null; try { papeis = JSON.parse(box.dataset.papeis || 'null'); } catch (e) {}
+          if (Array.isArray(papeis) && papeis.length === pags.length) {
+            // prova com papéis (15/10): as máscaras de verniz não aparecem como página; viram brilho animado sobre a frente/verso
+            const vis = papeis.map((r, i) => [r, i]).filter(([r]) => !String(r).startsWith('verniz'));
+            box.innerHTML = vis.map(([r, i]) => {
+              const cap = vis.length === 1 ? 'arte' : r === 'frente' ? (verso ? 'frente' : 'arte') : r === 'verso' ? 'verso' : 'página ' + (i + 1);
+              const m = r === 'frente' ? papeis.indexOf('verniz_frente') : r === 'verso' ? papeis.indexOf('verniz_verso') : -1;
+              return `<figure><figcaption>${cap}</figcaption><div class="brilho-wrap"><img alt="Prova ${cap}" src="${pags[i]}">${m >= 0 ? `<div class="brilho" data-mask="${m}"></div>` : ''}</div>
+                ${m >= 0 ? '<div class="leg-brilho">✦ O brilho mostra onde vai o verniz localizado.</div>' : ''}</figure>`;
+            }).join('');
+            for (const b of box.querySelectorAll('[data-mask]')) {
+              const url = await mascaraAlfa(pags[+b.dataset.mask], imagens);
+              b.style.webkitMaskImage = b.style.maskImage = `url(${url})`;
+            }
+          } else
           box.innerHTML = pags.map((src, i) => `<figure><figcaption>${pags.length === 1 ? 'arte' : i === 0 ? (verso ? 'frente' : 'página 1') : (i === 1 && verso ? 'verso' : 'página ' + (i + 1))}</figcaption><img alt="Prova página ${i + 1}" src="${src}"></figure>`).join('');
         } catch (e) { if (box.isConnected) box.innerHTML = '<div class="carregando">Não foi possível abrir a prova. Atualize a página.</div>'; }
       }
@@ -2809,6 +2832,20 @@ function carregarPdfJsPub() {
     document.head.appendChild(sc);
   }));
 }
+async function mascaraAlfa(src, cache) {
+  const k = 'alfa|' + src.length + '|' + src.slice(-40);
+  if (cache[k]) return cache[k];
+  const img = await new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = falha; i.src = src; });
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    px[i] = px[i + 1] = px[i + 2] = 255; px[i + 3] = lum < 128 ? 255 : 0;
+  }
+  ctx.putImageData(d, 0, 0);
+  return (cache[k] = c.toDataURL('image/png'));
+}
 async function paginasProvaPdf(chave, pid, cache) {
   if (cache[pid + '|pdf']) return cache[pid + '|pdf'];
   const uri = (await api('prova_publica_imagem', { chave, prova_id: pid, lado: 'frente' }, true)).imagem;
@@ -2831,7 +2868,18 @@ async function vista3dProva(palco, chave, pid, imagens) {
     if (!window.THREE) await new Promise((ok, falha) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js'; s.onload = ok; s.onerror = falha; document.head.appendChild(s); });
     const pega = async lado => imagens[pid + '|' + lado] || (imagens[pid + '|' + lado] = (await api('prova_publica_imagem', { chave, prova_id: pid, lado }, true)).imagem);
     let srcF, srcV;
-    if (palco.closest('.arte') && palco.closest('.arte').querySelector('[data-pdf]')) { const pg = await paginasProvaPdf(chave, pid, imagens); srcF = pg[0]; srcV = pg[1] || pg[0]; }
+    let srcVF = null, srcVV = null;
+    const boxPdf = palco.closest('.arte') && palco.closest('.arte').querySelector('[data-pdf]');
+    if (boxPdf) {
+      const pg = await paginasProvaPdf(chave, pid, imagens);
+      let pp = null; try { pp = JSON.parse(boxPdf.dataset.papeis || 'null'); } catch (e) {}
+      if (Array.isArray(pp) && pp.length === pg.length) {
+        const ix = r => pp.indexOf(r);
+        srcF = pg[Math.max(0, ix('frente'))]; srcV = ix('verso') >= 0 ? pg[ix('verso')] : srcF;
+        if (ix('verniz_frente') >= 0) srcVF = pg[ix('verniz_frente')];
+        if (ix('verniz_verso') >= 0) srcVV = pg[ix('verniz_verso')];
+      } else { srcF = pg[0]; srcV = pg[1] || pg[0]; }
+    }
     else [srcF, srcV] = await Promise.all([pega('frente'), pega('verso')]);
     palco.innerHTML = '';
     const T = window.THREE, W = palco.clientWidth, H = palco.clientHeight;
@@ -2842,11 +2890,14 @@ async function vista3dProva(palco, chave, pid, imagens) {
     const l1 = new T.DirectionalLight(0xffffff, 0.6); l1.position.set(2, 3, 4); cena.add(l1);
     const l2 = new T.DirectionalLight(0xffffff, 0.3); l2.position.set(-3, -2, -3); cena.add(l2);
     const tex = src => new Promise(ok => new T.TextureLoader().load(src, ok, undefined, () => ok(null)));
-    const [tf, tv] = await Promise.all([tex(srcF), tex(srcV)]);
+    const [tf, tv, rf, rv] = await Promise.all([tex(srcF), tex(srcV), srcVF ? tex(srcVF) : null, srcVV ? tex(srcVV) : null]);
     const asp = tf && tf.image ? tf.image.width / tf.image.height : 1.8;
     const larg = asp >= 1 ? 2.2 : 2.2 * asp, alt = larg / asp;
     const borda = new T.MeshStandardMaterial({ color: 0xe7edef, roughness: 0.6 });
-    const mF = new T.MeshStandardMaterial({ map: tf, roughness: 0.35 }), mV = new T.MeshStandardMaterial({ map: tv || tf, roughness: 0.35 });
+    // verniz: a máscara (preto = verniz) vira mapa de aspereza — o preto fica liso e reflete a luz quando o cartão gira
+    const mF = new T.MeshStandardMaterial(rf ? { map: tf, roughness: 0.85, roughnessMap: rf } : { map: tf, roughness: 0.35 }),
+          mV = new T.MeshStandardMaterial(rv ? { map: tv || tf, roughness: 0.85, roughnessMap: rv } : { map: tv || tf, roughness: 0.35 });
+    if (rf || rv) { const luz = new T.PointLight(0xffffff, 0.5, 12); luz.position.set(1.2, 1.5, 3); cena.add(luz); }
     const peca = new T.Mesh(new T.BoxGeometry(larg, alt, 0.035), [borda, borda, borda, borda, mF, mV]); cena.add(peca);
     let ry = -0.35, rx = 0.12, arr = false, auto = true, ux = 0, uy = 0;
     rend.domElement.addEventListener('pointerdown', e => { arr = true; auto = false; ux = e.clientX; uy = e.clientY; });
@@ -3360,7 +3411,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261014c';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261015a';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
