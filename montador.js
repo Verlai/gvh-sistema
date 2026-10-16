@@ -10,6 +10,9 @@
    (15/10) Páginas com papel: Faca (a linha de corte aparece sobre a frente e, espelhada, sobre o verso) e
    Verniz da frente/verso (a área do verniz aparece com brilho). As máscaras de verniz vão no fim do PDF da prova
    e os papéis de cada página ficam gravados na prova, para a página do cliente animar o brilho e o 3D refletir.
+   (16/10) Linhas de dobra (gabaritos.dobras): tracejado azul na conferência e na prova do cliente, frente e verso
+   com as posições de cada lado. Gabaritos com aceita_girar (folheto sem dobra) aceitam a arte deitada ou em pé;
+   frente e verso em sentidos diferentes geram aviso de "pé com pé".
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
@@ -125,6 +128,14 @@
         av.push({ nivel: 'amarelo', txt: `Arquivo sem sangria: veio no tamanho final (${mm(W)} × ${mm(H)} mm). Falta ${mm(s)} mm de cada lado.` });
         return { fw: W, fh: H, s: 0, seg: g.seg, encaixe: 'corte', avisos: av };
       }
+      if (g.gira && perto(p.w, H + 2 * s) && perto(p.h, W + 2 * s)) {
+        av.push({ nivel: 'verde', txt: `Arte ${H > W ? 'deitada' : 'em pé'} (${mm(H)} × ${mm(W)} mm): este material aceita os dois sentidos.` });
+        return { fw: H, fh: W, s, seg: g.seg, encaixe: 'corte', avisos: av, girada: true };
+      }
+      if (g.gira && s > 0 && perto(p.w, H) && perto(p.h, W)) {
+        av.push({ nivel: 'amarelo', txt: `Arquivo sem sangria: veio no tamanho final (${mm(H)} × ${mm(W)} mm). Falta ${mm(s)} mm de cada lado.` });
+        return { fw: H, fh: W, s: 0, seg: g.seg, encaixe: 'corte', avisos: av, girada: true };
+      }
       if ((perto(p.w, H + 2 * s) && perto(p.h, W + 2 * s)) || (perto(p.w, H) && perto(p.h, W))) {
         av.push({ nivel: 'vermelho', txt: `A arte está girada em relação ao gabarito (veio ${mm(p.w)} × ${mm(p.h)} mm; o gabarito é ${mm(W)} × ${mm(H)} mm).` });
       } else {
@@ -157,6 +168,7 @@
       const w = base.width * esc_, h = base.height * esc_;
       ctx.drawImage(base, (c.width - w) / 2, (c.height - h) / 2, w, h);
       linhas(ctx, k, 0, a.seg, c.width, c.height);
+      linhasDobra(ctx, k, 0, a.dob, c.width, c.height);
       return c;
     }
     if (a.encaixe === 'cobrir') {
@@ -164,6 +176,7 @@
       c.width = Math.round(a.fw * k); c.height = Math.round(a.fh * k);
       cobrir(c.getContext('2d'), base, c.width, c.height);
       linhas(c.getContext('2d'), k, 0, a.seg, c.width, c.height);
+      linhasDobra(c.getContext('2d'), k, 0, a.dob, c.width, c.height);
       return c;
     }
     c.width = base.width; c.height = base.height;
@@ -171,7 +184,21 @@
     if (a.encaixe === 'inteiro') return c;
     const k = base.width / p.w;
     linhas(ctx, k, a.s, a.seg, c.width, c.height);
+    linhasDobra(ctx, k, a.s, a.dob, c.width, c.height);
     return c;
+  }
+  // Linhas de dobra: posições em mm a partir do corte (esquerda / topo), tracejado azul com contorno branco
+  function linhasDobra(ctx, k, s, dob, W, H) {
+    if (!dob || (!(dob.v || []).length && !(dob.h || []).length)) return;
+    const lw = Math.max(1.5, Math.max(W, H) / 450), o = s * k;
+    ctx.save(); ctx.setLineDash([lw * 5, lw * 3]);
+    for (const [cor, larg] of [['rgba(255,255,255,.9)', lw * 2.6], ['#0096D6', lw]]) {
+      ctx.strokeStyle = cor; ctx.lineWidth = larg; ctx.beginPath();
+      for (const x of dob.v || []) { ctx.moveTo(o + x * k, 0); ctx.lineTo(o + x * k, H); }
+      for (const y of dob.h || []) { ctx.moveTo(0, o + y * k); ctx.lineTo(W, o + y * k); }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   function linhas(ctx, k, s, seg, W, H) {
     const lw = Math.max(1.5, W / 400);
@@ -228,6 +255,9 @@
     const leg = [];
     if (extra && extra.verniz) { aplicarBrilho(c, mascaraVerniz(await areaFinal(extra.verniz.p, extra.verniz.an, false, lado))); leg.push('✦ brilho = verniz localizado'); }
     if (extra && extra.faca) { aplicarFaca(c, linhaFaca(await areaFinal(extra.faca.p, extra.faca.an, false, lado)), extra.espelharFaca); leg.push('linha magenta = corte (faca)'); }
+    if (a.dob && a.fw && a.encaixe !== 'inteiro' && ((a.dob.v || []).length || (a.dob.h || []).length)) {
+      linhasDobra(c.getContext('2d'), c.width / a.fw, 0, a.dob, c.width, c.height); leg.push('tracejado azul = dobra');
+    }
     if (leg.length) legenda(c, leg);
     await marcaDagua(c);
     return c;
@@ -351,6 +381,8 @@
     // ordem das páginas do gabarito (frente, verso, verniz_frente, verniz_verso, hot_stamping, metalizado, calco_branco, faca)
     g.ordem = (gm && Array.isArray(gm.paginas_ordem) && gm.paginas_ordem.length) ? gm.paginas_ordem : null;
     if (g.ordem && g.ordem.includes('faca')) g.faca = true;
+    g.dobras = (gm && gm.dobras && typeof gm.dobras === 'object') ? gm.dobras : null;
+    g.gira = !!(gm && gm.aceita_girar);
     const nomeGab = u.gabarito_nome ? `${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}` : '';
     const linhaGab = g.modo === 'fixo'
       ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
@@ -464,18 +496,27 @@
       const ge = gabaritoEfetivo();
       try {
         analise.frente = analisar(fr, ge); if (ve) analise.verso = analisar(ve, ge);
+        // linhas de dobra de cada lado (só com a arte no sentido do gabarito)
+        if (ge.dobras) {
+          if (!analise.frente.girada && !analise.frente.tamanhoErrado) analise.frente.dob = ge.dobras.frente || null;
+          if (ve && !analise.verso.girada && !analise.verso.tamanhoErrado) analise.verso.dob = ge.dobras.verso || ge.dobras.frente || null;
+        }
+        // pé com pé: frente e verso no mesmo sentido
+        if (ge.gira && ve && analise.frente.fw && analise.verso.fw && (analise.frente.fw > analise.frente.fh) !== (analise.verso.fw > analise.verso.fh)) {
+          analise.verso.avisos.push({ nivel: 'amarelo', txt: 'Frente e verso em sentidos diferentes (um em pé, outro deitado). A arte deve ir "pé com pé": confira o tombo antes de imprimir.' });
+        }
         analise.extras = extras.map(p => analisar(p, ge));
         if (pFaca) analise.faca = analisar(pFaca, ge);
         if (pVF) analise.vf = analisar(pVF, ge);
         if (pVV) analise.vv = analisar(pVV, ge);
-        const especiais = [pFaca && 'faca', (pVF || pVV) && 'verniz'].filter(Boolean);
+        const especiais = [pFaca && 'faca', (pVF || pVV) && 'verniz', (analise.frente.dob || (analise.verso && analise.verso.dob)) && 'dobra'].filter(Boolean);
         const confF = await desenharConferencia(fr, analise.frente), confV = ve ? await desenharConferencia(ve, analise.verso) : null;
         const avisos = [...analise.frente.avisos.map(x => ({ ...x, txt: (ve ? 'Frente: ' : '') + x.txt })), ...(ve ? analise.verso.avisos.map(x => ({ ...x, txt: 'Verso: ' + x.txt })) : [])];
         const fw = analise.frente.fw, fh = analise.frente.fh;
         const tamErrado = analise.frente.tamanhoErrado || (analise.verso && analise.verso.tamanhoErrado);
         res.innerHTML = `
           <div class="mt-conf"><figure><figcaption>Frente — conferência da equipe</figcaption></figure>${ve ? '<figure><figcaption>Verso — conferência da equipe</figcaption></figure>' : ''}</div>
-          <p class="small muted" style="margin:6px 0 0">Vermelho tracejado = corte · área sombreada = sangria · verde = margem de segurança. <b>Essas linhas não vão para o cliente.</b></p>
+          <p class="small muted" style="margin:6px 0 0">Vermelho tracejado = corte · área sombreada = sangria · verde = margem de segurança${ge.dobras ? ' · azul tracejado = dobra (esta vai também para o cliente)' : ''}. <b>Corte, sangria e segurança não vão para o cliente.</b></p>
           ${avisos.length ? avisos.map(x => `<div class="mt-av ${x.nivel}">${esc(x.txt)}</div>`).join('') : '<div class="mt-av verde">Tamanho confere com o gabarito.</div>'}
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
             ${ve && !teste ? `<label class="check" style="margin:0"><input type="checkbox" id="mt-3d" ${ehCartao ? 'checked' : ''}> Mostrar ao cliente em 3D (gira frente e verso)</label>` : ''}
@@ -483,7 +524,7 @@
           </div>
           ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}
           ${especiais.length ? `<div class="mt-conf mt-cliente"><figure><figcaption>Frente — como o cliente vai ver</figcaption></figure>${ve ? '<figure><figcaption>Verso — como o cliente vai ver</figcaption></figure>' : ''}</div>
-            <p class="small muted" style="margin:6px 0 0">${pFaca ? 'Linha magenta = faca (no verso, espelhada). ' : ''}${pVF || pVV ? 'Área com brilho = verniz localizado; no link o brilho fica animado.' : ''}</p>` : ''}
+            <p class="small muted" style="margin:6px 0 0">${pFaca ? 'Linha magenta = faca (no verso, espelhada). ' : ''}${pVF || pVV ? 'Área com brilho = verniz localizado; no link o brilho fica animado. ' : ''}${especiais.includes('dobra') ? 'Tracejado azul = dobra.' : ''}</p>` : ''}
           ${(g.ordem || []).includes('faca') && !pFaca ? '<div class="mt-av amarelo">Este gabarito tem faca, mas nenhuma página foi marcada como <b>Faca</b>: o cliente não vai ver a linha de corte.</div>' : ''}
           ${(g.ordem || []).some(x => x.startsWith('verniz')) && !pVF && !pVV ? '<div class="mt-av amarelo">Este gabarito tem verniz, mas nenhuma página foi marcada como <b>Verniz</b>: o cliente não vai ver onde vai o verniz.</div>' : ''}
           ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
