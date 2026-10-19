@@ -100,6 +100,7 @@ tr.clicavel{cursor:pointer} tr.clicavel:hover td{background:#fafbfb}
 .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.7}
 .b-cinza{background:#eef1f2;color:#56626a}
 .b-azul{background:var(--azul-bg);color:var(--azul)}
+.b-digital{background:#efe7fb;color:#5b2d9e}
 .b-ambar{background:var(--ambar-bg);color:#9a6410}
 .b-verde{background:var(--verde-bg);color:#007a61}
 .b-escuro{background:var(--grafite);color:#fff}
@@ -863,7 +864,8 @@ rota('pedido', async (id, el) => {
                 ${i.troca_arte_pendente ? `<div style="margin-top:4px">${badge('Troca de arte aguardando a pré-impressão', 'b-ambar')}</div>` : ''}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div>
                 ${i.urgencia && i.status !== 'cancelado' && ordemStatus(i.status) < 8 ? `<div style="margin-top:4px">${badgeUrgencia(i.urgencia)}
-                  ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalUrgenciaItem('${i.id}')">${urgenteProducao(i.urgencia) ? 'Urgência' : 'Subir urgência'}</button>` : ''}</div>` : ''}</td>
+                  ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalUrgenciaItem('${i.id}')">${urgenteProducao(i.urgencia) ? 'Urgência' : 'Subir urgência'}</button>
+                  <button class="btn link peq" onclick="modalDigitalItem('${i.id}')">Digital</button>` : ''}</div>` : ''}</td>
             <td class="small">${veFornecedor() ? (i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">Sem fornecedor</span>') : ''}
                 ${i.codigo_producao ? `<div>Cód. fornecedor ${esc(i.codigo_producao)}</div>` : ''}
                 ${i.prazo_producao ? `<div style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">Prev. produção ${data(i.prazo_producao)}</div>` : ''}</td>
@@ -2045,7 +2047,16 @@ function materialPorDescricao(t) {
   return c ? gruposGabarito().find(g => g.id === c.gabarito_grupo_id) || null : null;
 }
 const textoMaterialSugerido = t => { const g = materialPorDescricao(t); return g ? `Gabarito: <b>${esc(g.nome)}</b> <span class="muted">(sugerido; dá para trocar no pedido)</span>` : ''; };
-function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
+// Selo Digital no lançamento do item (pedido): sugerido pela conferência; o vendedor pode marcar ou desmarcar
+function htmlDigitalEditor(it, k) {
+  const regra = !!(it._conf && it._conf.digital && it._conf.digital.digital);
+  const marcado = it.digital_manual != null ? it.digital_manual : regra;
+  if (!marcado && !regra && it.digital_manual == null && !(it.descricao || '').trim()) return '';
+  return `<label class="check" style="margin:4px 0 0;display:inline-flex;gap:6px;align-items:center" title="Máquina digital (Konica): quantidades pequenas e mesmo dia">
+      <input type="checkbox" data-digk="${k}" ${marcado ? 'checked' : ''}> <span class="badge ${marcado ? 'b-digital' : 'b-cinza'}">Digital</span></label>
+    <span class="muted">${it.digital_manual != null ? (it.digital_manual ? 'marcado por você' : 'desmarcado por você') : regra ? esc(it._conf.digital.motivo || 'pela regra') : 'muito urgente também vai sozinho'}</span>`;
+}
+function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigital = false } = {}) {
   if (!S.cache.gabaritos) carregarGabaritos().then(() => itens.forEach((it, k) => { const b = $(`[data-mat="${k}"]`, alvo); if (b) b.innerHTML = textoMaterialSugerido(it.descricao); })).catch(() => {});
   const novo = () => ({ quantidade: 1, valor_total: '', status: 'arte_a_fazer' });
   let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x, _catManual: true })) : [novo()];
@@ -2057,7 +2068,8 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
         <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><input type="text" list="dl-sugestoes" autocomplete="off" placeholder="Digite ou escolha: Folheto 10x14…" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"><div class="small muted" data-mat="${k}">${it._conf ? htmlConferencia(it._conf, it.descricao) : textoMaterialSugerido(it.descricao)}</div></td>
+        <td><input type="text" list="dl-sugestoes" autocomplete="off" placeholder="Digite ou escolha: Folheto 10x14…" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"><div class="small muted" data-mat="${k}">${it._conf ? htmlConferencia(it._conf, it.descricao) : textoMaterialSugerido(it.descricao)}</div>
+          ${comDigital ? `<div class="small" data-dig="${k}">${htmlDigitalEditor(it, k)}</div>` : ''}</td>
         <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
@@ -2090,6 +2102,7 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
         agendarConferencia(alvo, it._ck, it.descricao, it.quantidade, r => {
           it._conf = r; const j = itens.indexOf(it); const bm = j >= 0 && $(`[data-mat="${j}"]`, alvo);
           if (bm) bm.innerHTML = htmlConferencia(r, it.descricao);
+          desenharDigital(j);
         });
       }
       if (f === 'descricao') {
@@ -2106,13 +2119,24 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar } = {}) {
       aoMudar && aoMudar(itens);
     });
     $$('[data-rm]', alvo).forEach(b => b.onclick = () => { itens.splice(b.dataset.rm, 1); desenhar(); });
+    itens.forEach((_, k) => ligarDigital(k));
     $('#add-item', alvo).onclick = () => { itens.push({ ...novo(), status: itens[itens.length - 1]?.status || 'arte_a_fazer' }); desenhar(); };
     aoMudar && aoMudar(itens);
   };
+  function ligarDigital(k) {
+    const cb = $(`[data-digk="${k}"]`, alvo); if (!cb) return;
+    cb.onchange = () => { const it = itens[k]; const regra = !!(it._conf && it._conf.digital && it._conf.digital.digital);
+      it.digital_manual = cb.checked === regra ? null : cb.checked; desenharDigital(k); };
+  }
+  function desenharDigital(k) {
+    const box = k >= 0 && $(`[data-dig="${k}"]`, alvo); if (!box) return;
+    box.innerHTML = htmlDigitalEditor(itens[k], k); ligarDigital(k);
+  }
   desenhar();
   const usado = i => (i.descricao || '').trim() || i.categoria_id || Number(i.valor_total);
   const pegar = () => itens.filter(usado).map(i => ({ categoria_id: i.categoria_id, descricao: (i.descricao || '').trim(), observacao: i.observacao || '',
-    especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: i.status }));
+    especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: i.status,
+    ...(comDigital && i.digital_manual != null ? { digital_manual: i.digital_manual } : {}) }));
   pegar.definirStatus = v => { comStatus = v; alvo.classList.toggle('ocultar-status', !v); };
   pegar.incompletos = () => itens.filter(usado).filter(i => !(i.descricao || '').trim() || !i.categoria_id
     || !(Number(i.quantidade) > 0) || i.valor_total === '' || i.valor_total == null).length;
@@ -2276,7 +2300,7 @@ rota('novo', async (_p, el) => {
     $('#np-total-pix').textContent = $('#np-orc').checked && $('#np-pix').checked ? `ou ${brl(total() - valorPix(somaItens(), descNP ? descNP.valor() : 0))} no Pix à vista` : '';
     coletarPagamento && coletarPagamento.atualizar();
   };
-  pegarItens = editorItens($('#editor-itens'), rep ? rep.itens : [], { comStatus: true, aoMudar: atualizarTotal });
+  pegarItens = editorItens($('#editor-itens'), rep ? rep.itens : [], { comStatus: true, aoMudar: atualizarTotal, comDigital: true });
   $('#np-frete').oninput = atualizarTotal;
   descNP = ligarDesconto(el, 'np-desc', somaItens, atualizarTotal);
   $('#np-pix').onchange = atualizarTotal;
@@ -3441,7 +3465,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261016a';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261019a';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3816,18 +3840,40 @@ function modalAlteracaoCliente(id, soMaterial) {
 // Fechar a arte = enviar o arquivo para impressão. É aqui que a designer passa a receber pela arte.
 function modalFecharArte(id) {
   const a = (S.vistaAtual?.artes || []).find(x => x.id === id); if (!a) return;
+  // item na digital: o arquivo para impressão é a folha montada (A4 22×32 ou SRA3 32×45); gabarito "cabe na área" (apostila) não precisa
+  const gr = a.urgencia && a.urgencia.gabarito_medidas && a.urgencia.gabarito_medidas.regras;
+  const dig = !!(a.urgencia && a.urgencia.digital && a.urgencia.digital.digital) && !(gr && gr.modo === 'area');
+  let folhaOk = null;
   const m = abrirModal({ titulo: `Arquivo para impressão · ${a.item_descricao}`, corpo: `
     <p class="small muted" style="margin:0">O cliente aprovou a prova. Envie o arquivo final de produção (sem linhas de gabarito). Ao enviar, a arte fica <b>Arquivo pronto para impressão</b> e o vendedor pode mandar o item para a pré-impressão.</p>
     ${a.urgencia && (a.urgencia.gabarito_nome || a.urgencia.grupo_nome) ? `<p class="small" style="margin:8px 0 0"><span class="muted">Gabarito:</span> ${esc(a.urgencia.grupo_nome || '')}${a.urgencia.gabarito_nome ? ' — ' + esc(a.urgencia.gabarito_nome) : ''}</p>` : ''}
-    <label class="campo">Arquivo(s) *<input type="file" id="fa-arq" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
-    <label class="campo">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span><input type="text" id="fa-rot" maxlength="40"></label>
+    ${dig ? `<div class="alerta" style="margin-top:8px"><b>Item na impressão digital</b>${a.urgencia.digital.motivo ? ` (${esc(a.urgencia.digital.motivo)})` : ''}: envie a <b>folha montada</b> em PDF (A4 22 × 32 cm ou SRA3 32 × 45 cm). O sistema confere o tamanho.</div>` : ''}
+    <label class="campo">${dig ? 'Folha montada' : 'Arquivo(s)'} *<input type="file" id="fa-arq" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
+    <div id="fa-folha" class="small"></div>
+    <label class="campo">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span><input type="text" id="fa-rot" maxlength="40" value="${dig ? 'Folha montada' : ''}"></label>
     <div id="fa-status" class="small"></div>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Enviar e fechar a arte</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
+  if (dig) m.el.querySelector('#fa-arq').onchange = async () => {
+    const box = m.el.querySelector('#fa-folha'), arqs = [...m.el.querySelector('#fa-arq').files]; folhaOk = null; box.innerHTML = '';
+    if (!arqs.length || !(await carregarMontador())) return;
+    const linhas = [];
+    folhaOk = true;
+    for (const f of arqs) {
+      let md = null; try { md = await window.medirArquivoMm(f); } catch (e) {}
+      const nome = md && window.folhaDigitalMm(md.w, md.h);
+      if (!nome) folhaOk = false;
+      linhas.push(!md ? `<span style="color:var(--vermelho)">${esc(f.name)}: não é PDF, o tamanho não foi conferido.</span>`
+        : nome ? `<span style="color:#007a61">✓ ${esc(f.name)}: folha ${nome} (${fmtMm(Math.round(md.w))} × ${fmtMm(Math.round(md.h))} mm).</span>`
+        : `<span style="color:var(--vermelho)">${esc(f.name)}: ${fmtMm(Math.round(md.w))} × ${fmtMm(Math.round(md.h))} mm, não é A4 (220 × 320) nem SRA3 (320 × 450).</span>`);
+    }
+    box.innerHTML = linhas.join('<br>');
+  };
   const bs = m.el.querySelector('[data-s]');
   bs.onclick = async () => {
     const arqs = [...m.el.querySelector('#fa-arq').files];
-    if (!arqs.length) return toast('Escolha o arquivo para impressão.', true);
+    if (!arqs.length) return toast(dig ? 'Escolha a folha montada.' : 'Escolha o arquivo para impressão.', true);
+    if (dig && folhaOk === false && !(await confirmar('A folha montada não tem o tamanho da A4 (220 × 320 mm) nem da SRA3 (320 × 450 mm). Enviar mesmo assim?', 'Enviar assim'))) return;
     const st = m.el.querySelector('#fa-status'), rot = m.el.querySelector('#fa-rot').value.trim();
     bs.disabled = true; bs.classList.add('ocupado'); let ok = 0;
     for (const arq of arqs) {
@@ -4144,7 +4190,7 @@ rota('producao', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b>${etqPag(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             <div data-arq-item="${i.id}"></div>
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
@@ -4172,7 +4218,7 @@ rota('producao', async (_p, el) => {
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}${etqPag(i)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${data(i.data_prevista_entrega)}</td>
@@ -4744,13 +4790,19 @@ function textoUrgencia(u) {
     + (u.definitiva ? 'contando da entrada na pré-impressão' : 'provável: contando de hoje até entrar na pré-impressão');
 }
 // Selo da urgência da produção. Prazo normal não mostra nada (para não poluir).
+// Selo "Digital" (19/10): item vai para a máquina digital (Konica) — pela regra do sistema ou marcado pelo vendedor
+function seloDigital(dg) {
+  if (!dg || !dg.digital) return '';
+  const tit = dg.manual === true ? `Marcado pelo vendedor${dg.manual_por_nome ? ' (' + dg.manual_por_nome + ')' : ''}` : (dg.motivo || 'Pela regra do sistema');
+  return ` <span class="badge b-digital" title="${esc('Impressão digital · ' + tit)}">Digital${dg.manual === true ? ' ✋' : ''}</span>`;
+}
 function badgeUrgencia(u, sempre) {
   if (!u || !u.nivel) return '';
-  if (u.nivel === 'normal' && !sempre) return badgeEntregaQuando(u).trim();
+  if (u.nivel === 'normal' && !sempre) return (badgeEntregaQuando(u) + seloDigital(u.digital)).trim();
   const cls = u.nivel === 'muito_urgente' ? 'b-vermelho' : u.nivel === 'urgente' ? 'b-ambar' : 'b-cinza';
   const txt = (URG_NOME[u.nivel] || u.nivel) + (u.nivel === 'normal' ? '' : ' · produção') + (u.definitiva ? '' : ' (provável)');
   const tit = textoUrgencia(u) + (u.manual ? ` · Marcado à mão por ${u.manual_por_nome || '—'}: ${u.manual_motivo || ''}` : '');
-  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>${badgeEntregaQuando(u)}`;
+  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>${badgeEntregaQuando(u)}${seloDigital(u.digital)}`;
 }
 // "Entrega hoje / amanhã / atrasada" pela previsão para o cliente (dias corridos)
 function badgeEntregaQuando(u) {
@@ -4984,6 +5036,31 @@ function modalUrgenciaItem(itemId) {
     const d = formDados($('#f-urg', m.el));
     if (!d.motivo.trim()) return toast('Escreva o motivo da urgência.', true);
     try { await api('item_urgencia', { item_id: itemId, nivel: d.nivel, motivo: d.motivo.trim() }); m.fechar(); toast('Urgência atualizada.'); recarregar(); } catch (e) {}
+  };
+}
+// Selo Digital do item: o vendedor segue a regra do sistema, marca ou desmarca
+function modalDigitalItem(itemId) {
+  const p = S.vistaAtual?.dados;
+  const i = (p?.itens || []).find(x => x.id === itemId); if (!i) return;
+  const dg = (i.urgencia && i.urgencia.digital) || {};
+  const atual = dg.manual === true ? 'sim' : dg.manual === false ? 'nao' : 'regra';
+  const m = abrirModal({ titulo: 'Impressão digital', corpo: `
+    <p style="margin:0 0 6px"><b>${esc(i.descricao)}</b> · ${num(i.quantidade)} un</p>
+    <p class="small muted" style="margin:0 0 12px">A digital (Konica) é para quantidades pequenas e produção no mesmo dia. Pela regra do sistema este item
+      <b>${dg.regra ? 'vai para a digital' : 'não vai para a digital'}</b>${dg.regra && dg.motivo ? ` (${esc(dg.motivo)})` : ''}.
+      Regra: muito urgente, abaixo da tiragem mínima do fornecedor (cartões: 100 un) ou impressão de papelaria.</p>
+    ${dg.manual != null ? `<div class="alerta" style="margin-bottom:12px">${dg.manual ? 'Marcado' : 'Desmarcado'} à mão por ${esc(dg.manual_por_nome || '—')}${dg.manual_em ? ' em ' + dataHora(dg.manual_em) : ''}.</div>` : ''}
+    <div class="campo">
+      <label class="caixa-linha"><input type="radio" name="dig" value="regra" ${atual === 'regra' ? 'checked' : ''}><span><b>Seguir a regra do sistema</b></span></label>
+      <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="dig" value="sim" ${atual === 'sim' ? 'checked' : ''}><span><b>Vai para a digital</b><br><span class="small muted">A designer monta a folha (A4 ou SRA3) no arquivo para impressão.</span></span></label>
+      <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="dig" value="nao" ${atual === 'nao' ? 'checked' : ''}><span><b>Não vai para a digital</b></span></label></div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bs = m.el.querySelector('[data-s]');
+  bs.onclick = async () => {
+    const v = m.el.querySelector('[name=dig]:checked').value;
+    try { await ocupado(bs, () => api('item_digital', { item_id: itemId, digital: v === 'regra' ? null : v === 'sim' }));
+      m.fechar(); toast(v === 'regra' ? 'O selo Digital segue a regra do sistema.' : v === 'sim' ? 'Item marcado para a impressão digital.' : 'Item fora da impressão digital.'); recarregar(); } catch (e) {}
   };
 }
 // Dias de entrega do pedido (padrão: 1 para entrega no endereço, 0 para retirada)
