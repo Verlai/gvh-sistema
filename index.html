@@ -2050,6 +2050,7 @@ const textoMaterialSugerido = t => { const g = materialPorDescricao(t); return g
 // Selo Digital no lançamento do item (pedido): sugerido pela conferência; o vendedor pode marcar ou desmarcar
 function htmlDigitalEditor(it, k) {
   const regra = !!(it._conf && it._conf.digital && it._conf.digital.digital);
+  if (it._conf && it._conf.digital && it._conf.digital.motivo_nao) { it.digital_manual = null; return `<span class="muted">Só offset: não vai para a digital.</span>`; }
   const marcado = it.digital_manual != null ? it.digital_manual : regra;
   if (!marcado && !regra && it.digital_manual == null && !(it.descricao || '').trim()) return '';
   return `<label class="check" style="margin:4px 0 0;display:inline-flex;gap:6px;align-items:center" title="Máquina digital (Konica): quantidades pequenas e mesmo dia">
@@ -4799,10 +4800,11 @@ function seloDigital(dg) {
 function badgeUrgencia(u, sempre) {
   if (!u || !u.nivel) return '';
   if (u.nivel === 'normal' && !sempre) return (badgeEntregaQuando(u) + seloDigital(u.digital)).trim();
+  const prazo = u.aviso_prazo ? ` <span class="badge b-vermelho" title="${esc(u.aviso_prazo)}">Só prazo normal</span>` : '';
   const cls = u.nivel === 'muito_urgente' ? 'b-vermelho' : u.nivel === 'urgente' ? 'b-ambar' : 'b-cinza';
   const txt = (URG_NOME[u.nivel] || u.nivel) + (u.nivel === 'normal' ? '' : ' · produção') + (u.definitiva ? '' : ' (provável)');
   const tit = textoUrgencia(u) + (u.manual ? ` · Marcado à mão por ${u.manual_por_nome || '—'}: ${u.manual_motivo || ''}` : '');
-  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>${badgeEntregaQuando(u)}${seloDigital(u.digital)}`;
+  return `<span class="badge ${cls}" title="${esc(tit)}">${esc(txt)}${u.manual ? ' ✋' : ''}</span>${badgeEntregaQuando(u)}${seloDigital(u.digital)}${prazo}`;
 }
 // "Entrega hoje / amanhã / atrasada" pela previsão para o cliente (dias corridos)
 function badgeEntregaQuando(u) {
