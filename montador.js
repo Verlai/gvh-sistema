@@ -13,6 +13,10 @@
    (16/10) Linhas de dobra (gabaritos.dobras): tracejado azul na conferência e na prova do cliente, frente e verso
    com as posições de cada lado. Gabaritos com aceita_girar (folheto sem dobra) aceitam a arte deitada ou em pé;
    frente e verso em sentidos diferentes geram aviso de "pé com pé".
+   (19/10) Gabarito "cabe na área" (regras.modo = area: impressão digital A4/SRA3 — o arquivo precisa caber na área útil,
+   em pé ou deitado); avisos de tamanho máximo e resolução recomendada no tamanho livre (lona, faixa e banner);
+   item com selo Digital: na arte pronta para impressão, a designer anexa a FOLHA MONTADA (A4 22×32 ou SRA3 32×45),
+   que vai como arquivo de impressão; a prova do cliente continua sendo a peça.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
@@ -117,6 +121,17 @@
   // Devolve { fw, fh (tamanho final em mm), s (sangria no arquivo, mm), seg, encaixe: 'corte'|'conter'|'cobrir'|'inteiro', avisos[] }
   function analisar(p, g) {
     const av = [];
+    if (g.modo === 'area') {
+      const W = g.w, H = g.h, nome = g.nomeArea || 'área útil';
+      if (p.fonte === 'img') {
+        av.push({ nivel: 'amarelo', txt: `Imagem não traz medida: confira se cabe na ${nome} (${mm(W)} × ${mm(H)} mm). Para conferir, envie em PDF.` });
+        return { fw: null, fh: null, s: 0, seg: 0, encaixe: 'inteiro', avisos: av };
+      }
+      const cabe = (p.w <= W + TOL && p.h <= H + TOL), cabeGirado = (p.w <= H + TOL && p.h <= W + TOL);
+      if (cabe || cabeGirado) av.push({ nivel: 'verde', txt: `Cabe na ${nome} (${mm(W)} × ${mm(H)} mm)${cabe ? '' : ', com a folha deitada'}: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm.` });
+      else av.push({ nivel: 'vermelho', txt: `Não cabe na ${nome}: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm e a área útil é ${mm(W)} × ${mm(H)} mm (em pé ou deitada).` });
+      return { fw: p.w, fh: p.h, s: 0, seg: 0, encaixe: 'corte', avisos: av, tamanhoErrado: !(cabe || cabeGirado), area: true };
+    }
     if (g.modo === 'fixo' || g.modo === 'definido') {
       const W = g.w, H = g.h, s = g.s;
       if (p.fonte === 'img') {
@@ -149,9 +164,39 @@
       return { fw: null, fh: null, s: 0, seg: 0, encaixe: 'inteiro', avisos: av };
     }
     const s = g.s || 0;
-    if (s && (p.w <= 2 * s || p.h <= 2 * s)) return { fw: p.w, fh: p.h, s: 0, seg: g.seg, encaixe: 'corte', avisos: av };
-    return { fw: p.w - 2 * s, fh: p.h - 2 * s, s, seg: g.seg, encaixe: 'corte', avisos: av };
+    let r;
+    if (s && (p.w <= 2 * s || p.h <= 2 * s)) r = { fw: p.w, fh: p.h, s: 0, seg: g.seg, encaixe: 'corte', avisos: av };
+    else r = { fw: p.w - 2 * s, fh: p.h - 2 * s, s, seg: g.seg, encaixe: 'corte', avisos: av };
+    avisosRegras(r, g.regras);
+    return r;
   }
+  // Tamanho livre com regras (lona, faixa e banner): lado menor máximo, emenda e resolução recomendada (só avisos)
+  function avisosRegras(r, rg) {
+    if (!rg || !r.fw) return;
+    const menor = Math.min(r.fw, r.fh), maior = Math.max(r.fw, r.fh), cm = v => fmtMm(Math.round(v) / 10);
+    if (rg.lado_menor_emenda_mm && menor > rg.lado_menor_emenda_mm + TOL)
+      r.avisos.push({ nivel: 'amarelo', txt: `Lado menor de ${cm(menor)} cm: passa de ${cm(rg.lado_menor_emenda_mm)} cm, a lona vai com emenda.` });
+    else if (rg.lado_menor_max_mm && menor > rg.lado_menor_max_mm + TOL)
+      r.avisos.push({ nivel: 'amarelo', txt: `Lado menor de ${cm(menor)} cm: passa do máximo de banner e faixa (${cm(rg.lado_menor_max_mm)} cm). Só em lona (sem emenda até ${cm(rg.lado_menor_emenda_mm || 3000)} cm).` });
+    if (Array.isArray(rg.dpi_recomendado) && rg.dpi_recomendado.length) {
+      const f = rg.dpi_recomendado.find(x => !x.ate_mm || maior <= x.ate_mm + TOL);
+      if (f) r.avisos.push({ nivel: 'verde', txt: `Resolução recomendada para ${cm(maior)} cm no lado maior: ${f.dpi} dpi (só recomendação; a designer decide se serve).` });
+    }
+  }
+  // Folhas da máquina digital (Konica): a folha montada pela designer tem de ter um destes tamanhos (em pé ou deitada)
+  const FOLHAS_DIGITAL = [['A4 (formato 9)', 220, 320], ['SRA3', 320, 450]];
+  function folhaDigital(w, h) {
+    return FOLHAS_DIGITAL.find(([, a, b]) => (perto(w, a) && perto(h, b)) || (perto(w, b) && perto(h, a))) || null;
+  }
+  // Mede um arquivo (1ª página do PDF) em mm: usado também pelo index.html ao fechar a arte
+  window.medirArquivoMm = async function (file) {
+    if (!(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) return null;
+    await carregarPdfJs();
+    const doc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const vp = (await doc.getPage(1)).getViewport({ scale: 1 });
+    return { w: vp.width * PT_MM, h: vp.height * PT_MM, paginas: doc.numPages };
+  };
+  window.folhaDigitalMm = (w, h) => { const f = folhaDigital(w, h); return f ? f[0] : null; };
 
   /* ---------- imagens ---------- */
   // Conferência (equipe): arquivo inteiro + sangria sombreada + corte (vermelho) + segurança (verde)
@@ -378,13 +423,18 @@
     if (gm && !gm.medidas_pendentes && !gm.tamanho_livre) g = { modo: 'fixo', w: +gm.corte_largura_mm, h: +gm.corte_altura_mm, s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
     else if (gm && !gm.medidas_pendentes && gm.tamanho_livre) g = { modo: 'livre', s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0, faca: !!gm.ultima_pagina_faca };
     else g = { modo: 'arquivo', s: 0, seg: 3, faca: false };
+    g.regras = (gm && gm.regras && typeof gm.regras === 'object') ? gm.regras : null;
+    if (g.modo === 'fixo' && g.regras && g.regras.modo === 'area') { g.modo = 'area'; g.nomeArea = `área útil do ${u.gabarito_nome || 'gabarito'}`; }
+    const digital = !!(u.digital && u.digital.digital) && g.modo !== 'area';
     // ordem das páginas do gabarito (frente, verso, verniz_frente, verniz_verso, hot_stamping, metalizado, calco_branco, faca)
     g.ordem = (gm && Array.isArray(gm.paginas_ordem) && gm.paginas_ordem.length) ? gm.paginas_ordem : null;
     if (g.ordem && g.ordem.includes('faca')) g.faca = true;
     g.dobras = (gm && gm.dobras && typeof gm.dobras === 'object') ? gm.dobras : null;
     g.gira = !!(gm && gm.aceita_girar);
     const nomeGab = u.gabarito_nome ? `${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}` : '';
-    const linhaGab = g.modo === 'fixo'
+    const linhaGab = g.modo === 'area'
+      ? `<b>${nomeGab}</b> · o arquivo precisa caber na área útil de ${mm(g.w)} × ${mm(g.h)} mm (em pé ou deitado)${g.regras.folha_mm ? ` · folha ${mm(g.regras.folha_mm[0])} × ${mm(g.regras.folha_mm[1])} mm` : ''}`
+      : g.modo === 'fixo'
       ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
       : g.modo === 'livre' ? `<b>${nomeGab}</b> · tamanho livre (vem do arquivo) · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
       : `<span class="muted">Sem gabarito com medidas neste item.</span>`;
@@ -413,6 +463,8 @@
         <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="mt-tipo" value="final">
           <span><b>Arte pronta para impressão</b><br><span class="small muted">O arquivo que você escolher aqui já é o final. Quando o cliente aprovar, a arte fica pronta e o item segue para a pré-impressão se o pedido tiver pagamento (ou autorização).</span></span></label>
       </div>
+      ${digital && !teste ? `<div class="mt-av amarelo" id="mt-dig" style="margin:0 0 10px;display:none"><b>Item na impressão digital</b>${u.digital.motivo ? ` (${esc(u.digital.motivo)})` : ''}. Monte a folha (A4 22 × 32 cm ou SRA3 32 × 45 cm) e anexe aqui: ela vai como <b>arquivo para impressão</b>. O cliente vê só a prova da peça.
+        <label class="campo" style="margin:8px 0 0">Folha montada (PDF)<input type="file" id="mt-folha" accept=".pdf,application/pdf"></label><div id="mt-folha-st" class="small" style="margin-top:4px"></div></div>` : ''}
       ${g.modo === 'arquivo' ? `<div class="grade g3" style="margin-bottom:8px">
         <label class="campo" style="grid-column:1/-1;margin:0"><span>Tamanho final</span>
           <select id="mt-tam"><option value="arquivo">Usar o tamanho do arquivo (PDF)</option><option value="definido">Definir o tamanho</option></select></label>
@@ -426,6 +478,24 @@
       rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button>${teste ? '' : '<button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>'}` });
     const $m = sel => m.el.querySelector(sel);
     $m('[data-v]').onclick = m.fechar;
+    // item na digital: a folha montada só aparece quando a designer manda a arte pronta para impressão
+    let folha = null;
+    if ($m('#mt-dig')) {
+      const mostrarDig = () => { $m('#mt-dig').style.display = (m.el.querySelector('[name=mt-tipo]:checked') || {}).value === 'final' ? '' : 'none'; };
+      m.el.querySelectorAll('[name=mt-tipo]').forEach(r => r.addEventListener('change', mostrarDig));
+      $m('#mt-folha').onchange = async () => {
+        const f = $m('#mt-folha').files[0], st = $m('#mt-folha-st'); folha = null; st.innerHTML = '';
+        if (!f) return;
+        try {
+          const md = await window.medirArquivoMm(f);
+          if (!md) { st.innerHTML = '<span style="color:var(--vermelho)">A folha montada precisa ser PDF.</span>'; return; }
+          const nome = folhaDigital(md.w, md.h);
+          folha = { file: f, ok: !!nome };
+          st.innerHTML = nome ? `<span style="color:#007a61">✓ Folha ${nome[0]}: ${mm(md.w)} × ${mm(md.h)} mm${md.paginas > 1 ? ` · ${md.paginas} páginas` : ''}.</span>`
+            : `<span style="color:var(--vermelho)">A folha tem ${mm(md.w)} × ${mm(md.h)} mm: não é A4 (220 × 320) nem SRA3 (320 × 450). Confira antes de enviar.</span>`;
+        } catch (e) { st.innerHTML = '<span style="color:var(--vermelho)">Não foi possível ler a folha. Exporte de novo em PDF.</span>'; }
+      };
+    }
     const drop = $m('#mt-drop'), inp = $m('#mt-arq');
     drop.onclick = e => { if (e.target !== inp) inp.click(); };
     ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('sobre'); }));
@@ -520,7 +590,7 @@
           ${avisos.length ? avisos.map(x => `<div class="mt-av ${x.nivel}">${esc(x.txt)}</div>`).join('') : '<div class="mt-av verde">Tamanho confere com o gabarito.</div>'}
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
             ${ve && !teste ? `<label class="check" style="margin:0"><input type="checkbox" id="mt-3d" ${ehCartao ? 'checked' : ''}> Mostrar ao cliente em 3D (gira frente e verso)</label>` : ''}
-            ${tamErrado && !teste ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
+            ${tamErrado && !teste && !analise.frente.area ? '<label class="check" style="margin:0"><input type="checkbox" id="mt-faixa" checked> Avisar o cliente na prova que o tamanho não confere</label>' : ''}
           </div>
           ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}
           ${especiais.length ? `<div class="mt-conf mt-cliente"><figure><figcaption>Frente — como o cliente vai ver</figcaption></figure>${ve ? '<figure><figcaption>Verso — como o cliente vai ver</figcaption></figure>' : ''}</div>
@@ -548,6 +618,8 @@
       const extras = paginas.filter(p => p.papel === 'extra');
       if (!fr || !analise.frente) return;
       const final = (m.el.querySelector('[name=mt-tipo]:checked') || {}).value === 'final';
+      if (final && digital && !folha && !(await confirmar('Este item vai para a impressão digital e você não anexou a folha montada. Enviar mesmo assim, com o arquivo da peça como arquivo para impressão?', 'Enviar assim'))) return;
+      if (final && digital && folha && !folha.ok && !(await confirmar('A folha montada não tem o tamanho da A4 (220 × 320 mm) nem da SRA3 (320 × 450 mm). Enviar mesmo assim?', 'Enviar assim'))) return;
       const bt = $m('[data-enviar]'); enviando = true; bt.disabled = true; bt.textContent = 'Gerando a prova…';
       try {
         const faixa = !!($m('#mt-faixa') && $m('#mt-faixa').checked);
@@ -570,7 +642,10 @@
                                              'prova', a.item_id, 'Prova', null, null, { arte_id: a.id });
         // arte pronta para impressão: o(s) arquivo(s) original(is) sobem como arte final, ligados a esta arte
         const producao = [];
-        if (final) {
+        if (final && digital && folha) {
+          bt.textContent = `Enviando a folha montada: ${folha.file.name}…`;
+          producao.push(await enviarArquivoDrive(a.pedido_id, folha.file, 'producao', a.item_id, 'Folha montada', null, null, { arte_id: a.id }));
+        } else if (final) {
           const arqs = [...new Set(usadas.map(p => p.file))];
           const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz frente', verniz_verso: 'Verniz verso', extra: 'Outra página' };
           for (const f of arqs) { bt.textContent = `Enviando a arte final: ${f.name}…`;
