@@ -13,6 +13,7 @@
    (16/10) Linhas de dobra (gabaritos.dobras): tracejado azul na conferência e na prova do cliente, frente e verso
    com as posições de cada lado. Gabaritos com aceita_girar (folheto sem dobra) aceitam a arte deitada ou em pé;
    frente e verso em sentidos diferentes geram aviso de "pé com pé".
+   (19/10) Papéis "Máscara de branco da frente/verso" (adesivos 5 cores, resinado, transparente): ficam fora da prova.
    (19/10) Gabarito "cabe na área" (regras.modo = area: impressão digital A4/SRA3 — o arquivo precisa caber na área útil,
    em pé ou deitado); avisos de tamanho máximo e resolução recomendada no tamanho livre (lona, faixa e banner);
    item com selo Digital: na arte pronta para impressão, a designer anexa a FOLHA MONTADA (A4 22×32 ou SRA3 32×45),
@@ -69,8 +70,10 @@
   }
 
   const PAPEIS = [['', 'Não usar'], ['frente', 'Frente'], ['verso', 'Verso'], ['faca', 'Faca (linha de corte)'],
-                  ['verniz_frente', 'Verniz da frente'], ['verniz_verso', 'Verniz do verso'], ['extra', 'Outra página']];
-  const UNICOS = ['frente', 'verso', 'faca', 'verniz_frente', 'verniz_verso'];
+                  ['verniz_frente', 'Verniz da frente'], ['verniz_verso', 'Verniz do verso'],
+                  ['branco_frente', 'Máscara de branco da frente'], ['branco_verso', 'Máscara de branco do verso'], ['extra', 'Outra página']];
+  // máscara de branco (19/10): página de produção — não vai para a prova do cliente (como a faca)
+  const UNICOS = ['frente', 'verso', 'faca', 'verniz_frente', 'verniz_verso', 'branco_frente', 'branco_verso'];
   const perto = (a, b) => Math.abs(a - b) <= TOL;
   const mm = v => fmtMm(Math.round(v * 10) / 10);
   const num = v => (v === '' || v == null) ? null : Number(String(v).replace(',', '.'));
@@ -517,7 +520,7 @@
       const ehFaca = i => g.faca && paginas.length > 1 && i === paginas.length - 1;
       const usaveis = paginas.filter((p, i) => !ehFaca(i));
       const ordem = (g.ordem || ['frente', 'verso']).filter(x => x !== 'faca');
-      const PAPEL_DA_ORDEM = { frente: 'frente', verso: 'verso', verniz_frente: 'verniz_frente', verniz_verso: 'verniz_verso' };
+      const PAPEL_DA_ORDEM = { frente: 'frente', verso: 'verso', verniz_frente: 'verniz_frente', verniz_verso: 'verniz_verso', branco_frente: 'branco_frente', branco_verso: 'branco_verso' };
       usaveis.forEach((p, i) => { p.papel = PAPEL_DA_ORDEM[ordem[i]] || 'extra'; });
       paginas.forEach((p, i) => { if (ehFaca(i)) p.papel = 'faca'; });
       paginas.forEach(p => { if (!p.papel) p.papel = 'extra'; });
@@ -595,6 +598,7 @@
           ${fw ? `<p class="small" style="margin:8px 0 0">A prova do cliente mostra só a área final: <b>${mm(fw)} × ${mm(fh)} mm</b>, com a marca d'água da GVH.</p>` : ''}
           ${especiais.length ? `<div class="mt-conf mt-cliente"><figure><figcaption>Frente — como o cliente vai ver</figcaption></figure>${ve ? '<figure><figcaption>Verso — como o cliente vai ver</figcaption></figure>' : ''}</div>
             <p class="small muted" style="margin:6px 0 0">${pFaca ? 'Linha magenta = faca (no verso, espelhada). ' : ''}${pVF || pVV ? 'Área com brilho = verniz localizado; no link o brilho fica animado. ' : ''}${especiais.includes('dobra') ? 'Tracejado azul = dobra.' : ''}</p>` : ''}
+          ${paginas.some(p => /^branco_/.test(p.papel)) ? '<div class="mt-av verde">Máscara de branco: fica no arquivo de impressão e não aparece na prova do cliente.</div>' : ''}
           ${(g.ordem || []).includes('faca') && !pFaca ? '<div class="mt-av amarelo">Este gabarito tem faca, mas nenhuma página foi marcada como <b>Faca</b>: o cliente não vai ver a linha de corte.</div>' : ''}
           ${(g.ordem || []).some(x => x.startsWith('verniz')) && !pVF && !pVV ? '<div class="mt-av amarelo">Este gabarito tem verniz, mas nenhuma página foi marcada como <b>Verniz</b>: o cliente não vai ver onde vai o verniz.</div>' : ''}
           ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
@@ -647,7 +651,7 @@
           producao.push(await enviarArquivoDrive(a.pedido_id, folha.file, 'producao', a.item_id, 'Folha montada', null, null, { arte_id: a.id }));
         } else if (final) {
           const arqs = [...new Set(usadas.map(p => p.file))];
-          const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz frente', verniz_verso: 'Verniz verso', extra: 'Outra página' };
+          const NOME_PAPEL = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz frente', verniz_verso: 'Verniz verso', branco_frente: 'Branco frente', branco_verso: 'Branco verso', extra: 'Outra página' };
           for (const f of arqs) { bt.textContent = `Enviando a arte final: ${f.name}…`;
             // o sistema renomeia para "<material> - <identificação>": a identificação diz o que tem no arquivo
             const nomes = [...new Set(usadas.filter(p => p.file === f).map(p => NOME_PAPEL[p.papel] || ''))].filter(Boolean);
