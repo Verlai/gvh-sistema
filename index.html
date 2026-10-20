@@ -3466,7 +3466,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261020a';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261020b';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
