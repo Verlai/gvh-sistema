@@ -18,6 +18,8 @@
    em pé ou deitado); avisos de tamanho máximo e resolução recomendada no tamanho livre (lona, faixa e banner);
    item com selo Digital: na arte pronta para impressão, a designer anexa a FOLHA MONTADA (A4 22×32 ou SRA3 32×45),
    que vai como arquivo de impressão; a prova do cliente continua sendo a peça.
+   (20/10) Tamanho livre: a largura e a altura finais (cm) são obrigatórias; o arquivo é conferido com essa medida
+   (com a sangria do gabarito), e os avisos de lado máximo/resolução usam o tamanho digitado.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
@@ -135,6 +137,11 @@
       else av.push({ nivel: 'vermelho', txt: `Não cabe na ${nome}: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm e a área útil é ${mm(W)} × ${mm(H)} mm (em pé ou deitada).` });
       return { fw: p.w, fh: p.h, s: 0, seg: 0, encaixe: 'corte', avisos: av, tamanhoErrado: !(cabe || cabeGirado), area: true };
     }
+    if (g.modo === 'definido' && g.regras) {
+      const r = analisar(p, { ...g, regras: null });
+      if (!r.tamanhoErrado) avisosRegras(r, g.regras);
+      return r;
+    }
     if (g.modo === 'fixo' || g.modo === 'definido') {
       const W = g.w, H = g.h, s = g.s;
       if (p.fonte === 'img') {
@@ -155,9 +162,11 @@
         return { fw: H, fh: W, s: 0, seg: g.seg, encaixe: 'corte', avisos: av, girada: true };
       }
       if ((perto(p.w, H + 2 * s) && perto(p.h, W + 2 * s)) || (perto(p.w, H) && perto(p.h, W))) {
-        av.push({ nivel: 'vermelho', txt: `A arte está girada em relação ao gabarito (veio ${mm(p.w)} × ${mm(p.h)} mm; o gabarito é ${mm(W)} × ${mm(H)} mm).` });
+        av.push({ nivel: 'vermelho', txt: `A arte está girada em relação ${g.modo === 'definido' ? 'ao tamanho informado' : 'ao gabarito'} (veio ${mm(p.w)} × ${mm(p.h)} mm; ${g.modo === 'definido' ? 'o tamanho informado' : 'o gabarito'} é ${mm(W)} × ${mm(H)} mm).` });
       } else {
-        av.push({ nivel: 'vermelho', txt: `Tamanho diferente do gabarito: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm; o gabarito pede ${mm(W + 2 * s)} × ${mm(H + 2 * s)} mm (com sangria) ou ${mm(W)} × ${mm(H)} mm (final).` });
+        const ped = s > 0 ? `${mm(W + 2 * s)} × ${mm(H + 2 * s)} mm (com sangria) ou ${mm(W)} × ${mm(H)} mm (final)` : `${mm(W)} × ${mm(H)} mm`;
+        av.push({ nivel: 'vermelho', txt: g.modo === 'definido' ? `Tamanho diferente do informado: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm; a arte deve ter ${ped}.`
+                                                                : `Tamanho diferente do gabarito: o arquivo tem ${mm(p.w)} × ${mm(p.h)} mm; o gabarito pede ${ped}.` });
       }
       return { fw: W, fh: H, s: 0, seg: g.seg, encaixe: 'conter', avisos: av, tamanhoErrado: true };
     }
@@ -439,7 +448,7 @@
       ? `<b>${nomeGab}</b> · o arquivo precisa caber na área útil de ${mm(g.w)} × ${mm(g.h)} mm (em pé ou deitado)${g.regras.folha_mm ? ` · folha ${mm(g.regras.folha_mm[0])} × ${mm(g.regras.folha_mm[1])} mm` : ''}`
       : g.modo === 'fixo'
       ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
-      : g.modo === 'livre' ? `<b>${nomeGab}</b> · tamanho livre (vem do arquivo) · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
+      : g.modo === 'livre' ? `<b>${nomeGab}</b> · tamanho livre: escreva abaixo o tamanho final da arte · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
       : `<span class="muted">Sem gabarito com medidas neste item.</span>`;
     const ehCartao = /cart[ãa]o/i.test(u.grupo_nome || '') || (g.modo === 'fixo' && Math.max(g.w, g.h) <= 100);
     let paginas = [], analise = {}, enviando = false;
@@ -468,6 +477,13 @@
       </div>
       ${digital && !teste ? `<div class="mt-av amarelo" id="mt-dig" style="margin:0 0 10px;display:none"><b>Item na impressão digital</b>${u.digital.motivo ? ` (${esc(u.digital.motivo)})` : ''}. Monte a folha (A4 22 × 32 cm ou SRA3 32 × 45 cm) e anexe aqui: ela vai como <b>arquivo para impressão</b>. O cliente vê só a prova da peça.
         <label class="campo" style="margin:8px 0 0">Folha montada (PDF)<input type="file" id="mt-folha" accept=".pdf,application/pdf"></label><div id="mt-folha-st" class="small" style="margin-top:4px"></div></div>` : ''}
+      ${g.modo === 'livre' ? `<div class="grade g3" style="margin-bottom:8px">
+        <div class="small" style="grid-column:1/-1">Tamanho final da arte * <span class="muted">(sem a sangria; o montador confere o arquivo com esta medida)</span>
+          ${a.item_descricao ? `<br><span class="muted">No pedido:</span> ${esc(a.item_descricao)}${a.quantidade ? ` · ${esc(String(a.quantidade))} un` : ''}` : ''}</div>
+        <label class="campo">Largura (cm) *<input type="text" inputmode="decimal" id="mt-lw" placeholder="Ex.: 60"></label>
+        <label class="campo">Altura (cm) *<input type="text" inputmode="decimal" id="mt-lh" placeholder="Ex.: 90"></label>
+        <div class="small muted" id="mt-larq" style="align-self:end;padding-bottom:10px"></div>
+      </div>` : ''}
       ${g.modo === 'arquivo' ? `<div class="grade g3" style="margin-bottom:8px">
         <label class="campo" style="grid-column:1/-1;margin:0"><span>Tamanho final</span>
           <select id="mt-tam"><option value="arquivo">Usar o tamanho do arquivo (PDF)</option><option value="definido">Definir o tamanho</option></select></label>
@@ -505,6 +521,17 @@
     ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('sobre'); }));
     drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) receber([...e.dataTransfer.files]); });
     inp.onchange = () => { if (inp.files.length) receber([...inp.files]); };
+    if ($m('#mt-lw')) {
+      ['#mt-lw', '#mt-lh'].forEach(s => $m(s).oninput = () => { mostrarArqLivre(); clearTimeout(montar.t); montar.t = setTimeout(montar, 400); });
+    }
+    function tamanhoLivre() {
+      const w = num($m('#mt-lw') && $m('#mt-lw').value), h = num($m('#mt-lh') && $m('#mt-lh').value);
+      return w > 0 && h > 0 ? { w: w * 10, h: h * 10 } : null;
+    }
+    function mostrarArqLivre() {
+      const box = $m('#mt-larq'); if (!box) return; const t = tamanhoLivre();
+      box.textContent = t && g.s ? `Arquivo com sangria: ${mm(t.w + 2 * g.s)} × ${mm(t.h + 2 * g.s)} mm` : t ? `Arquivo: ${mm(t.w)} × ${mm(t.h)} mm` : '';
+    }
     if ($m('#mt-tam')) {
       $m('#mt-tam').onchange = () => { m.el.querySelectorAll('.mt-def').forEach(x => x.style.display = $m('#mt-tam').value === 'definido' ? '' : 'none'); montar(); };
       ['#mt-w', '#mt-h'].forEach(s => $m(s).oninput = () => { clearTimeout(montar.t); montar.t = setTimeout(montar, 400); });
@@ -543,6 +570,7 @@
     }
 
     function gabaritoEfetivo() {
+      if (g.modo === 'livre') { const t = tamanhoLivre(); return t ? { ...g, modo: 'definido', w: t.w, h: t.h } : null; }
       if (g.modo !== 'arquivo') return g;
       if ($m('#mt-tam') && $m('#mt-tam').value === 'definido') {
         const w = num($m('#mt-w').value), h = num($m('#mt-h').value);
@@ -565,8 +593,9 @@
       const pFaca = paginas.find(p => p.papel === 'faca'), pVF = paginas.find(p => p.papel === 'verniz_frente'), pVV = paginas.find(p => p.papel === 'verniz_verso');
       bt.disabled = true; analise = {};
       if (!fr) { res.innerHTML = paginas.length ? '<p class="small muted" style="margin-top:10px">Escolha qual página é a frente.</p>' : ''; return; }
-      res.innerHTML = '<p class="small muted" style="margin-top:10px">Montando…</p>';
       const ge = gabaritoEfetivo();
+      if (!ge) { res.innerHTML = '<div class="mt-av amarelo" style="margin-top:10px">Escreva a <b>largura</b> e a <b>altura</b> finais da arte (em cm) para o montador conferir o arquivo.</div>'; return; }
+      res.innerHTML = '<p class="small muted" style="margin-top:10px">Montando…</p>';
       try {
         analise.frente = analisar(fr, ge); if (ve) analise.verso = analisar(ve, ge);
         // linhas de dobra de cada lado (só com a arte no sentido do gabarito)
@@ -601,7 +630,7 @@
           ${paginas.some(p => /^branco_/.test(p.papel)) ? '<div class="mt-av verde">Máscara de branco: fica no arquivo de impressão e não aparece na prova do cliente.</div>' : ''}
           ${(g.ordem || []).includes('faca') && !pFaca ? '<div class="mt-av amarelo">Este gabarito tem faca, mas nenhuma página foi marcada como <b>Faca</b>: o cliente não vai ver a linha de corte.</div>' : ''}
           ${(g.ordem || []).some(x => x.startsWith('verniz')) && !pVF && !pVV ? '<div class="mt-av amarelo">Este gabarito tem verniz, mas nenhuma página foi marcada como <b>Verniz</b>: o cliente não vai ver onde vai o verniz.</div>' : ''}
-          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? '<b>O arquivo não está no tamanho do gabarito.</b> Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
+          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? `<b>O arquivo não está no tamanho ${g.modo === 'livre' ? 'informado' : 'do gabarito'}.</b>`+' Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
         const figs = res.querySelectorAll('.mt-conf figure');
         figs[0].appendChild(confF); if (confV) figs[1].appendChild(confV);
         if (especiais.length) {
