@@ -18,6 +18,7 @@
    em pé ou deitado); avisos de tamanho máximo e resolução recomendada no tamanho livre (lona, faixa e banner);
    item com selo Digital: na arte pronta para impressão, a designer anexa a FOLHA MONTADA (A4 22×32 ou SRA3 32×45),
    que vai como arquivo de impressão; a prova do cliente continua sendo a peça.
+   (20/10) Tamanho errado: a arte NÃO é ajustada — entra na escala real, no centro da área pedida (sobra branco ou sai cortada).
    (20/10) Tamanho livre: a largura e a altura finais (cm) são obrigatórias; o arquivo é conferido com essa medida
    (com a sangria do gabarito), e os avisos de lado máximo/resolução usam o tamanho digitado.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
@@ -217,13 +218,17 @@
     const base = await rasterizar(p, k0 || 1);
     const c = document.createElement('canvas');
     if (a.encaixe === 'conter') {
-      // mostra a área do gabarito com a arte encaixada no meio
+      // tamanho errado: a área pedida com a arte na escala real, no centro (menor = sobra branco; maior = sai cortada)
       const k = LADO_CONF / Math.max(a.fw, a.fh);
       c.width = Math.round(a.fw * k); c.height = Math.round(a.fh * k);
-      const ctx = c.getContext('2d'); ctx.fillStyle = '#f1f3f4'; ctx.fillRect(0, 0, c.width, c.height);
-      const esc_ = Math.min(c.width / base.width, c.height / base.height);
-      const w = base.width * esc_, h = base.height * esc_;
-      ctx.drawImage(base, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      const real = await rasterizar(p, k);
+      const x = (c.width - real.width) / 2, y = (c.height - real.height) / 2;
+      ctx.drawImage(real, x, y);
+      if (real.width < c.width || real.height < c.height) {   // contorno da arte quando ela é menor
+        ctx.save(); ctx.strokeStyle = '#E07B00'; ctx.lineWidth = Math.max(1.5, c.width / 400); ctx.setLineDash([6, 4]);
+        ctx.strokeRect(Math.max(0, x), Math.max(0, y), Math.min(c.width, real.width), Math.min(c.height, real.height)); ctx.restore();
+      }
       linhas(ctx, k, 0, a.seg, c.width, c.height);
       linhasDobra(ctx, k, 0, a.dob, c.width, c.height);
       return c;
@@ -296,10 +301,9 @@
         ctx.drawImage(base, -a.s * k, -a.s * k);
       } else if (a.encaixe === 'cobrir') {
         cobrir(ctx, await rasterizar(p, 1), c.width, c.height);
-      } else { // conter
-        const base = await rasterizar(p, p.fonte === 'pdf' ? k : 1);
-        const e = Math.min(c.width / base.width, c.height / base.height);
-        ctx.drawImage(base, (c.width - base.width * e) / 2, (c.height - base.height * e) / 2, base.width * e, base.height * e);
+      } else { // conter: tamanho errado — arte na escala real, no centro, sem ajustar (menor = branco; maior = cortada)
+        const base = await rasterizar(p, k);
+        ctx.drawImage(base, (c.width - base.width) / 2, (c.height - base.height) / 2);
         if (comFaixa) faixaAviso(ctx, c.width, c.height, `ATENÇÃO: a arte enviada (${mm(p.w)} × ${mm(p.h)} mm) não está no tamanho pedido (${mm(a.fw)} × ${mm(a.fh)} mm)`);
       }
     }
