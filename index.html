@@ -86,6 +86,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--verde);outline:none}
 .unit-calc{font-size:11px;color:var(--texto-3);margin-top:3px;white-space:nowrap}
 .aviso-forn{font-size:12px;line-height:1.35;color:#7d520d;background:var(--ambar-bg);border-radius:6px;padding:4px 7px;margin-top:4px}
 .info-forn{font-size:12px;color:var(--texto-2);margin-top:3px}
+.alt-forn{font-size:12px;line-height:1.35;color:#0b5c4a;background:var(--verde-bg);border-radius:6px;padding:5px 7px;margin-top:4px}
+.alt-forn ul{margin:3px 0 0;padding-left:16px}.alt-forn li{margin:2px 0}
+.alt-forn button{font-size:12px;padding:0 6px;margin-left:4px;border:1px solid #0b8a6e;border-radius:5px;background:#fff;color:#0b5c4a;cursor:pointer}
 .linha-form{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
 .linha-form > *{flex:1;min-width:150px}
 
@@ -2018,13 +2021,28 @@ async function modalCliente(id, aoSalvar, nomeInicial = '') {
 
 /* ---------- CONFERÊNCIA COM O FORNECEDOR (16/10) ----------
    Só enquanto o vendedor lança o produto (pedido, orçamento ou item avulso): lê o texto, indica material/gabarito
-   e avisa o que não existe na tabela do fornecedor (Atualcard). Nada fica gravado nem aparece depois. */
+   e avisa o que não existe no offset. Nada fica gravado nem aparece depois.
+   (21/10) Quando a quantidade não sai no offset, sugere até 3 opções que saem (outro papel no mesmo tamanho, formato um pouco
+   maior com refile para o tamanho exato, ou tamanho bem próximo). "Usar" troca a descrição e a conferência roda de novo. */
 function htmlConferencia(r, descricao) {
   if (!r) return textoMaterialSugerido(descricao);
   const gab = r.material_nome ? `Gabarito: <b>${esc(r.material_nome)}${r.gabarito_nome ? ' › ' + esc(r.gabarito_nome) : ''}</b> <span class="muted">(sugerido; dá para trocar no pedido)</span>` : textoMaterialSugerido(descricao);
-  return gab + (r.avisos || []).map(t => `<div class="aviso-forn">⚠ ${esc(t)}</div>`).join('')
+  const alt = (r.alternativas || []).length ? `<div class="alt-forn"><b>Dá para fazer no offset</b> (qualidade melhor que a digital):<ul>${r.alternativas.map(a =>
+      `<li>${esc(a.texto)}${a.descricao && a.descricao !== descricao ? `<button type="button" data-usar-desc="${esc(a.descricao)}" title="Trocar a descrição para: ${esc(a.descricao)}">Usar</button>` : ''}</li>`).join('')}</ul></div>` : '';
+  return gab + (r.avisos || []).map(t => `<div class="aviso-forn">⚠ ${esc(t)}</div>`).join('') + alt
              + (r.infos || []).map(t => `<div class="info-forn">${esc(t)}</div>`).join('');
 }
+// "Usar" numa alternativa do offset: troca a descrição do item e dispara a conferência de novo
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-usar-desc]'); if (!b) return;
+  e.preventDefault();
+  const mat = b.closest('[data-mat]'), conf = b.closest('#it-conf');
+  const inp = mat ? mat.parentElement.querySelector('[data-f="descricao"]') : conf ? (conf.closest('form') || document).querySelector('[name="descricao"]') : null;
+  if (!inp) return;
+  inp.value = b.dataset.usarDesc;
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  toast('Descrição trocada. Confira com o cliente antes de fechar.');
+});
 function agendarConferencia(alvo, chave, descricao, quantidade, aoChegar) {
   if (!pode('cria_pedidos')) return;
   alvo._confT = alvo._confT || {}; clearTimeout(alvo._confT[chave]);
