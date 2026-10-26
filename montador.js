@@ -521,6 +521,7 @@
         } catch (e) { st.innerHTML = '<span style="color:var(--vermelho)">Não foi possível ler a folha. Exporte de novo em PDF.</span>'; }
       };
     }
+    m.el.querySelectorAll('[name=mt-tipo]').forEach(r => r.addEventListener('change', () => { if (paginas.length) montar(); }));
     const drop = $m('#mt-drop'), inp = $m('#mt-arq');
     drop.onclick = e => { if (e.target !== inp) inp.click(); };
     ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('sobre'); }));
@@ -647,6 +648,23 @@
         }
         bt.disabled = false;
         if (bd) bd.disabled = !!tamErrado || enviando;
+        // AR3b: arte pronta para impressão (ou teste do arquivo do cliente) mostra aqui a conferência completa
+        const finalSel = teste || (m.el.querySelector('[name=mt-tipo]:checked') || {}).value === 'final';
+        if (finalSel && window.conferirAvisosArquivos) {
+          const vez = (montar.vez = (montar.vez || 0) + 1);
+          const box = document.createElement('div'); box.style.marginTop = '12px';
+          box.innerHTML = '<div class="small"><b>Conferência do arquivo para impressão</b> <span class="muted">· conferindo resolução, fontes, cor, sangria, QR Code…</span></div>';
+          res.appendChild(box);
+          const arqs = [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
+          const papeisConf = arqs.length === 1 ? paginas.filter(p => p.file === arqs[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+          window.conferirAvisosArquivos({ files: arqs, urgencia: u, papeis: papeisConf, prova: { largura_mm: fw, altura_mm: fh } }).then(cf => {
+            if (vez !== montar.vez || !box.isConnected) return;
+            const ext = cf.itens.filter(i => !['tamanho_ok', 'tamanho', 'pag_tamanho'].includes(i.codigo));
+            const nv = ext.filter(i => i.nivel === 'vermelho').length, na = ext.filter(i => i.nivel === 'amarelo').length;
+            box.innerHTML = `<div class="small"><b>Conferência do arquivo para impressão</b> <span class="muted">· ${nv ? `${nv} ${nv === 1 ? 'problema' : 'problemas'}` : ''}${nv && na ? ' e ' : ''}${na ? `${na} ${na === 1 ? 'alerta' : 'alertas'}` : ''}${!nv && !na ? 'sem alertas' : ''}${teste ? '' : ' (a prévia com as marcações abre ao enviar)'}</span></div>`
+              + ext.filter(i => i.nivel !== 'verde' || i.codigo === 'dpi').map(i => `<div class="mt-av ${i.nivel === 'info' ? 'verde' : i.nivel}">${esc(i.texto)}${i.link ? ` <a href="${esc(i.link)}" target="_blank" rel="noopener">abrir</a>` : ''}</div>`).join('');
+          }).catch(() => { if (box.isConnected) box.remove(); });
+        }
       } catch (e) {
         console.error(e);
         res.innerHTML = '<div class="mt-av vermelho">Não foi possível montar a prova com esse arquivo. Tente exportar de novo em PDF.</div>';
@@ -1097,6 +1115,15 @@
 
   /* Tela da conferência. Devolve null (voltar) ou { resultado, itens, checklist, motivo }.
      opts: { files, urgencia, prova, papeis, folha, titulo, limiteMb } */
+  // Só os avisos (sem janela): usado dentro do montador quando é arte pronta para impressão ou teste do arquivo do cliente
+  window.conferirAvisosArquivos = async function (opts) {
+    const g = gabaritoConferencia(opts.urgencia || {}, opts.prova), itens = [];
+    for (const f of opts.files) {
+      try { (await conferirArquivo(f, g, { papeis: opts.papeis, limiteMb: opts.limiteMb || 100 })).itens.forEach(i => itens.push(i)); }
+      catch (e) { itens.push({ nivel: 'amarelo', codigo: 'falha', texto: `${f.name}: não foi possível conferir automaticamente.`, arquivo: f.name }); }
+    }
+    return { itens, semGabarito: !g };
+  };
   window.conferirArquivosParaImpressao = async function (opts) {
     const u = opts.urgencia || {}, g = opts.folha ? null : gabaritoConferencia(u, opts.prova);
     const m = abrirModal({ titulo: opts.titulo || 'Conferência do arquivo para impressão', largo: true, corpo: '<p class="small muted" style="margin:0">Conferindo o arquivo… (pode levar alguns segundos)</p>',
