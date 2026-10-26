@@ -576,6 +576,10 @@
       montar();
     }
 
+    // papel de cada página (o que a designer marcou no montador), na ordem dos arquivos
+    function papeisDosArquivos(arqs) {
+      return arqs.flatMap(f => paginas.filter(p => p.file === f).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra'));
+    }
     function gabaritoEfetivo() {
       if (g.modo === 'livre') { const t = tamanhoLivre(); return t ? { ...g, modo: 'definido', w: t.w, h: t.h } : null; }
       if (g.modo !== 'arquivo') return g;
@@ -655,8 +659,8 @@
           const box = document.createElement('div'); box.style.marginTop = '12px';
           box.innerHTML = '<div class="small"><b>Conferência do arquivo para impressão</b> <span class="muted">· conferindo resolução, fontes, cor, sangria, QR Code…</span></div>';
           res.appendChild(box);
-          const arqs = [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
-          const papeisConf = arqs.length === 1 ? paginas.filter(p => p.file === arqs[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+          const arqs = [...new Set(paginas.map(p => p.file))];
+          const papeisConf = papeisDosArquivos(arqs);
           window.conferirAvisosArquivos({ files: arqs, urgencia: u, papeis: papeisConf, prova: { largura_mm: fw, altura_mm: fh } }).then(cf => {
             if (vez !== montar.vez || !box.isConnected) return;
             const ext = cf.itens.filter(i => !['tamanho_ok', 'tamanho', 'pag_tamanho'].includes(i.codigo));
@@ -674,9 +678,9 @@
     // AR4 caminho direto: o arquivo testado vira o arquivo para impressão (conferência antes de subir)
     if (teste && direto && direto.arte) $m('[data-direto]').onclick = async () => {
       if (enviando || !analise.frente) return;
-      const arqs = [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
+      const arqs = [...new Set(paginas.map(p => p.file))];
       if (!arqs.length) return;
-      const papeisConf = arqs.length === 1 ? paginas.filter(p => p.file === arqs[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+      const papeisConf = papeisDosArquivos(arqs);
       const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: u, papeis: papeisConf,
         prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência do arquivo do cliente',
         limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
@@ -701,9 +705,8 @@
       let conf = null;
       if (final) {
         const comFolha = !!(digital && folha);
-        const arqsConf = comFolha ? [folha.file] : [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
-        const papeisConf = !comFolha && arqsConf.length === 1
-          ? paginas.filter(p => p.file === arqsConf[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+        const arqsConf = comFolha ? [folha.file] : [...new Set(paginas.map(p => p.file))];
+        const papeisConf = comFolha ? null : papeisDosArquivos(arqsConf);
         conf = await window.conferirArquivosParaImpressao({ files: arqsConf, urgencia: u, folha: comFolha, papeis: papeisConf,
           prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência da arte pronta para impressão',
           limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
@@ -1037,7 +1040,7 @@
     try { doc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise; }
     catch (e) { r.lido = false; add('vermelho', 'pdf_invalido', 'O PDF não abriu (arquivo corrompido ou protegido). Exporte de novo.'); return r; }
     const n = doc.numPages, papeis = papeisDasPaginas(n, g, opts.papeis);
-    if (!opts.folha && g && g.paginas && n !== g.paginas) add('amarelo', 'paginas', `O arquivo tem ${n} ${n === 1 ? 'página' : 'páginas'}; o gabarito pede ${g.paginas}.`);
+    r.numPaginas = n;
     if (n > MAX_PAG_CONF) add('amarelo', 'paginas_demais', `Foram conferidas as ${MAX_PAG_CONF} primeiras de ${n} páginas.`);
     const qrOk = await carregarJsQr();
     let w0 = null, h0 = null, nTextos = 0, exTexto = '', menorDpi = null;
@@ -1050,7 +1053,7 @@
       const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
       await pg.render({ canvasContext: ctx, viewport: vp }).promise;
       const rot = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz da frente', verniz_verso: 'Verniz do verso', branco_frente: 'Branco da frente', branco_verso: 'Branco do verso' }[papel] || `Página ${p}`;
-      const pag = { rotulo: n === 1 ? 'Arte' : `${rot} (pág. ${p})`, canvas: c, k, an: null, marcas: [] };
+      const pag = { rotulo: n === 1 ? (opts.papeis && opts.papeis.length === 1 && papel !== 'extra' ? rot : 'Arte') : `${rot} (pág. ${p})`, canvas: c, k, an: null, marcas: [] };
       r.paginas.push(pag);
       if (w0 == null) { w0 = wmm; h0 = hmm; }
       else if (!perto(wmm, w0) || !perto(hmm, h0)) {
@@ -1148,11 +1151,51 @@
 
   /* Tela da conferência. Devolve null (voltar) ou { resultado, itens, checklist, motivo }.
      opts: { files, urgencia, prova, papeis, folha, titulo, limiteMb } */
+  // Vários arquivos ou um arquivo com várias páginas: conta as páginas de todos e dá o papel de cada uma
+  // (frente, verso, verniz…). Com vários arquivos de 1 página, o nome do arquivo ajuda ("verso", "verniz frente", "faca"…).
+  const NOMES_PAPEL = { frente: 'frente', verso: 'verso', verniz_frente: 'verniz da frente', verniz_verso: 'verniz do verso', branco_frente: 'branco da frente', branco_verso: 'branco do verso', faca: 'faca', hot_stamping: 'hot stamping', metalizado: 'metalizado', calco_branco: 'calço branco' };
+  function papelPeloNome(nome) {
+    const t = String(nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const masc = /verniz|\buv\b|mascara|reserva/.test(t), br = /branco/.test(t), ve = /verso|costas|tras/.test(t);
+    if (/faca|corte especial/.test(t)) return 'faca';
+    if (masc) return ve ? 'verniz_verso' : 'verniz_frente';
+    if (br) return ve ? 'branco_verso' : 'branco_frente';
+    if (ve) return 'verso';
+    if (/frente/.test(t)) return 'frente';
+    return null;
+  }
+  async function contarPaginas(f) {
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (/^(jpe?g|png|webp)$/.test(ext)) return 1;
+    if (!(f.type === 'application/pdf' || ext === 'pdf')) return 0;
+    try { await carregarPdfJs(); const d = await window.pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise; return d.numPages; }
+    catch (e) { return 0; }
+  }
+  async function planoPaginas(files, g, papeisDados) {
+    const ns = []; for (const f of files) ns.push(await contarPaginas(f));
+    const total = ns.reduce((a, b) => a + b, 0);
+    let papeis = Array.isArray(papeisDados) && papeisDados.length === total ? papeisDados.slice() : null;
+    if (!papeis && files.length > 1 && ns.every(x => x === 1)) {
+      const pn = files.map(f => papelPeloNome(f.name));
+      if (pn.every(Boolean) && new Set(pn).size === pn.length) papeis = pn;
+    }
+    if (!papeis) papeis = papeisDasPaginas(total, g, null);
+    let ofs = 0; const porArquivo = ns.map(n => { const x = papeis.slice(ofs, ofs + n); ofs += n; return x; });
+    const avisos = [];
+    const esperado = g && (g.ordem ? g.ordem.length : g.paginas);
+    if (g && esperado && total) {
+      const faltam = g.ordem ? g.ordem.filter(x => !papeis.includes(x)) : [];
+      if (total < esperado || faltam.length) avisos.push({ nivel: total < esperado ? 'vermelho' : 'amarelo', codigo: 'paginas',
+        texto: `${files.length > 1 ? `Os ${files.length} arquivos têm` : 'O arquivo tem'} ${total} ${total === 1 ? 'página' : 'páginas'}; o gabarito pede ${esperado}${g.ordem ? ` (${g.ordem.map(x => NOMES_PAPEL[x] || x).join(', ')})` : ''}.${faltam.length ? ` Falta: ${faltam.map(x => NOMES_PAPEL[x] || x).join(', ')}.` : ''}` });
+      else if (total > esperado) avisos.push({ nivel: 'amarelo', codigo: 'paginas', texto: `${files.length > 1 ? 'Os arquivos têm' : 'O arquivo tem'} ${total} páginas; o gabarito pede ${esperado}. Confira se não sobrou página.` });
+    }
+    return { porArquivo, avisos, total };
+  }
   // Só os avisos (sem janela): usado dentro do montador quando é arte pronta para impressão ou teste do arquivo do cliente
   window.conferirAvisosArquivos = async function (opts) {
-    const g = gabaritoConferencia(opts.urgencia || {}, opts.prova), itens = [];
-    for (const f of opts.files) {
-      try { (await conferirArquivo(f, g, { papeis: opts.papeis, limiteMb: opts.limiteMb || 100 })).itens.forEach(i => itens.push(i)); }
+    const g = gabaritoConferencia(opts.urgencia || {}, opts.prova), plano = await planoPaginas(opts.files, g, opts.papeis), itens = [...plano.avisos];
+    for (const [k, f] of opts.files.entries()) {
+      try { (await conferirArquivo(f, g, { papeis: plano.porArquivo[k], limiteMb: opts.limiteMb || 100 })).itens.forEach(i => itens.push(i)); }
       catch (e) { itens.push({ nivel: 'amarelo', codigo: 'falha', texto: `${f.name}: não foi possível conferir automaticamente.`, arquivo: f.name }); }
     }
     return { itens, semGabarito: !g };
@@ -1162,13 +1205,15 @@
     const m = abrirModal({ titulo: opts.titulo || 'Conferência do arquivo para impressão', largo: true, corpo: '<p class="small muted" style="margin:0">Conferindo o arquivo… (pode levar alguns segundos)</p>',
       rodape: '<button class="btn" data-v>Voltar</button>' });
     let fechado = false; m.el.querySelector('[data-v]').onclick = () => { fechado = true; m.fechar(); };
-    const res = [];
-    for (const f of opts.files) {
+    const res = [], plano = opts.folha ? { porArquivo: [], avisos: [] } : await planoPaginas(opts.files, g, opts.papeis);
+    for (const [k, f] of opts.files.entries()) {
       if (fechado) return null;
-      try { res.push(await conferirArquivo(f, g, { papeis: opts.papeis, folha: opts.folha, limiteMb: opts.limiteMb || 100 })); }
+      try { res.push(await conferirArquivo(f, g, { papeis: plano.porArquivo[k], folha: opts.folha, limiteMb: opts.limiteMb || 100 })); }
       catch (e) { console.error(e); res.push({ nome: f.name, lido: false, paginas: [], itens: [{ nivel: 'amarelo', codigo: 'falha', texto: 'Não foi possível conferir este arquivo automaticamente. Use o checklist.', arquivo: f.name }] }); }
     }
     if (fechado || !m.el.isConnected) return null;
+    const geral = { nome: opts.files.length > 1 ? 'Todos os arquivos' : 'Páginas', lido: true, paginas: [], itens: plano.avisos.map(a => ({ ...a, arquivo: null, pagina: null })) };
+    if (geral.itens.length) res.unshift(geral);
     const todos = res.flatMap(r => r.itens);
     const nV = todos.filter(i => i.nivel === 'vermelho').length, nA = todos.filter(i => i.nivel === 'amarelo').length;
     const semGab = !g && !opts.folha, naoLido = res.some(r => !r.lido), precisaChecklist = semGab || naoLido;
@@ -1177,7 +1222,7 @@
     const corpoArq = r => `
       <div class="painel" style="padding:12px 14px;margin:0 0 10px">
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(r.nome)}</b>
-          <span class="small muted">${r.paginas.length ? `${r.paginas.length} ${r.paginas.length === 1 ? 'página conferida' : 'páginas conferidas'}` : 'não lido'}</span></div>
+          <span class="small muted">${r === geral ? '' : r.paginas.length ? `${r.paginas.length} ${r.paginas.length === 1 ? 'página conferida' : 'páginas conferidas'}` : 'não lido'}</span></div>
         <div style="margin-top:8px">${r.itens.map(it => { const num = todos.indexOf(it) + 1; return `
           <div class="mt-av ${it.nivel === 'info' ? 'verde' : it.nivel}" data-it="${num}" style="cursor:${it.marca ? 'pointer' : 'default'};display:flex;gap:8px">
             <b style="min-width:22px">${it.marca || icone[it.nivel] || ''}</b>
