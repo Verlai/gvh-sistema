@@ -21,6 +21,8 @@
    (20/10) Tamanho errado: a arte NÃO é ajustada — entra na escala real, no centro da área pedida (sobra branco ou sai cortada).
    (20/10) Tamanho livre: a largura e a altura finais (cm) são obrigatórias; o arquivo é conferido com essa medida
    (com a sangria do gabarito), e os avisos de lado máximo/resolução usam o tamanho digitado.
+   (23/10) AR3b: conferência do arquivo para impressão (window.conferirArquivosParaImpressao, no fim deste arquivo):
+   roda no "Arte pronta para impressão" daqui e no "Enviar arquivo para impressão" do index.html; só avisa e registra.
    Usa as funções globais do index.html: abrirModal, api, enviarArquivoDrive, toast, esc,
    fmtMm, badge, recarregar.
    ===================================================================== */
@@ -657,6 +659,18 @@
       const final = (m.el.querySelector('[name=mt-tipo]:checked') || {}).value === 'final';
       if (final && digital && !folha && !(await confirmar('Este item vai para a impressão digital e você não anexou a folha montada. Enviar mesmo assim, com o arquivo da peça como arquivo para impressão?', 'Enviar assim'))) return;
       if (final && digital && folha && !folha.ok && !(await confirmar('A folha montada não tem o tamanho da A4 (220 × 320 mm) nem da SRA3 (320 × 450 mm). Enviar mesmo assim?', 'Enviar assim'))) return;
+      // AR3b: arte pronta para impressão passa pela conferência do arquivo antes de subir
+      let conf = null;
+      if (final) {
+        const comFolha = !!(digital && folha);
+        const arqsConf = comFolha ? [folha.file] : [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
+        const papeisConf = !comFolha && arqsConf.length === 1
+          ? paginas.filter(p => p.file === arqsConf[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+        conf = await window.conferirArquivosParaImpressao({ files: arqsConf, urgencia: u, folha: comFolha, papeis: papeisConf,
+          prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência da arte pronta para impressão',
+          limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
+        if (!conf) return;
+      }
       const bt = $m('[data-enviar]'); enviando = true; bt.disabled = true; bt.textContent = 'Gerando a prova…';
       try {
         const faixa = !!($m('#mt-faixa') && $m('#mt-faixa').checked);
@@ -695,6 +709,10 @@
         const r = await api('prova_registrar', { arte_id: a.id, frente_id: idP, verso_id: null, formato: 'pdf', paginas: canv.length, tem_verso: !!ve, papeis,
           modo: ($m('#mt-3d') && $m('#mt-3d').checked) ? '3d' : 'imagem', final, producao_ids: producao,
           largura_mm: analise.frente.fw, altura_mm: analise.frente.fh, avisos });
+        if (conf) {
+          try { await api('conferencia_registrar', { arte_id: a.id, arquivo_ids: producao, origem: 'arte_pronta', ...conf }, true); }
+          catch (e) { toast('A prova foi enviada, mas a conferência do arquivo não ficou registrada: ' + e.message, true); }
+        }
         r.final = final; r.pdfUrl = URL.createObjectURL(pdf);
         mostrarLink(r, canv[0].c);
       } catch (e) {
@@ -730,4 +748,413 @@
       $m('[data-v]').onclick = () => { m.fechar(); recarregar(); };
     }
   };
+
+  /* =====================================================================
+     AR3b (23/10) — CONFERÊNCIA DO ARQUIVO PARA IMPRESSÃO
+     Roda no "Enviar arquivo para impressão" (fechar a arte) e no "Arte pronta para impressão" do montador.
+     Só avisa e registra: nada trava. Vermelho pede "Enviar mesmo assim" com motivo.
+     Confere no PDF: tamanho (com o gabarito do item), sangria e filete branco no corte, conteúdo na margem de
+     segurança, resolução das imagens, páginas, fontes não convertidas, indício de RGB e QR Code (link para conferir).
+     Arquivo que o navegador não lê (CDR, AI, ZIP…), acima do limite ou item sem gabarito com medidas: checklist curto.
+     ===================================================================== */
+  const JSQR = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+  const MAX_PAG_CONF = 8;        // páginas conferidas por arquivo
+  const LADO_ANALISE = 1800;     // px do lado maior para ler os pixels
+  let carregandoQr = null;
+  function carregarJsQr() {
+    if (window.jsQR) return Promise.resolve(true);
+    carregandoQr = carregandoQr || new Promise(ok => {
+      const s = document.createElement('script'); s.src = JSQR;
+      s.onload = () => ok(true); s.onerror = () => { carregandoQr = null; ok(false); };
+      document.head.appendChild(s);
+    });
+    return carregandoQr;
+  }
+  const LADOS = { topo: 'de cima', base: 'de baixo', esq: 'da esquerda', dir: 'da direita' };
+
+  // Gabarito do item no formato da conferência (null = sem gabarito com medidas)
+  function gabaritoConferencia(u, prova) {
+    const gm = u && u.gabarito_medidas;
+    if (!gm || gm.medidas_pendentes) return null;
+    const g = { nome: [u.grupo_nome, u.gabarito_nome].filter(Boolean).join(' — '), s: +gm.sangria_mm || 0, seg: +gm.seguranca_mm || 0,
+                gira: !!gm.aceita_girar, faca: !!gm.ultima_pagina_faca, paginas: gm.paginas || null, dpi: gm.dpi_min ? +gm.dpi_min : null,
+                ordem: Array.isArray(gm.paginas_ordem) && gm.paginas_ordem.length ? gm.paginas_ordem : null,
+                regras: gm.regras && typeof gm.regras === 'object' ? gm.regras : null };
+    if (g.ordem && g.ordem.includes('faca')) g.faca = true;
+    if (!gm.tamanho_livre) {
+      Object.assign(g, { modo: 'fixo', w: +gm.corte_largura_mm, h: +gm.corte_altura_mm });
+      if (g.regras && g.regras.modo === 'area') Object.assign(g, { modo: 'area', nomeArea: `área útil do ${u.gabarito_nome || 'gabarito'}` });
+    } else if (prova && prova.largura_mm && prova.altura_mm) {
+      Object.assign(g, { modo: 'definido', w: +prova.largura_mm, h: +prova.altura_mm, medidaDaProva: true });
+    } else g.modo = 'livre';
+    return g;
+  }
+  // Quais páginas são arte (frente/verso) e quais são faca/máscara
+  function papeisDasPaginas(n, g, papeis) {
+    if (Array.isArray(papeis) && papeis.length === n) return papeis.map(p => p || 'extra');
+    if (g && g.ordem && g.ordem.length === n) return g.ordem.slice();
+    return Array.from({ length: n }, (_, i) => g && g.faca && n > 1 && i === n - 1 ? 'faca' : (i === 0 ? 'frente' : i === 1 ? 'verso' : 'extra'));
+  }
+  const ehArte = p => p === 'frente' || p === 'verso' || p === 'extra';
+
+  // Perfil de branco por profundidade a partir de uma borda: fração de pixels brancos em cada linha paralela à borda
+  function perfilBorda(px, W, H, lado, ate, ini, fim) {
+    const out = [], passo = Math.max(1, Math.floor((fim - ini) / 500));
+    for (let d = 0; d < ate; d++) {
+      let b = 0, t = 0;
+      for (let q = ini; q < fim; q += passo) {
+        const x = lado === 'esq' ? d : lado === 'dir' ? W - 1 - d : q;
+        const y = lado === 'topo' ? d : lado === 'base' ? H - 1 - d : q;
+        const i = (y * W + x) * 4;
+        if (px[i] > 238 && px[i + 1] > 238 && px[i + 2] > 238) b++;
+        t++;
+      }
+      out.push(t ? b / t : 1);
+    }
+    return out;
+  }
+  // "Detalhe" de uma faixa: fração de pixels que fogem da cor mediana (texto, logo, foto)
+  function detalheFaixa(px, W, H, lado, d0, d1, ini, fim) {
+    const lum = [], passo = Math.max(1, Math.floor((fim - ini) / 400));
+    for (let d = d0; d < d1; d++) for (let q = ini; q < fim; q += passo) {
+      const x = lado === 'esq' ? d : lado === 'dir' ? W - 1 - d : q;
+      const y = lado === 'topo' ? d : lado === 'base' ? H - 1 - d : q;
+      const i = (y * W + x) * 4;
+      lum.push(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+    }
+    if (lum.length < 20) return 0;
+    const ord = lum.slice().sort((a, b) => a - b), med = ord[ord.length >> 1];
+    return lum.filter(v => Math.abs(v - med) > 45).length / lum.length;
+  }
+  const media = (a, i0, i1) => { const s = a.slice(Math.max(0, i0), Math.max(i0 + 1, i1)); return s.length ? s.reduce((x, y) => x + y, 0) / s.length : 1; };
+  // retângulo (px) de uma faixa junto a um lado
+  function caixaFaixa(lado, d0, d1, W, H) {
+    return lado === 'topo' ? [0, d0, W, d1 - d0] : lado === 'base' ? [0, H - d1, W, d1 - d0]
+         : lado === 'esq' ? [d0, 0, d1 - d0, H] : [W - d1, 0, d1 - d0, H];
+  }
+
+  // Sangria, filete branco e conteúdo na margem de segurança (pixels da página)
+  function conferirBordas(c, k, s, seg, add) {
+    const W = c.width, H = c.height, px = c.getContext('2d').getImageData(0, 0, W, H).data;
+    const sp = Math.round(s * k), mm1 = Math.max(2, Math.round(k)), segp = Math.round((s + seg) * k), semSang = [];
+    for (const lado of Object.keys(LADOS)) {
+      const comp = lado === 'topo' || lado === 'base' ? W : H;
+      const ini = Math.max(sp, 1) + mm1, fim = comp - Math.max(sp, 1) - mm1;
+      if (fim - ini < 10) continue;
+      const fundo = Math.min(Math.max(segp, sp + 2 * mm1), lado === 'topo' || lado === 'base' ? H >> 1 : W >> 1);
+      const pf = perfilBorda(px, W, H, lado, fundo, ini, fim);
+      if (s > 0 && sp >= 2) {
+        const sang = media(pf, 1, sp - 1), dentro = media(pf, sp + 1, sp + 1 + Math.round(1.5 * k));
+        if (dentro < 0.7 && sang > 0.85) { semSang.push([lado, caixaFaixa(lado, 0, sp + 1, W, H)]); continue; }
+        // filete branco: linha branca perto do corte com cor dos dois lados
+        const j0 = Math.max(1, sp - mm1), j1 = Math.min(pf.length - 1, sp + mm1);
+        let achou = -1;
+        for (let d = j0; d <= j1 && achou < 0; d++) {
+          if (pf[d] < 0.85) continue;
+          const antes = pf.slice(1, d).some(v => v < 0.5), depois = pf.slice(d + 1, Math.min(pf.length, d + 2 * mm1)).some(v => v < 0.5);
+          if (antes && depois) achou = d;
+        }
+        if (achou >= 0) { add('vermelho', 'filete', `Lado ${LADOS[lado]}: filete branco perto do corte (a ${String(Math.abs(achou - sp) / k).slice(0, 3).replace('.', ',')} mm da linha). No refile ele pode aparecer.`, caixaFaixa(lado, Math.max(0, achou - 2), achou + 3, W, H)); continue; }
+      }
+      // conteúdo na margem de segurança: faixa entre o corte e a linha verde com detalhe, e a sangria lisa
+      if (seg > 0 && segp - sp > 3) {
+        const det = detalheFaixa(px, W, H, lado, sp + 1, segp, ini, fim);
+        const fora = sp >= 3 ? detalheFaixa(px, W, H, lado, 1, sp, ini, fim) : detalheFaixa(px, W, H, lado, 1, Math.min(segp, mm1 + 1), ini, fim);
+        if (det > 0.06 && fora < 0.03) add('amarelo', 'seguranca', `Lado ${LADOS[lado]}: tem conteúdo entre o corte e a margem de segurança (${String(seg).replace('.', ',')} mm). Confira se não é texto ou logo.`, caixaFaixa(lado, sp, segp, W, H));
+      }
+    }
+    if (semSang.length) {
+      const lados = semSang.map(x => LADOS[x[0]]), txt = semSang.length === 4 ? 'Nenhum lado tem sangria' : (semSang.length === 1 ? 'Lado ' : 'Lados ') + lados.join(', ').replace(/, ([^,]*)$/, ' e $1') + (semSang.length === 1 ? ' sem sangria' : ' sem sangria');
+      add('vermelho', 'sem_sangria', `${txt}: a arte para na linha de corte. Estique o fundo ${String(s).replace('.', ',')} mm para fora do corte.`, semSang.map(x => x[1]));
+    }
+  }
+
+  // Resolução das imagens: percorre os comandos de desenho da página
+  async function imagensDaPagina(pg, vp) {
+    const lib = window.pdfjsLib, O = lib.OPS, T = lib.Util.transform;
+    const ops = await pg.getOperatorList();
+    let ctm = [1, 0, 0, 1, 0, 0]; const pilha = [], imgs = [];
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const f = ops.fnArray[i], a = ops.argsArray[i];
+      if (f === O.save) pilha.push(ctm);
+      else if (f === O.restore) ctm = pilha.pop() || ctm;
+      else if (f === O.transform) ctm = T(ctm, a);
+      else if (f === O.paintFormXObjectBegin) { pilha.push(ctm); if (Array.isArray(a[0]) && a[0].length === 6) ctm = T(ctm, a[0]); }
+      else if (f === O.paintFormXObjectEnd) ctm = pilha.pop() || ctm;
+      else if (f === O.paintImageXObject || f === O.paintInlineImageXObject) {
+        const wpx = f === O.paintImageXObject ? a[1] : a[0] && a[0].width, hpx = f === O.paintImageXObject ? a[2] : a[0] && a[0].height;
+        if (!wpx || !hpx) continue;
+        const wpt = Math.hypot(ctm[0], ctm[1]), hpt = Math.hypot(ctm[2], ctm[3]);
+        if (wpt * PT_MM < 3 || hpt * PT_MM < 3) continue;
+        const dpi = Math.min(wpx / (wpt / 72), hpx / (hpt / 72));
+        const cs = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => vp.convertToViewportPoint(ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]));
+        const xs = cs.map(p => p[0]), ys = cs.map(p => p[1]);
+        imgs.push({ dpi: Math.round(dpi), wmm: wpt * PT_MM, hmm: hpt * PT_MM, caixa: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)] });
+      }
+    }
+    return imgs;
+  }
+  // Textos com fonte viva (não convertidos em curvas)
+  async function textosDaPagina(pg, vp) {
+    const tc = await pg.getTextContent(), T = window.pdfjsLib.Util.transform, out = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const tx = T(vp.transform, it.transform), alt = Math.hypot(tx[2], tx[3]);
+      out.push({ texto: it.str.trim(), caixa: [tx[4], tx[5] - alt, Math.max(4, it.width * vp.scale), alt] });
+    }
+    return out;
+  }
+  // Indício de RGB: procura citações de espaço de cor RGB no arquivo (fora do grupo de transparência)
+  async function indicioRgb(file) {
+    if (file.size > 60 * 1024 * 1024) return null;
+    const buf = new Uint8Array(await file.arrayBuffer()), dec = new TextDecoder('latin1');
+    let rgb = 0, cmyk = 0;
+    for (let i = 0; i < buf.length; i += 4 * 1024 * 1024) {
+      const t = dec.decode(buf.subarray(Math.max(0, i - 16), Math.min(buf.length, i + 4 * 1024 * 1024)));
+      rgb += (t.match(/\/(DeviceRGB|CalRGB)/g) || []).length - (t.match(/\/CS\s*\/(DeviceRGB|CalRGB)/g) || []).length;
+      cmyk += (t.match(/\/DeviceCMYK/g) || []).length;
+    }
+    return { rgb: Math.max(0, rgb), cmyk };
+  }
+  function dpiMinimo(g, fw, fh) {
+    if (g && g.dpi) return { min: g.dpi, so_recomendacao: false };
+    const rg = g && g.regras && g.regras.dpi_recomendado;
+    if (Array.isArray(rg) && rg.length && fw) {
+      const maior = Math.max(fw, fh), f = rg.find(x => !x.ate_mm || maior <= x.ate_mm + TOL);
+      if (f) return { min: f.dpi, so_recomendacao: true };
+    }
+    return null;
+  }
+
+  // Confere um arquivo. Devolve { nome, lido, itens[], paginas: [{ rotulo, canvas, k, an, marcas[] }] }
+  async function conferirArquivo(file, g, opts) {
+    const r = { nome: file.name, lido: true, itens: [], paginas: [], nMarcas: 0 };
+    const add = (nivel, codigo, texto, pagina, caixa) => {
+      const it = { nivel, codigo, texto, arquivo: file.name, pagina: pagina || null };
+      r.itens.push(it);
+      if (caixa && pagina && r.paginas[pagina - 1]) {
+        it.marca = ++r.nMarcas;
+        (Array.isArray(caixa[0]) ? caixa : [caixa]).forEach(cx => r.paginas[pagina - 1].marcas.push({ nivel, caixa: cx, n: it.marca }));
+      }
+      return it;
+    };
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const ehPdf = file.type === 'application/pdf' || ext === 'pdf', ehImg = /^(jpe?g|png|webp)$/.test(ext);
+    if (opts.limiteMb && file.size > opts.limiteMb * 1024 * 1024) {
+      r.lido = false; add('amarelo', 'grande', `Arquivo com ${(file.size / 1048576).toFixed(0)} MB: passa de ${opts.limiteMb} MB e não foi conferido automaticamente. Use o checklist.`); return r;
+    }
+    if (!ehPdf && !ehImg) {
+      r.lido = false;
+      add('amarelo', 'nao_lido', ext === 'cdr' ? 'Arquivo CorelDRAW (.cdr): a conferência automática ainda não lê CDR. Use o checklist (ou exporte em PDF para conferir).'
+                                              : `Arquivo .${ext}: a conferência automática só lê PDF e imagem. Use o checklist.`);
+      return r;
+    }
+    if (ehImg) {
+      const img = await carregarImagem(URL.createObjectURL(file));
+      const c = document.createElement('canvas'), e = Math.min(1, LADO_ANALISE / Math.max(img.naturalWidth, img.naturalHeight));
+      c.width = Math.round(img.naturalWidth * e); c.height = Math.round(img.naturalHeight * e); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      r.paginas.push({ rotulo: 'imagem', canvas: c, an: null, k: null, marcas: [] });
+      if (g && g.w && g.h) {
+        const W = g.w + 2 * g.s, H = g.h + 2 * g.s, dm = dpiMinimo(g, g.w, g.h);
+        const dpi = Math.round(Math.min(img.naturalWidth / (W / 25.4), img.naturalHeight / (H / 25.4)));
+        const pi = img.naturalWidth / img.naturalHeight, pg0 = W / H;
+        const mesma = Math.abs(pi / pg0 - 1) <= 0.03, girada = Math.abs(pi * pg0 - 1) <= 0.03;
+        if (!mesma && !(girada && g.gira)) add('vermelho', 'tamanho', girada ? `A imagem está girada em relação ao gabarito (${mm(W)} × ${mm(H)} mm com sangria).`
+                                                                              : `A imagem não tem a proporção do gabarito (${mm(W)} × ${mm(H)} mm com sangria).`, 1);
+        if (dm && dpi < dm.min * 0.95) add(dpi < dm.min * 0.6 && !dm.so_recomendacao ? 'vermelho' : 'amarelo', 'dpi', `Imagem com ${dpi} dpi no tamanho final (${dm.so_recomendacao ? 'recomendado' : 'mínimo'} ${dm.min} dpi).`, 1);
+        else add('verde', 'dpi', `Imagem com ${dpi} dpi no tamanho final.`, 1);
+      }
+      add('amarelo', 'imagem', 'Arquivo em imagem (JPG/PNG): confira se as cores estão em CMYK; o PDF é o formato mais seguro para a gráfica.');
+      return r;
+    }
+    await carregarPdfJs();
+    let doc;
+    try { doc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise; }
+    catch (e) { r.lido = false; add('vermelho', 'pdf_invalido', 'O PDF não abriu (arquivo corrompido ou protegido). Exporte de novo.'); return r; }
+    const n = doc.numPages, papeis = papeisDasPaginas(n, g, opts.papeis);
+    if (!opts.folha && g && g.paginas && n !== g.paginas) add('amarelo', 'paginas', `O arquivo tem ${n} ${n === 1 ? 'página' : 'páginas'}; o gabarito pede ${g.paginas}.`);
+    if (n > MAX_PAG_CONF) add('amarelo', 'paginas_demais', `Foram conferidas as ${MAX_PAG_CONF} primeiras de ${n} páginas.`);
+    const qrOk = await carregarJsQr();
+    let w0 = null, h0 = null, nTextos = 0, exTexto = '', menorDpi = null;
+    const dm0 = [];
+    for (let p = 1; p <= Math.min(n, MAX_PAG_CONF); p++) {
+      const pg = await doc.getPage(p), vp1 = pg.getViewport({ scale: 1 });
+      const wmm = vp1.width * PT_MM, hmm = vp1.height * PT_MM, papel = papeis[p - 1], arte = ehArte(papel);
+      const k = LADO_ANALISE / Math.max(wmm, hmm), vp = pg.getViewport({ scale: k * PT_MM });
+      const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+      const rot = { frente: 'Frente', verso: 'Verso', faca: 'Faca', verniz_frente: 'Verniz da frente', verniz_verso: 'Verniz do verso', branco_frente: 'Branco da frente', branco_verso: 'Branco do verso' }[papel] || `Página ${p}`;
+      const pag = { rotulo: n === 1 ? 'Arte' : `${rot} (pág. ${p})`, canvas: c, k, an: null, marcas: [] };
+      r.paginas.push(pag);
+      if (w0 == null) { w0 = wmm; h0 = hmm; }
+      else if (!perto(wmm, w0) || !perto(hmm, h0)) {
+        if (!(perto(wmm, h0) && perto(hmm, w0) && g && g.gira)) add('amarelo', 'pag_tamanho', `A página ${p} tem ${mm(wmm)} × ${mm(hmm)} mm, diferente da 1ª página (${mm(w0)} × ${mm(h0)} mm).`, p);
+      }
+      if (opts.folha) {
+        if (p === 1) {
+          const f = folhaDigital(wmm, hmm);
+          if (f) add('verde', 'folha', `Folha ${f[0]}: ${mm(wmm)} × ${mm(hmm)} mm.`, 1);
+          else add('vermelho', 'folha', `A folha tem ${mm(wmm)} × ${mm(hmm)} mm: não é A4 (220 × 320) nem SRA3 (320 × 450).`, 1);
+        }
+      } else if (g && g.modo !== 'livre' && arte) {
+        const an = analisar({ fonte: 'pdf', w: wmm, h: hmm }, g);
+        pag.an = an;
+        an.avisos.forEach(a => add(a.nivel, a.nivel === 'verde' ? 'tamanho_ok' : 'tamanho', (n > 1 ? `${rot}: ` : '') + a.txt, p));
+        if (!an.avisos.some(a => a.nivel !== 'verde') && !an.area) add('verde', 'tamanho_ok', `${n > 1 ? rot + ': ' : ''}Tamanho confere (${mm(an.fw)} × ${mm(an.fh)} mm final${an.s ? `, sangria ${String(an.s).replace('.', ',')} mm` : ''}).`, p);
+        if (an.encaixe === 'corte' && !an.area) conferirBordas(c, k, an.s, an.seg || 0, (nv, cod, txt, cx) => add(nv, cod, (n > 1 ? `${rot}: ` : '') + txt, p, cx));
+      }
+      // fontes vivas
+      const txs = await textosDaPagina(pg, vp);
+      if (txs.length) {
+        nTextos += txs.length; if (!exTexto) exTexto = txs.map(t => t.texto).join(' ').slice(0, 60);
+        txs.slice(0, 40).forEach(t => pag.marcas.push({ nivel: 'texto', caixa: t.caixa }));
+      }
+      // resolução
+      const dmPag = dpiMinimo(g, pag.an ? pag.an.fw : null, pag.an ? pag.an.fh : null);
+      for (const im of await imagensDaPagina(pg, vp)) {
+        if (menorDpi == null || im.dpi < menorDpi) menorDpi = im.dpi;
+        if (!dmPag) continue;
+        const ruim = im.dpi < dmPag.min * 0.6 && !dmPag.so_recomendacao, baixo = im.dpi < dmPag.min * 0.95;
+        if (ruim || baixo) dm0.push({ p, im, nivel: ruim ? 'vermelho' : 'amarelo', min: dmPag.min, rec: dmPag.so_recomendacao });
+      }
+      // QR Code
+      if (qrOk && window.jsQR && arte) {
+        try {
+          // o leitor acerta melhor em tamanhos médios: tenta reduzido (900 px) e depois no tamanho da análise
+          let q = null, esc2 = 1;
+          for (const lado of [900, LADO_ANALISE]) {
+            const e = Math.min(1, lado / Math.max(c.width, c.height)), t = document.createElement('canvas');
+            t.width = Math.round(c.width * e); t.height = Math.round(c.height * e); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+            const d = t.getContext('2d').getImageData(0, 0, t.width, t.height);
+            q = window.jsQR(d.data, t.width, t.height, { inversionAttempts: 'attemptBoth' });
+            if (q && q.data) { esc2 = 1 / e; break; }
+          }
+          if (q && q.data) {
+            const L = q.location, xs = [L.topLeftCorner.x, L.topRightCorner.x, L.bottomLeftCorner.x, L.bottomRightCorner.x].map(v => v * esc2), ys = [L.topLeftCorner.y, L.topRightCorner.y, L.bottomLeftCorner.y, L.bottomRightCorner.y].map(v => v * esc2);
+            const it = add('info', 'qr', `QR Code ${n > 1 ? `(${rot}) ` : ''}leva para: ${q.data.slice(0, 200)} — abra e confira se é o certo.`, p,
+                           [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]);
+            it.link = /^https?:\/\//i.test(q.data) ? q.data : null;
+            pag.marcas[pag.marcas.length - 1].nivel = 'qr';
+          }
+        } catch (e) { /* QR é só ajuda */ }
+      }
+    }
+    // resolução: um aviso por página com a pior imagem
+    const porPag = {};
+    dm0.forEach(x => { if (!porPag[x.p] || x.im.dpi < porPag[x.p].im.dpi) porPag[x.p] = x; });
+    Object.values(porPag).forEach(x => {
+      const qtd = dm0.filter(y => y.p === x.p).length;
+      add(x.nivel, 'dpi', `${n > 1 ? `Pág. ${x.p}: ` : ''}${qtd > 1 ? `${qtd} imagens abaixo de ${x.min} dpi; a pior` : 'Imagem'} com ${x.im.dpi} dpi (${x.rec ? 'recomendado' : 'mínimo'} ${x.min} dpi), ${mm(x.im.wmm)} × ${mm(x.im.hmm)} mm.`, x.p, x.im.caixa);
+    });
+    if (!dm0.length && menorDpi != null) add('verde', 'dpi', `Resolução das imagens: a menor tem ${menorDpi} dpi.`);
+    if (nTextos) add('amarelo', 'fontes', `Texto com fonte não convertida em curvas (${nTextos} ${nTextos === 1 ? 'trecho' : 'trechos'}), ex.: "${exTexto}". Converta em curvas para não trocar a fonte na gráfica. (Os textos estão marcados em azul.)`);
+    const rgb = await indicioRgb(file).catch(() => null);
+    if (rgb && rgb.rgb > 0) add('amarelo', 'rgb', `Indício de cor RGB: o arquivo cita RGB ${rgb.rgb} ${rgb.rgb === 1 ? 'vez' : 'vezes'}${rgb.cmyk ? ` (e CMYK ${rgb.cmyk})` : ''}. Confira se a arte foi exportada em CMYK.`);
+    return r;
+  }
+
+  // Desenha a página com corte (vermelho), sangria sombreada, segurança (verde) e as caixas numeradas dos avisos
+  function desenharMarcas(pag, foco) {
+    const b = pag.canvas, c = document.createElement('canvas'); c.width = b.width; c.height = b.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(b, 0, 0);
+    if (pag.an && pag.an.encaixe === 'corte' && !pag.an.area && pag.k) linhas(ctx, pag.k, pag.an.s, pag.an.seg || 0, c.width, c.height);
+    const lw = Math.max(2, Math.max(c.width, c.height) / 220);
+    for (const mk of pag.marcas) {
+      const [x, y, w, h] = mk.caixa, cor = mk.nivel === 'vermelho' ? '#D0302A' : mk.nivel === 'amarelo' ? '#E08A00' : mk.nivel === 'qr' ? '#2F6F9F' : 'rgba(47,111,159,.75)';
+      ctx.save(); ctx.strokeStyle = cor; ctx.lineWidth = mk.n && mk.n === foco ? lw * 2.5 : mk.nivel === 'texto' ? lw * 0.6 : lw;
+      if (mk.nivel === 'texto') ctx.setLineDash([lw * 2, lw * 1.5]);
+      ctx.strokeRect(x, y, w, h);
+      if (mk.n) {
+        const r = Math.max(14, Math.max(c.width, c.height) / 30), cx = Math.min(c.width - r, Math.max(r, x + w / 2)), cy = Math.min(c.height - r, Math.max(r, y + h / 2));
+        ctx.setLineDash([]); ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(r * 1.2)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(mk.n), cx, cy + 1);
+      }
+      ctx.restore();
+    }
+    return c;
+  }
+
+  /* Tela da conferência. Devolve null (voltar) ou { resultado, itens, checklist, motivo }.
+     opts: { files, urgencia, prova, papeis, folha, titulo, limiteMb } */
+  window.conferirArquivosParaImpressao = async function (opts) {
+    const u = opts.urgencia || {}, g = opts.folha ? null : gabaritoConferencia(u, opts.prova);
+    const m = abrirModal({ titulo: opts.titulo || 'Conferência do arquivo para impressão', largo: true, corpo: '<p class="small muted" style="margin:0">Conferindo o arquivo… (pode levar alguns segundos)</p>',
+      rodape: '<button class="btn" data-v>Voltar</button>' });
+    let fechado = false; m.el.querySelector('[data-v]').onclick = () => { fechado = true; m.fechar(); };
+    const res = [];
+    for (const f of opts.files) {
+      if (fechado) return null;
+      try { res.push(await conferirArquivo(f, g, { papeis: opts.papeis, folha: opts.folha, limiteMb: opts.limiteMb || 100 })); }
+      catch (e) { console.error(e); res.push({ nome: f.name, lido: false, paginas: [], itens: [{ nivel: 'amarelo', codigo: 'falha', texto: 'Não foi possível conferir este arquivo automaticamente. Use o checklist.', arquivo: f.name }] }); }
+    }
+    if (fechado || !m.el.isConnected) return null;
+    const todos = res.flatMap(r => r.itens);
+    const nV = todos.filter(i => i.nivel === 'vermelho').length, nA = todos.filter(i => i.nivel === 'amarelo').length;
+    const semGab = !g && !opts.folha, naoLido = res.some(r => !r.lido), precisaChecklist = semGab || naoLido;
+    const resultado = nV ? 'erro' : precisaChecklist ? 'checklist' : nA ? 'alerta' : 'ok';
+    const icone = { vermelho: '✖', amarelo: '!', verde: '✓', info: 'i' };
+    const corpoArq = r => `
+      <div class="painel" style="padding:12px 14px;margin:0 0 10px">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(r.nome)}</b>
+          <span class="small muted">${r.paginas.length ? `${r.paginas.length} ${r.paginas.length === 1 ? 'página conferida' : 'páginas conferidas'}` : 'não lido'}</span></div>
+        <div style="margin-top:8px">${r.itens.map(it => { const num = todos.indexOf(it) + 1; return `
+          <div class="mt-av ${it.nivel === 'info' ? 'verde' : it.nivel}" data-it="${num}" style="cursor:${it.marca ? 'pointer' : 'default'};display:flex;gap:8px">
+            <b style="min-width:22px">${it.marca || icone[it.nivel] || ''}</b>
+            <span>${esc(it.texto)}${it.link ? ` <a href="${esc(it.link)}" target="_blank" rel="noopener">abrir</a>` : ''}</span></div>`; }).join('')}</div>
+        ${r.paginas.length ? `<div class="mt-conf" data-figs="${esc(r.nome)}"></div>` : ''}
+      </div>`;
+    const corpo = m.el.querySelector('.modal-corpo');
+    corpo.innerHTML = `
+      <style>.mt-conf{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:10px}
+        .mt-conf figure{margin:0}.mt-conf canvas{width:100%;height:auto;border:1px solid var(--linha);border-radius:6px;background:#fff}
+        .mt-conf figcaption{font-size:12px;color:var(--texto-2);margin-bottom:4px}
+        .mt-av{font-size:13px;padding:6px 10px;border-radius:8px;margin-top:6px}
+        .mt-av.vermelho{background:var(--vermelho-bg);color:var(--vermelho)}.mt-av.amarelo{background:var(--ambar-bg);color:#7d520d}.mt-av.verde{background:var(--verde-bg);color:#007a61}</style>
+      <div class="small">${opts.folha ? 'Folha montada para a impressão digital.' : g ? `Gabarito: <b>${esc(g.nome)}</b>${g.medidaDaProva ? ` · tamanho informado na prova: ${mm(g.w)} × ${mm(g.h)} mm` : ''}` : '<b>Item sem gabarito com medidas:</b> confira pelo checklist abaixo.'}</div>
+      <div class="mt-av ${nV ? 'vermelho' : nA || precisaChecklist ? 'amarelo' : 'verde'}" style="font-size:14px">
+        ${nV ? `<b>${nV} ${nV === 1 ? 'problema' : 'problemas'}</b>${nA ? ` e ${nA} ${nA === 1 ? 'alerta' : 'alertas'}` : ''}. Confira antes de enviar.`
+          : nA ? `<b>${nA} ${nA === 1 ? 'alerta' : 'alertas'}</b> para conferir.` : precisaChecklist ? 'Conferência manual: use o checklist.' : '<b>Tudo certo</b> no que o sistema consegue conferir.'}</div>
+      ${res.map(corpoArq).join('')}
+      <p class="small muted" style="margin:0">Vermelho tracejado = corte · área sombreada = sangria · verde = margem de segurança · números = avisos · azul tracejado = texto com fonte viva. A conferência só avisa: ela não confere ortografia, cores nem se a arte é a do pedido.</p>
+      ${precisaChecklist ? `<div class="campo"><b>Checklist</b>
+        <label class="check" style="white-space:normal"><input type="checkbox" data-ck="tamanho"> Conferi o tamanho final com o pedido</label>
+        <label class="check" style="white-space:normal"><input type="checkbox" data-ck="sangria"> A arte tem sangria (ou o material não precisa)</label>
+        <label class="check" style="white-space:normal"><input type="checkbox" data-ck="seguranca"> Textos e logos estão longe do corte</label></div>` : ''}
+      ${nV ? `<label class="campo">Motivo para enviar mesmo assim *<input type="text" data-motivo maxlength="300" placeholder="Ex.: o cliente pediu assim / o fornecedor ajusta"></label>` : ''}`;
+    res.forEach(r => {
+      const box = corpo.querySelector(`[data-figs="${CSS.escape(r.nome)}"]`); if (!box) return;
+      r.paginas.forEach((pg, i) => {
+        const f = document.createElement('figure'); f.dataset.pag = r.nome + '|' + (i + 1);
+        f.innerHTML = `<figcaption>${esc(pg.rotulo)}</figcaption>`; f.appendChild(desenharMarcas(pg)); box.appendChild(f);
+      });
+    });
+    // lista clicável: destaca a caixa do aviso na página
+    corpo.querySelectorAll('[data-it]').forEach(el => el.onclick = () => {
+      const it = todos[+el.dataset.it - 1]; if (!it || !it.marca) return;
+      const r = res.find(x => x.nome === it.arquivo), pg = r && r.paginas[it.pagina - 1], fig = corpo.querySelector(`[data-pag="${CSS.escape(it.arquivo + '|' + it.pagina)}"]`);
+      if (!pg || !fig) return;
+      fig.querySelector('canvas').replaceWith(desenharMarcas(pg, it.marca));
+      fig.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return new Promise(ok => {
+      const rod = m.el.querySelector('.modal-rodape');
+      rod.innerHTML = `<button class="btn" data-v>Voltar e trocar o arquivo</button><button class="btn ${nV ? 'perigo' : 'prim'}" data-e>${nV ? 'Enviar mesmo assim' : 'Enviar'}</button>`;
+      rod.querySelector('[data-v]').onclick = () => { m.fechar(); ok(null); };
+      rod.querySelector('[data-e]').onclick = () => {
+        let checklist = null;
+        if (precisaChecklist) {
+          const cks = [...corpo.querySelectorAll('[data-ck]')];
+          if (cks.some(c => !c.checked)) return toast('Marque os itens do checklist.', true);
+          checklist = Object.fromEntries(cks.map(c => [c.dataset.ck, true]));
+        }
+        const motivo = nV ? (corpo.querySelector('[data-motivo]').value || '').trim() : null;
+        if (nV && !motivo) return toast('Escreva o motivo para enviar mesmo assim.', true);
+        m.fechar();
+        ok({ resultado, motivo, checklist,
+             itens: todos.filter(i => i.nivel !== 'verde').map(i => ({ nivel: i.nivel, codigo: i.codigo, texto: i.texto.slice(0, 300), arquivo: i.arquivo, pagina: i.pagina })) });
+      };
+    });
+  };
+
 })();
