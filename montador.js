@@ -430,7 +430,7 @@
   /* ---------- tela ---------- */
   // opts.teste = só testar o arquivo do cliente contra o gabarito (não sobe nada, não gera link)
   window.abrirMontador = async function (arteId, opts) {
-    const teste = !!(opts && opts.teste);
+    const teste = !!(opts && opts.teste), direto = teste ? opts.direto || null : null;
     let a;
     if (teste) a = opts.item;
     else { try { a = (await api('obter_arte', { id: arteId })).arte; } catch (e) { return; } }
@@ -474,7 +474,7 @@
         .mt-av.vermelho{background:var(--vermelho-bg);color:var(--vermelho)}.mt-av.amarelo{background:var(--ambar-bg);color:#7d520d}.mt-av.verde{background:var(--verde-bg);color:#007a61}
       </style>
       <div class="small" style="margin-bottom:8px">Gabarito: ${linhaGab}</div>
-      ${teste ? `<div class="mt-av amarelo" style="margin:0 0 10px">Só um teste: o arquivo é conferido aqui na tela, contra o gabarito do item. <b>Nada é salvo nem enviado ao cliente.</b></div>` : ''}
+      ${teste ? `<div class="mt-av amarelo" style="margin:0 0 10px">O arquivo é conferido aqui na tela, contra o gabarito do item. <b>Nada é salvo nem enviado ao cliente${direto && direto.arte ? ', a não ser que você clique em "Usar este arquivo e enviar para a pré-impressão"' : ''}.</b></div>` : ''}
       <div class="campo" style="margin-bottom:10px;${teste ? 'display:none' : ''}">O que você está enviando ao cliente?
         <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="mt-tipo" value="prova" checked>
           <span><b>Só a prova</b><br><span class="small muted">Depois que o cliente aprovar, você fecha o arquivo para impressão.</span></span></label>
@@ -500,7 +500,7 @@
         <input type="file" id="mt-arq" multiple accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" style="display:none"></div>
       <div class="mt-pags" id="mt-pags"></div>
       <div id="mt-res"></div>`,
-      rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button>${teste ? '' : '<button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>'}` });
+      rodape: `<button class="btn" data-v style="margin-right:auto">Fechar</button>${teste ? (direto && direto.arte ? '<span class="small muted" id="mt-dst"></span><button class="btn prim" data-direto disabled>Usar este arquivo e enviar para a pré-impressão</button>' : '') : '<button class="btn prim" data-enviar disabled>Enviar prova ao cliente</button>'}` });
     const $m = sel => m.el.querySelector(sel);
     $m('[data-v]').onclick = m.fechar;
     // item na digital: a folha montada só aparece quando a designer manda a arte pronta para impressão
@@ -597,7 +597,7 @@
       const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
       const extras = paginas.filter(p => p.papel === 'extra');
       const pFaca = paginas.find(p => p.papel === 'faca'), pVF = paginas.find(p => p.papel === 'verniz_frente'), pVV = paginas.find(p => p.papel === 'verniz_verso');
-      bt.disabled = true; analise = {};
+      bt.disabled = true; analise = {}; const bd = $m('[data-direto]'); if (bd) bd.disabled = true;
       if (!fr) { res.innerHTML = paginas.length ? '<p class="small muted" style="margin-top:10px">Escolha qual página é a frente.</p>' : ''; return; }
       const ge = gabaritoEfetivo();
       if (!ge) { res.innerHTML = '<div class="mt-av amarelo" style="margin-top:10px">Escreva a <b>largura</b> e a <b>altura</b> finais da arte (em cm) para o montador conferir o arquivo.</div>'; return; }
@@ -636,7 +636,8 @@
           ${paginas.some(p => /^branco_/.test(p.papel)) ? '<div class="mt-av verde">Máscara de branco: fica no arquivo de impressão e não aparece na prova do cliente.</div>' : ''}
           ${(g.ordem || []).includes('faca') && !pFaca ? '<div class="mt-av amarelo">Este gabarito tem faca, mas nenhuma página foi marcada como <b>Faca</b>: o cliente não vai ver a linha de corte.</div>' : ''}
           ${(g.ordem || []).some(x => x.startsWith('verniz')) && !pVF && !pVV ? '<div class="mt-av amarelo">Este gabarito tem verniz, mas nenhuma página foi marcada como <b>Verniz</b>: o cliente não vai ver onde vai o verniz.</div>' : ''}
-          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? `<b>O arquivo não está no tamanho ${g.modo === 'livre' ? 'informado' : 'do gabarito'}.</b>`+' Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}</p>` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
+          ${teste ? `<p class="small" style="margin:8px 0 0">${tamErrado ? `<b>O arquivo não está no tamanho ${g.modo === 'livre' ? 'informado' : 'do gabarito'}.</b>`+' Peça um novo arquivo ao cliente ou passe para a designer ajustar.' : avisos.length ? 'Confira os avisos acima antes de liberar.' : '<b>O arquivo está dentro do gabarito.</b>'}${!tamErrado && direto && direto.arte ? ' Se estiver tudo certo, use <b>"Usar este arquivo e enviar para a pré-impressão"</b>: a arte fica resolvida pelo vendedor, sem passar pela designer.' : ''}</p>
+            ${direto && !direto.arte && direto.motivo ? `<div class="mt-av amarelo">${esc(direto.motivo)}</div>` : ''}` : `<p class="small" style="margin:6px 0 0">A prova vai num <b>PDF só</b> com ${1 + (ve ? 1 : 0) + extras.length} ${1 + (ve ? 1 : 0) + extras.length === 1 ? 'página' : 'páginas'}: frente${ve ? ', verso' : ''}${extras.length ? ` e ${extras.length} ${extras.length === 1 ? 'outra página' : 'outras páginas'}` : ''}${pVF || pVV ? ', mais a máscara de verniz no fim (vira o brilho no link)' : ''}.</p>`}`;
         const figs = res.querySelectorAll('.mt-conf figure');
         figs[0].appendChild(confF); if (confV) figs[1].appendChild(confV);
         if (especiais.length) {
@@ -645,12 +646,31 @@
           if (ve && cli[1]) cli[1].appendChild(await desenharProva(ve, analise.verso, false, extrasDe('verso'), 700));
         }
         bt.disabled = false;
+        if (bd) bd.disabled = !!tamErrado || enviando;
       } catch (e) {
         console.error(e);
         res.innerHTML = '<div class="mt-av vermelho">Não foi possível montar a prova com esse arquivo. Tente exportar de novo em PDF.</div>';
       }
     }
 
+    // AR4 caminho direto: o arquivo testado vira o arquivo para impressão (conferência antes de subir)
+    if (teste && direto && direto.arte) $m('[data-direto]').onclick = async () => {
+      if (enviando || !analise.frente) return;
+      const arqs = [...new Set(paginas.filter(p => p.papel).map(p => p.file))];
+      if (!arqs.length) return;
+      const papeisConf = arqs.length === 1 ? paginas.filter(p => p.file === arqs[0]).sort((x, y) => (x.pagina || 0) - (y.pagina || 0)).map(p => p.papel || 'extra') : null;
+      const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: u, papeis: papeisConf,
+        prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência do arquivo do cliente',
+        limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
+      if (!conf) return;
+      const bd = $m('[data-direto]'), st = $m('#mt-dst');
+      enviando = true; bd.disabled = true; bd.textContent = 'Enviando…';
+      try {
+        const r = await opts.aoUsar(direto.arte, arqs, conf, t => { if (st) st.textContent = t; });
+        if (r) { m.fechar(); return; }
+      } catch (e) { toast(e.message || 'Não foi possível enviar o arquivo.', true); }
+      enviando = false; bd.disabled = false; bd.textContent = 'Usar este arquivo e enviar para a pré-impressão'; if (st) st.textContent = '';
+    };
     if (!teste) $m('[data-enviar]').onclick = async () => {
       if (enviando) return;
       const fr = paginas.find(p => p.papel === 'frente'), ve = paginas.find(p => p.papel === 'verso');
