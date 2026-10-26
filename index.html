@@ -866,6 +866,7 @@ rota('pedido', async (id, el) => {
                   ${p.confirma_producao ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq perigo" onclick="decidirCancelItem('${i.id}',true)">Confirmar cancelamento</button><button class="btn peq" onclick="decidirCancelItem('${i.id}',false)">Recusar</button></div>` : '<div class="muted">Aguardando a confirmação da pré-impressão.</div>'}</div>` : ''}
                 ${i.troca_arte_pendente ? `<div style="margin-top:4px">${badge('Troca de arte aguardando a pré-impressão', 'b-ambar')}</div>` : ''}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div>
+                ${i.urgencia && i.urgencia.conferencia && i.status !== 'cancelado' ? `<div style="margin-top:4px">${seloConferencia(i.urgencia.conferencia)}</div>` : ''}
                 ${i.urgencia && i.status !== 'cancelado' && ordemStatus(i.status) < 8 ? `<div style="margin-top:4px">${badgeUrgencia(i.urgencia)}
                   ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalUrgenciaItem('${i.id}')">${urgenteProducao(i.urgencia) ? 'Urgência' : 'Subir urgência'}</button>
                   <button class="btn link peq" onclick="modalDigitalItem('${i.id}')">Digital</button>` : ''}</div>` : ''}</td>
@@ -3484,7 +3485,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261020b';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261023a';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3791,7 +3792,7 @@ function blocoMaterialArte(as, modo, o = {}) {
   return `<div class="material-arte">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
       <h3 style="font-size:16px;font-weight:700;margin:0">${esc(it.item_descricao)} <span class="small muted" style="font-weight:400">${it.quantidade ? num(it.quantidade) + ' un' : ''}</span></h3>
-      <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}</div></div>
+      <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}${seloConferencia(u && u.conferencia)}</div></div>
     ${linhaGabaritoCurta(u)}
     ${as.map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
       return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Arte ${k + 1} de ${as.length}</div>` : ''}
@@ -3892,14 +3893,20 @@ function modalFecharArte(id) {
   bs.onclick = async () => {
     const arqs = [...m.el.querySelector('#fa-arq').files];
     if (!arqs.length) return toast(dig ? 'Escolha a folha montada.' : 'Escolha o arquivo para impressão.', true);
-    if (dig && folhaOk === false && !(await confirmar('A folha montada não tem o tamanho da A4 (220 × 320 mm) nem da SRA3 (320 × 450 mm). Enviar mesmo assim?', 'Enviar assim'))) return;
+    // AR3b: conferência do arquivo para impressão (só avisa; vermelho pede "enviar mesmo assim" com motivo)
+    if (!(await carregarMontador())) return;
+    const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: a.urgencia, prova: a.prova, folha: dig,
+      limiteMb: (S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
+    if (!conf) return;
     const st = m.el.querySelector('#fa-status'), rot = m.el.querySelector('#fa-rot').value.trim();
-    bs.disabled = true; bs.classList.add('ocupado'); let ok = 0;
+    bs.disabled = true; bs.classList.add('ocupado'); const ids = [];
     for (const arq of arqs) {
-      try { await enviarArquivoDrive(a.pedido_id, arq, 'producao', a.item_id, rot, f => { st.textContent = `Enviando ${arq.name}… ${Math.round(f * 100)}%`; }, null, { arte_id: a.id }); ok++; }
+      try { ids.push(await enviarArquivoDrive(a.pedido_id, arq, 'producao', a.item_id, rot, f => { st.textContent = `Enviando ${arq.name}… ${Math.round(f * 100)}%`; }, null, { arte_id: a.id })); }
       catch (e) { toast(`${arq.name}: ${e.message}`, true); }
     }
-    if (!ok) { bs.disabled = false; bs.classList.remove('ocupado'); st.textContent = ''; return; }
+    if (!ids.length) { bs.disabled = false; bs.classList.remove('ocupado'); st.textContent = ''; return; }
+    try { await api('conferencia_registrar', { arte_id: a.id, arquivo_ids: ids, origem: 'fechar_arte', ...conf }, true); }
+    catch (e) { toast('O arquivo foi enviado, mas a conferência não ficou registrada: ' + e.message, true); }
     try { const r = await api('arte_situacao', { id, situacao: 'pronta' }); m.fechar();
       toast(r.arte && r.arte.item_status === 'pre_impressao' ? 'Arte fechada. O pedido tem pagamento: o item já foi para a pré-impressão.'
           : r.arte && r.arte.item_status === 'arte_aprovada' ? 'Arte fechada: arquivo pronto. Como o pedido ainda não tem pagamento, o vendedor envia para a pré-impressão.'
@@ -4209,7 +4216,7 @@ rota('producao', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             <div data-arq-item="${i.id}"></div>
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
@@ -4237,7 +4244,7 @@ rota('producao', async (_p, el) => {
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${data(i.data_prevista_entrega)}</td>
@@ -4814,6 +4821,32 @@ function seloDigital(dg) {
   if (!dg || !dg.digital) return '';
   const tit = dg.manual === true ? `Marcado pelo vendedor${dg.manual_por_nome ? ' (' + dg.manual_por_nome + ')' : ''}` : (dg.motivo || 'Pela regra do sistema');
   return ` <span class="badge b-digital" title="${esc('Impressão digital · ' + tit)}">Digital${dg.manual === true ? ' ✋' : ''}</span>`;
+}
+// AR3b: selo da conferência do arquivo para impressão (clicar abre o detalhe)
+function seloConferencia(c) {
+  if (!c) return '';
+  S.confs = S.confs || {}; S.confs[c.id] = c;
+  const sel = (txt, cls, tit) => ` <span class="badge ${cls}" style="cursor:pointer" title="${esc(tit)}" onclick="event.stopPropagation();verConferencia('${c.id}')">${esc(txt)}</span>`;
+  let h = '';
+  if (c.resultado === 'erro') h += sel('Enviada com alerta', 'b-vermelho', 'O arquivo para impressão foi enviado mesmo com problemas: ' + (c.motivo || ''));
+  else if (c.checklist) h += sel('Enviada sem gabarito', 'b-cinza', 'Conferido pelo checklist (sem gabarito com medidas ou arquivo que o sistema não lê).');
+  else if (c.resultado === 'alerta') h += sel('Conferência com alerta', 'b-ambar', 'A conferência do arquivo deu alertas. Clique para ver.');
+  if (c.gabarito_mudou) h += sel('Gabarito mudou', 'b-vermelho', `Conferido com "${c.gabarito_nome}"; agora vale "${c.gabarito_atual_nome}".`);
+  return h;
+}
+function verConferencia(id) {
+  const c = (S.confs || {})[id]; if (!c) return;
+  const cor = { vermelho: 'erro', amarelo: '', info: '' };
+  const m = abrirModal({ titulo: 'Conferência do arquivo para impressão', corpo: `
+    <p class="small" style="margin:0">${c.origem === 'arte_pronta' ? 'Arte pronta para impressão (junto com a prova)' : 'Arquivo enviado para impressão'} por <b>${esc(c.por_nome || '—')}</b> em ${dataHora(c.em)}.
+      ${c.gabarito_nome ? `<br>Gabarito usado: <b>${esc(c.gabarito_nome)}</b>${c.urgencia_nivel ? ` (urgência ${esc((URG_NOME[c.urgencia_nivel] || c.urgencia_nivel).toLowerCase())}${c.urgencia_definitiva ? '' : ', provável'})` : ''}.` : '<br>Sem gabarito com medidas.'}</p>
+    ${c.gabarito_mudou ? `<div class="alerta erro"><b>O gabarito mudou.</b> O arquivo foi conferido com "${esc(c.gabarito_nome)}", mas com a urgência de agora o gabarito é <b>"${esc(c.gabarito_atual_nome)}"</b>. Devolva para a designer ou combine com o cliente antes de produzir.</div>` : ''}
+    ${c.resultado === 'erro' ? `<div class="alerta erro"><b>Enviado mesmo assim.</b> Motivo: ${esc(c.motivo || '')}</div>` : ''}
+    ${c.checklist ? `<div class="alerta">Conferido pelo checklist: ${Object.keys(c.checklist).map(k => ({ tamanho: 'tamanho', sangria: 'sangria', seguranca: 'segurança' })[k] || k).join(', ')}.</div>` : ''}
+    ${(c.itens || []).length ? (c.itens || []).map(i => `<div class="alerta ${cor[i.nivel] || ''}" style="margin-top:6px;${i.nivel === 'info' ? 'background:var(--verde-bg);color:#007a61' : ''}">${esc(i.texto)}</div>`).join('')
+      : '<div class="alerta" style="background:var(--verde-bg);color:#007a61">Nenhum alerta.</div>'}`,
+    rodape: '<button class="btn prim" data-v>Fechar</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
 }
 function badgeUrgencia(u, sempre) {
   if (!u || !u.nivel) return '';
