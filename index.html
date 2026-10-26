@@ -1379,6 +1379,7 @@ function lerAcabamento(form, d) {
 
 /* item: novo ou edição (campos conforme perfil) */
 function modalItem(itemId) {
+  if (!itemId && pode('cria_pedidos')) return modalNovosItens();
   const p = S.vistaAtual.dados; const i = itemId ? p.itens.find(x => x.id === itemId) : {};
   const cria = pode('cria_pedidos'); const prod = podeStatus('em_producao') || podeStatus('despachado') || cria; const arte = podeStatus('arte_em_aprovacao') || cria;
   const opcoesForn = `<option value="">Selecione</option>` + S.base.fornecedores.filter(f => f.ativo || f.id === i.fornecedor_id)
@@ -1386,8 +1387,8 @@ function modalItem(itemId) {
   const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
     <form id="f-item" class="grade g3">
       ${cria ? `
+        <label class="campo" style="grid-column:span 2">Produto * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" list="dl-sugestoes" autocomplete="off" value="${esc(i.descricao || '')}" placeholder="Digite ou escolha: Folheto 10x14…"><div class="small muted" id="it-mat">${textoMaterialSugerido(i.descricao)}</div><div class="small muted" id="it-conf"></div></label>
         <label class="campo">Categoria *<select name="categoria_id">${opcoesCategoria(i.categoria_id, podeNovaCategoria())}</select><span class="small muted" id="it-sug"></span></label>
-        <label class="campo" style="grid-column:span 2">Produto * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" value="${esc(i.descricao || '')}" placeholder="Ex.: Panfleto A5 4x4 couchê 90g"><div class="small muted" id="it-conf"></div></label>
         ${i.especificacao ? `<div class="small muted" style="grid-column:1/-1">Especificação (campo antigo): ${esc(i.especificacao)}</div>` : ''}
         <label class="campo">Quantidade *<input type="number" step="any" min="0" name="quantidade" value="${esc(i.quantidade ?? 1)}"></label>
         <label class="campo">Valor total (R$) *<input type="number" step="0.01" min="0" name="valor_total" value="${esc(i.valor_total ?? '')}"><span class="unit-calc" id="it-unit"></span></label>
@@ -1418,7 +1419,15 @@ function modalItem(itemId) {
         $('#it-sug', el).innerHTML = l.length > 1 ? 'Também pode ser: ' + l.slice(1).map(c => `<a href="#" data-cat="${c.id}">${esc(c.nome)}</a>`).join(' · ') : '';
         $$('[data-cat]', el).forEach(a => a.onclick = e => { e.preventDefault(); f.categoria_id.value = a.dataset.cat; catManual = true; });
       };
-      f.descricao.oninput = () => { sug(); conf(); };
+      f.descricao.oninput = () => {
+        const bm = $('#it-mat', el); if (bm) bm.innerHTML = textoMaterialSugerido(f.descricao.value);
+        const sg = sugestaoPorTexto(f.descricao.value);
+        if (sg) { f.categoria_id.value = sg.categoria_id; catManual = true; $('#it-sug', el).innerHTML = '';
+          const k = f.descricao.value.indexOf('…'); if (k >= 0) setTimeout(() => { try { f.descricao.setSelectionRange(k, k + 1); } catch {} }, 0); }
+        else sug();
+        conf();
+      };
+      if (!S.cache.gabaritos) carregarGabaritos().then(() => { const bm = $('#it-mat', el); if (bm) bm.innerHTML = textoMaterialSugerido(f.descricao.value); }).catch(() => {});
       f.categoria_id.onchange = () => {
         catManual = true;
         if (f.categoria_id.value === '__nova') { f.categoria_id.value = ''; modalCategoria(null, id => {
@@ -1436,6 +1445,29 @@ function modalItem(itemId) {
     if (itemId) d.id = itemId; else d.pedido_id = p.id;
     await api('salvar_item', d);
     m.fechar(); toast(itemId ? 'Item atualizado.' : 'Item adicionado.'); recarregar();
+  };
+}
+// Adicionar item(ns) num pedido já criado: o mesmo editor do novo pedido (produto, categoria, gabarito sugerido, conferência e Digital)
+function modalNovosItens() {
+  const p = S.vistaAtual.dados;
+  const m = abrirModal({ titulo: `Adicionar item · Pedido ${p.numero}`, largo: true,
+    corpo: `<div id="ni-itens"></div><p class="small muted" style="margin:8px 0 0">O gabarito do item é escolhido pelo produto (dá para trocar depois no bloco Artes).</p>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Adicionar</button>` });
+  const pegar = editorItens(m.el.querySelector('#ni-itens'), [], { comStatus: true, comDigital: true });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bs = m.el.querySelector('[data-s]');
+  bs.onclick = async () => {
+    const itens = pegar();
+    if (pegar.incompletos()) return toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true);
+    if (!itens.length) return toast('Escreva o produto do item.', true);
+    bs.disabled = true; let ok = 0;
+    try {
+      for (const it of itens) { await api('salvar_item', { ...it, pedido_id: p.id }); ok++; }
+      m.fechar(); toast(ok > 1 ? `${ok} itens adicionados.` : 'Item adicionado.'); recarregar();
+    } catch (e) {
+      bs.disabled = false;
+      if (ok) { toast(`${ok} de ${itens.length} itens foram adicionados; o próximo deu erro. Confira o pedido.`, true); m.fechar(); recarregar(); }
+    }
   };
 }
 function opcoesStatusInicial(sel = 'arte_a_fazer') {
