@@ -871,10 +871,37 @@
          : lado === 'esq' ? [d0, 0, d1 - d0, H] : [W - d1, 0, d1 - d0, H];
   }
 
+  // Caixa (px) dos pixels "estranhos" na faixa entre o corte e a área segura de um lado, ou null.
+  // Referência = cor da sangria daquele lado; se a sangria tem foto/desenho (varia muito), a faixa não é conferida
+  // (fundo que sangra é o certo). Pixels dentro de caixas de texto já avisadas ficam de fora.
+  function foraDaAreaSegura(px, W, H, lado, sp, segp, mm1, textos) {
+    const horiz = lado === 'topo' || lado === 'base', comp = horiz ? W : H;
+    const pos = (d, q) => { const x = lado === 'esq' ? d : lado === 'dir' ? W - 1 - d : q, y = lado === 'topo' ? d : lado === 'base' ? H - 1 - d : q; return [x, y]; };
+    const cor = (x, y) => { const i = (y * W + x) * 4; return [px[i], px[i + 1], px[i + 2]]; };
+    // cor de referência: mediana da sangria (ou do 1º mm, se o arquivo não tem sangria)
+    const r0 = 1, r1 = Math.max(2, sp >= 3 ? sp - 1 : mm1), amos = [];
+    for (let d = r0; d < r1; d++) for (let q = segp; q < comp - segp; q += 3) amos.push(cor(...pos(d, q)));
+    if (amos.length < 20) return null;
+    const med = [0, 1, 2].map(c => amos.map(a => a[c]).sort((a, b) => a - b)[amos.length >> 1]);
+    const dif = a => Math.max(Math.abs(a[0] - med[0]), Math.abs(a[1] - med[1]), Math.abs(a[2] - med[2]));
+    const varSang = amos.filter(a => dif(a) > 60).length / amos.length;
+    if (varSang > 0.4) return null;                      // foto ou fundo que sangra por quase todo o lado
+    const dentroTexto = (x, y) => textos.some(t => x >= t[0] - 2 && x <= t[0] + t[2] + 2 && y >= t[1] - 2 && y <= t[1] + t[3] + 2);
+    let n = 0, tot = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1; const NB = 40, baldes = new Set();
+    for (let d = sp + 1; d < segp; d++) for (let q = segp; q < comp - segp; q += 2) {   // sem os cantos (são dos lados vizinhos)
+      const [x, y] = pos(d, q); tot++;
+      if (dif(cor(x, y)) <= 70 || dentroTexto(x, y)) continue;
+      n++; baldes.add(Math.floor(q / comp * NB)); if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+    }
+    if (n < Math.max(12, tot * 0.002)) return null;
+    // espalhado pelo lado todo e a sangria também varia = desenho/padrão de fundo que sangra (é o certo)
+    if (baldes.size / NB > 0.3 && varSang > 0.03) return null;
+    return [x0 - 3, y0 - 3, x1 - x0 + 6, y1 - y0 + 6];
+  }
   // Sangria, filete branco e conteúdo na margem de segurança (pixels da página)
-  function conferirBordas(c, k, s, seg, add) {
+  function conferirBordas(c, k, s, seg, add, textos) {
     const W = c.width, H = c.height, px = c.getContext('2d').getImageData(0, 0, W, H).data;
-    const sp = Math.round(s * k), mm1 = Math.max(2, Math.round(k)), segp = Math.round((s + seg) * k), semSang = [];
+    const sp = Math.round(s * k), mm1 = Math.max(2, Math.round(k)), segp = Math.round((s + seg) * k), semSang = [], foraSeg = [];
     for (const lado of Object.keys(LADOS)) {
       const comp = lado === 'topo' || lado === 'base' ? W : H;
       const ini = Math.max(sp, 1) + mm1, fim = comp - Math.max(sp, 1) - mm1;
@@ -894,13 +921,13 @@
         }
         if (achou >= 0) { add('vermelho', 'filete', `Lado ${LADOS[lado]}: filete branco perto do corte (a ${String(Math.abs(achou - sp) / k).slice(0, 3).replace('.', ',')} mm da linha). No refile ele pode aparecer.`, caixaFaixa(lado, Math.max(0, achou - 2), achou + 3, W, H)); continue; }
       }
-      // conteúdo na margem de segurança: faixa entre o corte e a linha verde com detalhe, e a sangria lisa
+      // conteúdo fora da área segura: pixels entre o corte e a linha verde que fogem da cor de fundo da borda
       if (seg > 0 && segp - sp > 3) {
-        const det = detalheFaixa(px, W, H, lado, sp + 1, segp, ini, fim);
-        const fora = sp >= 3 ? detalheFaixa(px, W, H, lado, 1, sp, ini, fim) : detalheFaixa(px, W, H, lado, 1, Math.min(segp, mm1 + 1), ini, fim);
-        if (det > 0.06 && fora < 0.03) add('amarelo', 'seguranca', `Lado ${LADOS[lado]}: tem conteúdo entre o corte e a margem de segurança (${String(seg).replace('.', ',')} mm). Confira se não é texto ou logo.`, caixaFaixa(lado, sp, segp, W, H));
+        const cx = foraDaAreaSegura(px, W, H, lado, sp, segp, mm1, textos || []);
+        if (cx) foraSeg.push([lado, cx]);
       }
     }
+    if (foraSeg.length) add('amarelo', 'seguranca', `${foraSeg.length === 1 ? 'Lado ' + LADOS[foraSeg[0][0]] : 'Lados ' + foraSeg.map(x => LADOS[x[0]]).join(', ').replace(/, ([^,]*)$/, ' e $1')}: tem imagem ou desenho fora da área segura (a menos de ${String(seg).replace('.', ',')} mm do corte). Pode ser cortado no refile; confira se não é logo, texto ou detalhe importante.`, foraSeg.map(x => x[1]));
     if (semSang.length) {
       const lados = semSang.map(x => LADOS[x[0]]), txt = semSang.length === 4 ? 'Nenhum lado tem sangria' : (semSang.length === 1 ? 'Lado ' : 'Lados ') + lados.join(', ').replace(/, ([^,]*)$/, ' e $1') + (semSang.length === 1 ? ' sem sangria' : ' sem sangria');
       add('vermelho', 'sem_sangria', `${txt}: a arte para na linha de corte. Estique o fundo ${String(s).replace('.', ',')} mm para fora do corte.`, semSang.map(x => x[1]));
@@ -1040,7 +1067,13 @@
         pag.an = an;
         an.avisos.forEach(a => add(a.nivel, a.nivel === 'verde' ? 'tamanho_ok' : 'tamanho', (n > 1 ? `${rot}: ` : '') + a.txt, p));
         if (!an.avisos.some(a => a.nivel !== 'verde') && !an.area) add('verde', 'tamanho_ok', `${n > 1 ? rot + ': ' : ''}Tamanho confere (${mm(an.fw)} × ${mm(an.fh)} mm final${an.s ? `, sangria ${String(an.s).replace('.', ',')} mm` : ''}).`, p);
-        if (an.encaixe === 'corte' && !an.area) conferirBordas(c, k, an.s, an.seg || 0, (nv, cod, txt, cx) => add(nv, cod, (n > 1 ? `${rot}: ` : '') + txt, p, cx));
+        if (an.encaixe === 'corte' && !an.area) {
+          const txs0 = await textosDaPagina(pg, vp), seg = an.seg || 0, lim = (an.s + seg) * k, tol = 0.2 * k;
+          // texto (fonte viva) fora da área segura
+          const foraT = seg > 0 ? txs0.filter(t => t.caixa[0] < lim - tol || t.caixa[1] < lim - tol || t.caixa[0] + t.caixa[2] > c.width - lim + tol || t.caixa[1] + t.caixa[3] > c.height - lim + tol) : [];
+          if (foraT.length) add('amarelo', 'seguranca_texto', `${n > 1 ? rot + ': ' : ''}Texto fora da área segura (a menos de ${String(seg).replace('.', ',')} mm do corte): ${foraT.slice(0, 2).map(t => `"${t.texto.slice(0, 40)}"`).join(', ')}${foraT.length > 2 ? ` e mais ${foraT.length - 2}` : ''}. Pode ser cortado no refile: traga para dentro da linha verde.`, p, foraT.map(t => t.caixa));
+          conferirBordas(c, k, an.s, seg, (nv, cod, txt, cx) => add(nv, cod, (n > 1 ? `${rot}: ` : '') + txt, p, cx), txs0.map(t => t.caixa));
+        }
       }
       // fontes vivas
       const txs = await textosDaPagina(pg, vp);
