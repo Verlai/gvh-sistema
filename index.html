@@ -3485,7 +3485,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261023a';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261026a';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3501,7 +3501,39 @@ async function testarArquivo(itemId) {
   const a = (v.artes || []).find(x => x.item_id === itemId);
   const item = i ? { item_descricao: i.descricao, urgencia: i.urgencia } : a ? { item_descricao: a.item_descricao, urgencia: a.urgencia } : null;
   if (!item) return toast('Item não encontrado. Atualize a tela.', true);
-  if (await carregarMontador()) window.abrirMontador(null, { teste: true, item });
+  // AR4 caminho direto: arquivo do cliente dentro do gabarito vai como arquivo para impressão
+  const pend = (v.artes || []).filter(x => x.item_id === itemId && ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao', 'pausada', 'aprovada'].includes(x.situacao));
+  const statusItem = i ? i.status : a && a.item_status;
+  const podeVend = !pode('so_painel_arte') && (pode('cria_pedidos') || gerenciaArtes());
+  let direto = null;
+  if (podeVend && ITEM_NA_ARTE.includes(statusItem)) {
+    if (pend.length === 1) direto = { arte: pend[0], motivo: null };
+    else direto = { arte: null, motivo: pend.length > 1 ? 'Este item tem mais de uma arte em andamento: use o caminho normal (arte por arte).'
+                                                     : 'Este item não tem arte em andamento.' };
+    if (direto.arte && item.urgencia && item.urgencia.digital && item.urgencia.digital.digital)
+      direto = { arte: null, motivo: 'Item na impressão digital: a folha montada (A4/SRA3) é feita pela designer. Use o caminho normal.' };
+  }
+  if (await carregarMontador()) window.abrirMontador(null, { teste: true, item, direto, aoUsar: usarArquivoCliente });
+}
+// Envia os arquivos do cliente como arquivo para impressão e encerra a arte (resolvida pelo vendedor)
+async function usarArquivoCliente(arte, files, conf, aoProgresso) {
+  let confirmarDesigner = false;
+  if (arte.situacao !== 'a_fazer') {
+    if (!(await confirmar(`${arte.designer_nome || 'A designer'} já começou esta arte. Usar o arquivo do cliente encerra a arte sem pagamento à designer. Continuar?`, 'Usar o arquivo do cliente'))) return null;
+    confirmarDesigner = true;
+  }
+  const ids = [];
+  for (const [k, f] of files.entries()) {
+    ids.push(await enviarArquivoDrive(arte.pedido_id, f, 'producao', arte.item_id, files.length > 1 ? `Cliente ${k + 1}` : 'Arquivo do cliente',
+      fr => aoProgresso && aoProgresso(`Enviando ${f.name}… ${Math.round(fr * 100)}%`), null, { arte_id: arte.id }));
+  }
+  const r = await api('arte_usar_arquivo_cliente', { arte_id: arte.id, arquivo_ids: ids, confirmar: confirmarDesigner, conferencia: conf });
+  toast(r.pre_impressao ? 'Arquivo do cliente enviado: o item foi para a pré-impressão.'
+      : r.falta_pagamento ? 'Arquivo do cliente enviado. O item vai para a pré-impressão sozinho quando o pagamento entrar (ou o pedido for autorizado).'
+      : r.item_status === 'arte_aprovada' ? 'Arquivo do cliente enviado: o item está pronto para a pré-impressão.'
+      : 'Arquivo do cliente enviado e arte resolvida pelo vendedor.');
+  recarregar();
+  return r;
 }
 // Linha "Prova v2 · com o cliente desde…" no quadro da arte
 function linhaProva(a) {
