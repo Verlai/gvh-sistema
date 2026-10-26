@@ -866,7 +866,7 @@ rota('pedido', async (id, el) => {
                   ${p.confirma_producao ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq perigo" onclick="decidirCancelItem('${i.id}',true)">Confirmar cancelamento</button><button class="btn peq" onclick="decidirCancelItem('${i.id}',false)">Recusar</button></div>` : '<div class="muted">Aguardando a confirmação da pré-impressão.</div>'}</div>` : ''}
                 ${i.troca_arte_pendente ? `<div style="margin-top:4px">${badge('Troca de arte aguardando a pré-impressão', 'b-ambar')}</div>` : ''}</td>
             <td>${badgeItem(i.status)}<div class="small muted" style="margin-top:4px">há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</div>
-                ${i.urgencia && i.urgencia.conferencia && i.status !== 'cancelado' ? `<div style="margin-top:4px">${seloConferencia(i.urgencia.conferencia)}</div>` : ''}
+                ${i.urgencia && i.urgencia.conferencia && i.status !== 'cancelado' ? `<div style="margin-top:4px">${seloConferencia(i.urgencia.conferencia, i.status)}</div>` : ''}
                 ${i.urgencia && i.status !== 'cancelado' && ordemStatus(i.status) < 8 ? `<div style="margin-top:4px">${badgeUrgencia(i.urgencia)}
                   ${p.pode_urgencia && !cancelado ? `<button class="btn link peq" onclick="modalUrgenciaItem('${i.id}')">${urgenteProducao(i.urgencia) ? 'Urgência' : 'Subir urgência'}</button>
                   <button class="btn link peq" onclick="modalDigitalItem('${i.id}')">Digital</button>` : ''}</div>` : ''}</td>
@@ -3517,7 +3517,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261026c';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261026d';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3788,18 +3788,26 @@ function passosArte(a) {
 }
 // O pedido de alteração em destaque (do cliente, ou a devolução do vendedor)
 function caixaAlteracao(a) {
-  if (a.situacao !== 'em_alteracao' && a.situacao !== 'pausada') return '';
   const alt = a.alteracao || {}, bruto = String(alt.texto || '');
-  const titulo = a.situacao === 'pausada' ? 'O cliente pediu mudança no material'
+  const daPre = /^Arte devolvida: pela pré-impressão/.test(bruto) && a.situacao === 'aprovada' && (!a.aprovada_em || !alt.em || new Date(alt.em) >= new Date(a.aprovada_em) - 5000);
+  if (a.situacao !== 'em_alteracao' && a.situacao !== 'pausada' && !daPre) return '';
+  const titulo = daPre ? 'A pré-impressão devolveu a arte: feche o arquivo para impressão de novo'
+    : a.situacao === 'pausada' ? 'O cliente pediu mudança no material'
     : /^Arte devolvida:/.test(bruto) ? 'O vendedor devolveu a arte'
     : /^Material ajustado pelo vendedor:/.test(bruto) ? 'O vendedor ajustou o material'
     : /^Alteração no material:/.test(bruto) ? 'Voltou do vendedor (o cliente tinha pedido mudança no material)'
     : 'O cliente pediu alteração na arte';
-  const txt = bruto.replace(/^(Alteração no material|Material ajustado pelo vendedor|Arte devolvida): /, '');
+  const txt = bruto.replace(/^(Alteração no material|Material ajustado pelo vendedor|Arte devolvida): (pela pré-impressão — )?/, '');
   return `<div class="caixa-alteracao"><div class="tit">${titulo}</div>${txt ? `<div class="txt">${esc(txt)}</div>` : ''}${alt.em ? `<div class="small muted" style="margin-top:4px">${dataHora(alt.em)}</div>` : ''}</div>`;
+}
+// Item na digital: a designer monta a cartela na folha (SRA3 ou A4)
+function linhaGabaritoDigital(u) {
+  const l = u && u.digital && u.digital.digital && u.gabarito_digital; if (!l || !l.length) return '';
+  return `<div class="small" style="margin-top:4px">${badge('Digital', 'b-digital')} <span class="muted">a designer monta a cartela na folha:</span> ${l.map(g => `<b>${esc(g.nome)}</b>${g.url ? ` · <a href="${esc(g.url)}" target="_blank" rel="noopener">abrir</a>` : ''}`).join(' · ')}</div>`;
 }
 function linhaGabaritoCurta(u) {
   if (!u) return '';
+  if (u.digital && u.digital.digital && u.gabarito_digital) return (u.gabarito_nome ? `<div class="small" style="margin-top:4px"><span class="muted">Peça:</span> ${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}${u.gabarito_url ? ` · <a href="${esc(u.gabarito_url)}" target="_blank" rel="noopener">Abrir gabarito</a>` : ''}</div>` : '') + linhaGabaritoDigital(u);
   if (u.gabarito_nome) return `<div class="small" style="margin-top:4px"><span class="muted">Gabarito:</span> ${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}${u.gabarito_url ? ` · <a href="${esc(u.gabarito_url)}" target="_blank" rel="noopener">Abrir gabarito</a>` : ''}</div>`;
   return u.sem_gabarito ? '<div class="small muted" style="margin-top:4px">Sem gabarito neste material.</div>' : '';
 }
@@ -4280,7 +4288,7 @@ rota('producao', async (_p, el) => {
       <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
             ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             <div data-arq-item="${i.id}"></div>
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
@@ -4308,7 +4316,7 @@ rota('producao', async (_p, el) => {
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${data(i.data_prevista_entrega)}</td>
@@ -4887,35 +4895,60 @@ function seloDigital(dg) {
   return ` <span class="badge b-digital" title="${esc('Impressão digital · ' + tit)}">Digital${dg.manual === true ? ' ✋' : ''}</span>`;
 }
 // AR3b: selo da conferência do arquivo para impressão (clicar abre o detalhe)
-function seloConferencia(c) {
+function seloConferencia(c, itemStatus) {
   if (!c) return '';
-  S.confs = S.confs || {}; S.confs[c.id] = c;
+  S.confs = S.confs || {}; S.confs[c.id] = { ...c, item_status: itemStatus || (S.confs[c.id] || {}).item_status };
   const sel = (txt, cls, tit) => ` <span class="badge ${cls}" style="cursor:pointer" title="${esc(tit)}" onclick="event.stopPropagation();verConferencia('${c.id}')">${esc(txt)}</span>`;
   let h = '';
   if (c.resultado === 'erro') h += sel('Enviada com alerta', 'b-vermelho', 'O arquivo para impressão foi enviado mesmo com problemas: ' + (c.motivo || ''));
   else if (c.checklist) h += sel('Enviada sem gabarito', 'b-cinza', 'Conferido pelo checklist (sem gabarito com medidas ou arquivo que o sistema não lê).');
   else if (c.resultado === 'alerta') h += sel('Conferência com alerta', 'b-ambar', 'A conferência do arquivo deu alertas. Clique para ver.');
-  if (c.gabarito_mudou) h += sel('Gabarito mudou', 'b-vermelho', `Conferido com "${c.gabarito_nome}"; agora vale "${c.gabarito_atual_nome}".`);
+  if (c.devolvida) h += sel('Devolvida à designer', 'b-ambar', 'A arte voltou para a designer refazer o arquivo para impressão.');
+  else {
+    if (c.digital_mudou) h += sel(c.digital_atual ? 'Mudou para digital' : 'Saiu da digital', 'b-vermelho', c.digital_atual ? 'O arquivo foi fechado para o offset, mas agora o item vai para a impressão digital.' : 'O arquivo foi fechado para a digital (folha), mas agora o item vai para o offset.');
+    if (c.gabarito_mudou) h += sel('Gabarito mudou', 'b-vermelho', `Conferido com "${c.gabarito_nome}"; agora vale "${c.gabarito_atual_nome}".`);
+  }
   return h;
 }
 function verConferencia(id) {
   const c = (S.confs || {})[id]; if (!c) return;
+  const podeDevolver = c.item_id && c.item_status === 'pre_impressao' && !c.devolvida && (podeStatus('em_producao') || gerenciaArtes());
   const cor = { vermelho: 'erro', amarelo: '', info: '' };
   const m = abrirModal({ titulo: 'Conferência do arquivo para impressão', corpo: `
     <p class="small" style="margin:0">${c.origem === 'arte_pronta' ? 'Arte pronta para impressão (junto com a prova)' : 'Arquivo enviado para impressão'} por <b>${esc(c.por_nome || '—')}</b> em ${dataHora(c.em)}.
       ${c.gabarito_nome ? `<br>Gabarito usado: <b>${esc(c.gabarito_nome)}</b>${c.urgencia_nivel ? ` (urgência ${esc((URG_NOME[c.urgencia_nivel] || c.urgencia_nivel).toLowerCase())}${c.urgencia_definitiva ? '' : ', provável'})` : ''}.` : '<br>Sem gabarito com medidas.'}</p>
-    ${c.gabarito_mudou ? `<div class="alerta erro"><b>O gabarito mudou.</b> O arquivo foi conferido com "${esc(c.gabarito_nome)}", mas com a urgência de agora o gabarito é <b>"${esc(c.gabarito_atual_nome)}"</b>. Devolva para a designer ou combine com o cliente antes de produzir.</div>` : ''}
+    ${c.digital_mudou && !c.devolvida ? `<div class="alerta erro"><b>${c.digital_atual ? 'O item passou para a impressão digital.' : 'O item saiu da impressão digital.'}</b> ${c.digital_atual ? 'O arquivo para impressão foi fechado no gabarito do offset; na digital a designer precisa montar a cartela na folha (SRA3 ou A4).' : 'O arquivo para impressão foi fechado como folha da digital; no offset precisa do arquivo no gabarito do offset.'}</div>` : ''}
+    ${c.devolvida ? '<div class="alerta">A arte já foi devolvida para a designer refazer o arquivo para impressão.</div>' : ''}
+    ${c.gabarito_mudou && !c.devolvida ? `<div class="alerta erro"><b>O gabarito mudou.</b> O arquivo foi conferido com "${esc(c.gabarito_nome)}", mas com a urgência de agora o gabarito é <b>"${esc(c.gabarito_atual_nome)}"</b>. Devolva para a designer ou combine com o cliente antes de produzir.</div>` : ''}
     ${c.resultado === 'erro' ? `<div class="alerta erro"><b>Enviado mesmo assim.</b> Motivo: ${esc(c.motivo || '')}</div>` : ''}
     ${c.checklist ? `<div class="alerta">Conferido pelo checklist: ${Object.keys(c.checklist).map(k => ({ tamanho: 'tamanho', sangria: 'sangria', seguranca: 'segurança' })[k] || k).join(', ')}.</div>` : ''}
     ${(c.itens || []).length ? (c.itens || []).map(i => `<div class="alerta ${cor[i.nivel] || ''}" style="margin-top:6px;${i.nivel === 'info' ? 'background:var(--verde-bg);color:#007a61' : ''}">${esc(i.texto)}</div>`).join('')
       : '<div class="alerta" style="background:var(--verde-bg);color:#007a61">Nenhum alerta.</div>'}`,
-    rodape: '<button class="btn prim" data-v>Fechar</button>' });
+    rodape: `${podeDevolver ? '<button class="btn perigo" data-dev style="margin-right:auto">Devolver para a designer</button>' : ''}<button class="btn prim" data-v>Fechar</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bd = m.el.querySelector('[data-dev]');
+  if (bd) bd.onclick = () => { m.fechar(); devolverArtePreImpressao(c); };
+}
+// Pré-impressão devolve a arte para a designer refazer o arquivo (gabarito mudou, mudou para digital ou saiu dela)
+function devolverArtePreImpressao(c) {
+  const sug = c.digital_mudou ? (c.digital_atual ? 'O item passou para a impressão digital: monte a cartela na folha SRA3 (ou A4) e feche o arquivo para impressão de novo.'
+                                                 : 'O item saiu da digital e vai para o offset: feche o arquivo no gabarito do offset.')
+            : c.gabarito_mudou ? `O gabarito mudou de "${c.gabarito_nome}" para "${c.gabarito_atual_nome}": ajuste o arquivo e feche de novo.` : '';
+  const m = abrirModal({ titulo: 'Devolver a arte para a designer', corpo: `
+    <p class="small" style="margin:0 0 8px">O item volta para a etapa de arte (<b>Aprovado pelo cliente · falta fechar o arquivo</b>). A designer recebe o aviso e envia o arquivo para impressão de novo; o arquivo antigo fica marcado como "Antigo". Se o pedido tem pagamento, o item volta sozinho para a pré-impressão quando ela fechar.</p>
+    <label class="campo">O que a designer precisa fazer *<textarea data-mot rows="3" maxlength="400">${esc(sug)}</textarea></label>`,
+    rodape: '<button class="btn" data-v>Voltar</button><button class="btn perigo" data-s>Devolver</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const motivo = m.el.querySelector('[data-mot]').value.trim();
+    if (!motivo) return toast('Escreva o que a designer precisa fazer.', true);
+    try { await api('arte_devolver_pre_impressao', { item_id: c.item_id, arte_id: c.arte_id, motivo }); m.fechar(); toast('Arte devolvida para a designer.'); recarregar(); } catch (e) {}
+  };
 }
 function badgeUrgencia(u, sempre) {
   if (!u || !u.nivel) return '';
-  if (u.nivel === 'normal' && !sempre) return (badgeEntregaQuando(u) + seloDigital(u.digital)).trim();
-  const prazo = u.aviso_prazo ? ` <span class="badge b-vermelho" title="${esc(u.aviso_prazo)}">Só prazo normal</span>` : '';
+  const prazo = u.aviso_prazo ? ` <span class="badge b-vermelho" title="${esc(u.aviso_prazo)}" style="cursor:help" onclick="event.stopPropagation();toast(this.title, true)">${esc(u.aviso_prazo_curto || 'Só prazo normal')}</span>` : '';
+  if (u.nivel === 'normal' && !sempre) return (badgeEntregaQuando(u) + seloDigital(u.digital) + prazo).trim();
   const cls = u.nivel === 'muito_urgente' ? 'b-vermelho' : u.nivel === 'urgente' ? 'b-ambar' : 'b-cinza';
   const txt = (URG_NOME[u.nivel] || u.nivel) + (u.nivel === 'normal' ? '' : ' · produção') + (u.definitiva ? '' : ' (provável)');
   const tit = textoUrgencia(u) + (u.manual ? ` · Marcado à mão por ${u.manual_por_nome || '—'}: ${u.manual_motivo || ''}` : '');
@@ -4953,13 +4986,15 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
     atual = `<span class="muted">Sugerido pelo sistema:</span> <b>${esc(u.gabarito_sugerido_nome)}</b>${abrir(u.gabarito_sugerido_url)}`;
   } else if (grupoId && gabaritoSoPendente(grupoId)) {
     atual = `<span class="muted">gabaritos deste material ainda sem medidas no sistema${gr && gr.pasta_url ? ` · <a href="${esc(gr.pasta_url)}" target="_blank" rel="noopener">Abrir pasta</a>` : ''}</span>`;
+  } else if (grupoId && u && u.digital && u.digital.digital && u.gabarito_digital) {
+    atual = '<span class="muted">na digital: sem gabarito de peça para esta urgência</span>';
   } else if (grupoId) {
     atual = '<span class="muted">nenhum gabarito do material vale para esta urgência/quantidade</span>';
   } else atual = '<span class="muted">sem material escolhido</span>';
   if (!podeEscolher) {
     if (!grupoId && !(u && u.gabarito_escolhido_id)) return '';
     const nomeMat = gr ? gr.nome : (u && u.grupo_nome) || '';
-    return `<div class="small" style="margin-top:6px"><span class="muted">Gabarito:</span> ${nomeMat ? esc(nomeMat) + ' · ' : ''}${atual}</div>`;
+    return `<div class="small" style="margin-top:6px"><span class="muted">Gabarito:</span> ${nomeMat ? esc(nomeMat) + ' · ' : ''}${atual}</div>${linhaGabaritoDigital(u)}`;
   }
   const variacoes = [...(gr ? gr.gabaritos : []).filter(g => g.ativo && (!g.cliente_id || (u && g.cliente_id === u.cliente_id)))
                        .map(g => [g.id, g.nome + (g.cliente_id ? ' (do cliente)' : '') + (g.medidas_pendentes ? ' (sem medidas)' : '')]),
@@ -4978,7 +5013,7 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
       </select>` : ''}
       <button type="button" class="btn link peq" data-gab-novo="${itemId}" data-gab-gr="${grupoId || ''}" data-gab-cli="${esc((u && u.cliente_nome) || '')}">+ Novo gabarito</button>
     </div>
-    <div class="small" style="margin-top:4px">${atual}</div>`;
+    <div class="small" style="margin-top:4px">${atual}</div>${linhaGabaritoDigital(u)}`;
 }
 // Selo pequeno "sem gabarito" (vendedor, Diretor e arte)
 const veSeloGabarito = () => pode('cria_pedidos') || gerenciaArtes() || !!S.perm.so_painel_arte || pode('gerencia_cadastros');
