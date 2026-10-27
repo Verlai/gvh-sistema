@@ -232,6 +232,26 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
 .totais{display:grid;gap:4px;justify-content:end;text-align:right;margin-top:10px}
 .totais b{font-size:18px}
 
+/* pré-impressão enxuta (27/10) */
+.tab-pre td{padding:8px 10px;vertical-align:middle}
+.tab-pre th{white-space:normal;vertical-align:bottom;font-size:11.5px}
+.tab-pre tr.pre-linha{cursor:pointer}
+.tab-pre tr.pre-linha td:first-child{box-shadow:inset 4px 0 0 var(--prio)}
+.tab-pre tr.pre-linha:hover td,.tab-pre tr.pre-linha.aberta td{background:#f7f9f9}
+.tab-pre tr.pre-linha.aberta td{border-bottom-color:transparent}
+.tab-pre .cortar{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab-pre .seta{display:inline-block;color:var(--texto-3);font-size:18px;line-height:1;transition:transform .15s}
+.tab-pre tr.aberta .seta{transform:rotate(90deg)}
+.tab-pre tr.pre-det td{background:#f7f9f9;padding:4px 10px 14px 14px;box-shadow:inset 4px 0 0 var(--linha)}
+.pre-caixa{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;background:#fff;border:1px solid var(--linha);border-radius:var(--raio);padding:14px 16px}
+.pre-form{display:grid;gap:10px;align-content:start}
+.mk{display:inline-block;font-size:10.5px;font-weight:600;border-radius:4px;padding:1px 6px;margin:2px 2px 0 0;white-space:nowrap;line-height:1.5}
+.mk-verm{background:var(--vermelho-bg);color:var(--vermelho)}
+.mk-amb{background:var(--ambar-bg);color:#9a6410}
+.mk-dig{background:#efe7fb;color:#5b2d9e}
+.mk-cinza{background:var(--linha-2);color:var(--texto-2)}
+.mk-verde{background:var(--verde-bg);color:#007a61}
+@media (max-width:760px){ .pre-caixa{grid-template-columns:1fr} .tab-pre .cortar{max-width:160px} }
 #aviso-novidades{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--grafite);color:#fff;border-radius:30px;padding:8px 8px 8px 18px;display:flex;gap:12px;align-items:center;z-index:45;box-shadow:0 8px 24px rgba(29,38,45,.25);font-size:13px}
 #aviso-novidades[hidden]{display:none}
 @media (max-width:960px){
@@ -4284,28 +4304,7 @@ rota('producao', async (_p, el) => {
 
   let corpo;
   if (aba === 'pre_impressao') {
-    corpo = pre.length ? `<p class="small muted" style="margin-top:0">Defina fornecedor, previsão de produção e código do fornecedor. O item só vai para produção com os três preenchidos, e o pedido só muda de etapa quando todos os itens estiverem em produção. A previsão de entrega é a combinada pelo vendedor com o cliente.</p>
-      <div class="tabela-wrap"><table>
-      <thead><tr><th>Pedido</th><th>Item</th><th style="min-width:190px">Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${pode('ve_custo') ? '<th>Custo (R$)</th>' : ''}<th></th></tr></thead>
-      <tbody>${pre.map(i => `<tr data-item="${i.id}">
-        <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-        <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
-            ${i.refile ? `<div class="alerta" style="padding:4px 8px;margin:4px 0;font-size:12px"><b>Refile:</b> este tamanho não existe no offset. Pedir o formato <b>${esc(i.refile.formato)} cm</b> e refilar para <b>${esc(i.refile.final)} cm</b>.</div>` : ''}
-            ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
-            <div data-arq-item="${i.id}"></div>
-            ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
-        <td><div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opForn(i.fornecedor_id)}</select>
-            ${criaForn ? `<button type="button" class="btn peq" title="Cadastrar fornecedor" onclick="novoFornecedorNaLinha('${i.id}')">+</button>` : ''}</div>
-            <div class="small" data-acesso="${i.id}">${linkAcessoFornecedor(i.fornecedor_id)}</div></td>
-        <td class="num">${data(i.data_prevista_entrega)}</td>
-        <td><input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}" data-entrega="${esc(i.data_prevista_entrega || '')}">
-            <div class="small aviso-prev" style="color:var(--vermelho)"></div></td>
-        <td><input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}" style="min-width:110px"></td>
-        ${pode('ve_custo') ? `<td><input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}" style="max-width:110px"></td>` : ''}
-        <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="salvarLinhaProd('${i.id}',false)">Salvar</button>
-          <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button>
-          ${podeDevolverArte ? `<div style="margin-top:6px"><button class="btn link peq" style="color:var(--vermelho)" onclick="devolverItemPre('${i.id}')" title="O arquivo para impressão está errado: a arte volta para a designer fechar de novo">Devolver para a designer</button></div>` : ''}</td>
-      </tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item aguardando pré-impressão.</div>';
+    corpo = htmlPreImpressao(pre, { criaForn, podeDevolverArte });
   } else {
     const grupos = {};
     prod.forEach(i => (grupos[i.fornecedor_nome || 'Sem fornecedor'] ||= []).push(i));
@@ -4334,6 +4333,7 @@ rota('producao', async (_p, el) => {
     </div>
     <div class="painel">${corpo}</div>`;
   if ($('#f-forn')) $('#f-forn').onchange = e => { S.cache.fornProd = e.target.value; recarregar(); };
+  if (aba === 'pre_impressao') ligarPreImpressao(el);
   preencherArtesFinais(el);
   // aviso (sem bloquear) quando a previsão de produção passa da previsão de entrega
   const avisarPrev = inp => { const a = inp.parentElement.querySelector('.aviso-prev'); if (!a) return;
@@ -4350,6 +4350,130 @@ rota('producao', async (_p, el) => {
       toast(`${ids.length} ${ids.length > 1 ? 'itens marcados' : 'item marcado'} como despachado.`); recarregar(); };
   }
 });
+/* ---------- PRÉ-IMPRESSÃO (27/10): lista enxuta + item que abre ---------- */
+// prioridade: 0 entrega atrasada · 1 entrega hoje · 2 muito urgente · 3 urgente / entrega amanhã · 4 normal
+function prioridadePre(i) {
+  const u = i.urgencia || {};
+  let d = u.dias_para_entrega;
+  if (d == null && i.data_prevista_entrega) d = Math.round((new Date(i.data_prevista_entrega + 'T12:00:00') - new Date(hoje() + 'T12:00:00')) / 864e5);
+  if (d != null && d < 0) return { p: 0, txt: 'Atrasado', cls: 'mk-verm', cor: 'var(--vermelho)', d };
+  if (d === 0) return { p: 1, txt: 'Entrega hoje', cls: 'mk-verm', cor: 'var(--vermelho)', d };
+  if (u.nivel === 'muito_urgente') return { p: 2, txt: 'Muito urgente', cls: 'mk-verm', cor: 'var(--vermelho)', d };
+  if (u.nivel === 'urgente') return { p: 3, txt: 'Urgente', cls: 'mk-amb', cor: 'var(--ambar)', d };
+  if (d === 1) return { p: 3, txt: 'Entrega amanhã', cls: 'mk-amb', cor: 'var(--ambar)', d };
+  return { p: 4, txt: '', cls: '', cor: 'transparent', d };
+}
+const preProntoParaEnviar = i => !!(i.fornecedor_id && i.prazo_producao && String(i.codigo_producao || '').trim());
+function preAlertaArquivo(i) {
+  const c = i.conferencia; if (!c) return '';
+  if (c.digital_mudou && !c.devolvida) return c.digital_atual ? 'Mudou para digital' : 'Saiu da digital';
+  if (c.gabarito_mudou && !c.devolvida) return 'Gabarito mudou';
+  if (c.resultado === 'erro') return 'Enviada com alerta';
+  return '';
+}
+function htmlPreImpressao(pre, { criaForn, podeDevolverArte }) {
+  if (!pre.length) return '<div class="vazio">Nenhum item aguardando pré-impressão.</div>';
+  const custo = pode('ve_custo');
+  const abertos = S.cache.preAberto || (S.cache.preAberto = {});
+  const lista = pre.map(i => ({ i, pr: prioridadePre(i) }))
+    .sort((a, b) => a.pr.p - b.pr.p || String(a.i.data_prevista_entrega || '9').localeCompare(String(b.i.data_prevista_entrega || '9'))
+      || String(a.i.pedido_numero).localeCompare(String(b.i.pedido_numero), 'pt-BR', { numeric: true }));
+  const nPrio = lista.filter(x => x.pr.p < 4).length, nPronto = pre.filter(preProntoParaEnviar).length;
+  const nPag = pre.filter(i => i.pedido_sem_pagamento).length, nAlerta = pre.filter(i => preAlertaArquivo(i)).length;
+  const f = S.cache.filtroPre || 'todos';
+  const chip = (k, n, q) => `<button class="chip ${f === k ? 'ativo' : ''}" data-fpre="${k}">${n} (${q})</button>`;
+  const cols = custo ? 9 : 8;
+  const linha = ({ i, pr }) => {
+    const alerta = preAlertaArquivo(i), pronto = preProntoParaEnviar(i);
+    const prevDepois = i.prazo_producao && i.data_prevista_entrega && i.prazo_producao > i.data_prevista_entrega;
+    const marcas = [pr.txt ? `<span class="mk ${pr.cls}">${pr.txt}</span>` : '',
+      i.pedido_sem_pagamento ? '<span class="mk mk-amb">Falta pagamento</span>' : '',
+      i.digital && i.digital.digital ? '<span class="mk mk-dig">Digital</span>' : '',
+      i.refile ? '<span class="mk mk-cinza" title="Pedir formato maior e refilar">Refile</span>' : '',
+      i.precisa_acabamento ? '<span class="mk mk-cinza">Acabamento</span>' : '',
+      alerta ? `<span class="mk mk-verm">${esc(alerta)}</span>` : ''].filter(Boolean).join(' ');
+    const filtros = [pr.p < 4 ? 'prio' : '', pronto ? 'pronto' : '', i.pedido_sem_pagamento ? 'pag' : '', alerta ? 'alerta' : ''].join(' ');
+    const busca = normTxt([i.pedido_numero, i.cliente_nome, i.descricao].join(' '));
+    const ab = !!abertos[i.id];
+    return `<tbody class="pre-grupo" data-pre-grupo="${i.id}" data-filtros="${filtros}" data-busca="${esc(busca)}">
+      <tr class="pre-linha ${ab ? 'aberta' : ''}" data-pre-abrir="${i.id}" style="--prio:${pr.cor}" title="Clique para abrir">
+        <td><b>${esc(i.pedido_numero)}</b><div class="small muted cortar">${esc(i.cliente_nome || '')}</div></td>
+        <td><div class="cortar" title="${esc(i.descricao)}"><b>${esc(i.descricao)}</b></div>
+          <div class="small"><span class="muted">${num(i.quantidade)} un</span> <span data-pre-marcas="${i.id}">${marcas}</span></div></td>
+        <td class="small">${i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">—</span>'}</td>
+        <td class="num small" style="${pr.p <= 1 ? 'color:var(--vermelho);font-weight:600' : pr.d === 1 ? 'color:#9a6410;font-weight:600' : ''}">${data(i.data_prevista_entrega)}</td>
+        <td class="num small" style="${prevDepois ? 'color:var(--vermelho);font-weight:600' : ''}" ${prevDepois ? 'title="Depois da previsão de entrega"' : ''}>${i.prazo_producao ? data(i.prazo_producao) : '<span class="muted">—</span>'}</td>
+        <td class="small">${i.codigo_producao ? esc(i.codigo_producao) : '<span class="muted">—</span>'}</td>
+        ${custo ? `<td class="num small dir">${i.custo != null ? brl(i.custo) : '<span class="muted">—</span>'}</td>` : ''}
+        <td class="dir" style="white-space:nowrap">${pronto ? '<span class="mk mk-verde" title="Fornecedor, previsão e código preenchidos">Pronto</span>' : ''} <span class="seta">›</span></td>
+      </tr>
+      <tr class="pre-det" ${ab ? '' : 'hidden'}><td colspan="${cols}">${detalhePre(i, pr, { criaForn, podeDevolverArte, custo })}</td></tr>
+    </tbody>`;
+  };
+  return `<div class="linha-form filtros" style="margin-bottom:10px;align-items:center">
+      <label class="campo" style="flex:2;max-width:380px">Buscar<input type="search" id="b-pre" value="${esc(S.cache.buscaPre || '')}" placeholder="Pedido, cliente ou produto"></label>
+      <div class="chips" style="flex:3;padding-top:16px">${chip('todos', 'Todos', pre.length)}${chip('prio', 'Prioridade', nPrio)}${chip('pronto', 'Prontos para enviar', nPronto)}${nPag ? chip('pag', 'Falta pagamento', nPag) : ''}${nAlerta ? chip('alerta', 'Alerta no arquivo', nAlerta) : ''}</div>
+    </div>
+    <div class="tabela-wrap"><table class="tab-pre">
+      <thead><tr><th>Pedido</th><th>Item</th><th>Fornecedor</th><th>Previsão de entrega</th><th>Previsão de produção</th><th>Código do fornecedor</th>${custo ? '<th class="dir">Custo (R$)</th>' : ''}<th></th></tr></thead>
+      ${lista.map(linha).join('')}
+    </table></div>
+    <p class="small muted" id="pre-vazio" hidden style="margin:10px 0 0">Nenhum item com esse filtro.</p>
+    <div style="margin-top:10px">${blocoExp('ajuda-pre', 'Como funciona', '<p class="small muted" style="margin:0">A lista vem na ordem de prioridade: entrega atrasada, entrega hoje, muito urgente, urgente e entrega amanhã (faixa colorida à esquerda). Clique no item para abrir: lá ficam a arte final, as observações e os campos para enviar para produção. O item só vai para produção com fornecedor, previsão de produção e código do fornecedor; o pedido só muda de etapa quando todos os itens estiverem em produção.</p>', false, 'leve')}</div>`;
+}
+function detalhePre(i, pr, { criaForn, podeDevolverArte, custo }) {
+  const u = i.urgencia || {};
+  return `<div class="pre-caixa">
+    <div class="pre-info">
+      <div><b>${esc(i.descricao)}</b></div>
+      <div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(catCurta(i.categoria_nome)) : ''}</div>
+      <div style="margin-top:6px">${badgeUrgencia(u)}${etqPag(i)}${seloConferencia(i.conferencia, i.status)}</div>
+      ${u.nivel ? `<div class="small muted" style="margin-top:4px">${esc(textoUrgencia(u))}</div>` : ''}
+      ${i.refile ? `<div class="alerta" style="padding:6px 10px;margin:8px 0 0;font-size:12.5px"><b>Refile:</b> este tamanho não existe no offset. Pedir o formato <b>${esc(i.refile.formato)} cm</b> e refilar para <b>${esc(i.refile.final)} cm</b>.</div>` : ''}
+      <div data-arq-item="${i.id}" style="margin-top:6px"></div>
+      ${i.arte_drive_url ? `<div class="small" style="margin-top:4px"><a href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a></div>` : ''}
+      ${i.observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}
+      <div class="small" style="margin-top:8px"><a href="#/pedido/${i.pedido_id}">Abrir o pedido ${esc(i.pedido_numero)}</a> · <span class="muted">entrega ${data(i.data_prevista_entrega)} · na pré-impressão há ${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</span></div>
+    </div>
+    <div class="pre-form" data-form-item="${i.id}">
+      <label class="campo">Fornecedor
+        <div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opcoesFornecedor(i.fornecedor_id)}</select>
+        ${criaForn ? `<button type="button" class="btn peq" title="Cadastrar fornecedor" onclick="novoFornecedorNaLinha('${i.id}')">+</button>` : ''}</div>
+        <span class="small" data-acesso="${i.id}">${linkAcessoFornecedor(i.fornecedor_id)}</span></label>
+      <div class="grade g2" style="gap:10px">
+        <label class="campo">Previsão de produção<input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}" data-entrega="${esc(i.data_prevista_entrega || '')}"><span class="small aviso-prev" style="color:var(--vermelho)"></span></label>
+        <label class="campo">Código do fornecedor<input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
+        ${custo ? `<label class="campo">Custo (R$)<input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
+        <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button>
+        <button class="btn peq" onclick="salvarLinhaProd('${i.id}',false)">Salvar</button>
+        ${podeDevolverArte ? `<button class="btn link peq" style="color:var(--vermelho);margin-left:auto" onclick="devolverItemPre('${i.id}')" title="O arquivo para impressão está errado: a arte volta para a designer fechar de novo">Devolver para a designer</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+function ligarPreImpressao(el) {
+  const tab = el.querySelector('.tab-pre'); if (!tab) return;
+  const abertos = S.cache.preAberto || (S.cache.preAberto = {});
+  tab.addEventListener('click', e => {
+    const tr = e.target.closest('tr.pre-linha'); if (!tr || e.target.closest('a,button,input,select')) return;
+    const id = tr.dataset.preAbrir, det = tr.nextElementSibling;
+    abertos[id] = det.hidden; det.hidden = !det.hidden; tr.classList.toggle('aberta', !det.hidden);
+  });
+  const filtrar = () => {
+    const f = S.cache.filtroPre || 'todos', q = normTxt(S.cache.buscaPre || ''); let n = 0;
+    tab.querySelectorAll('[data-pre-grupo]').forEach(g => {
+      const ok = (f === 'todos' || g.dataset.filtros.split(' ').includes(f)) && (!q || g.dataset.busca.includes(q));
+      g.hidden = !ok; if (ok) n++;
+    });
+    el.querySelector('#pre-vazio').hidden = n > 0;
+  };
+  el.querySelectorAll('[data-fpre]').forEach(b => b.onclick = () => {
+    S.cache.filtroPre = b.dataset.fpre; el.querySelectorAll('[data-fpre]').forEach(x => x.classList.toggle('ativo', x === b)); filtrar(); });
+  const b = el.querySelector('#b-pre'); if (b) b.oninput = () => { S.cache.buscaPre = b.value; filtrar(); };
+  filtrar();
+}
 // mostra as artes finais (produção) de cada item, com a identificação escrita pela designer
 async function preencherArtesFinais(el) {
   const caixas = [...el.querySelectorAll('[data-arq-item]')]; if (!caixas.length) return;
@@ -4359,10 +4483,14 @@ async function preencherArtesFinais(el) {
     const avisos = [(r.trocas_pendentes || {})[id] ? badge('Troca de arte aguardando confirmação', 'b-ambar') : '', cancel.has(id) ? badge('Pedido de cancelamento', 'b-vermelho') : ''].filter(Boolean);
     c.innerHTML = (l.length ? `<div class="small" style="margin-top:4px"><span class="muted">Arte final:</span> ${l.map(a =>
       `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome)}">${esc(a.rotulo || a.nome)}</a>${a.origem ? ` <span class="muted">(do ${esc(a.origem)})</span>` : ''}`).join(' · ')}</div>` : '')
-      + (avisos.length ? `<div style="margin-top:4px">${avisos.join(' ')} <span class="small muted">(decida no pedido)</span></div>` : ''); });
+      + (avisos.length ? `<div style="margin-top:4px">${avisos.join(' ')} <span class="small muted">(decida no pedido)</span></div>` : '');
+    // pré-impressão: marca na linha resumo
+    const m = el.querySelector(`[data-pre-marcas="${id}"]`);
+    if (m && avisos.length) m.insertAdjacentHTML('beforeend', cancel.has(id) ? ' <span class="mk mk-verm" title="Pedido de cancelamento: decida no pedido">Cancelamento</span>' : ' <span class="mk mk-amb" title="Troca de arte aguardando confirmação">Troca de arte</span>');
+  });
 }
 async function salvarLinhaProd(id, enviar) {
-  const tr = $(`tr[data-item="${id}"]`); const d = { id };
+  const tr = $(`[data-form-item="${id}"]`); const d = { id };
   $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
   if (d.custo === '') delete d.custo;
   if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, previsão de produção e código do fornecedor.', true);
@@ -4782,7 +4910,7 @@ function modalFornecedor(id, aoSalvar) {
 function novoFornecedorNaLinha(itemId) {
   modalFornecedor(null, novoId => {
     $$('select[data-c="fornecedor_id"]').forEach(sel => { const atual = sel.value; sel.innerHTML = opcoesFornecedor(atual); });
-    const tr = $(`tr[data-item="${itemId}"]`); const sel = tr && tr.querySelector('select[data-c="fornecedor_id"]');
+    const tr = $(`[data-form-item="${itemId}"]`); const sel = tr && tr.querySelector('select[data-c="fornecedor_id"]');
     if (sel) { sel.value = novoId; sel.dispatchEvent(new Event('change')); }
   });
 }
