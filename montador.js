@@ -83,6 +83,29 @@
   const mm = v => fmtMm(Math.round(v * 10) / 10);
   const num = v => (v === '' || v == null) ? null : Number(String(v).replace(',', '.'));
 
+
+  /* (27/10) Frente e verso pelo pedido: o vendedor escreve as cores no produto (4x0, 4x4, 1x0, 1x1, 4/0…).
+     Nx0 = só frente; NxM = frente e verso. Medidas ("4x4 cm") não contam. Vale sobre o que o gabarito pede. */
+  function ladosDoPedido(texto) {
+    const t = String(texto || '').toLowerCase();
+    const re = /(^|[^\d,.])([1-5])\s*[x×\/]\s*([0-5])(?![\d,.])(?!\s*(cm|mm|m)\b)/g;
+    let m, ult = null; while ((m = re.exec(t))) ult = m;
+    if (!ult) return null;
+    return { cores: `${ult[2]}x${ult[3]}`, soFrente: ult[3] === '0' };
+  }
+  window.ladosDoPedido = ladosDoPedido;
+  // ajusta a ordem/quantidade de páginas do gabarito ao que o pedido diz
+  function aplicarLados(g, texto) {
+    const l = ladosDoPedido(texto); if (!g || !l) return l;
+    g.lados = l;
+    if (l.soFrente) {
+      if (g.ordem) { g.ordem = g.ordem.filter(x => !['verso', 'verniz_verso', 'branco_verso'].includes(x)); g.paginas = g.ordem.length; }
+      else { if (g.paginas > 1) g.paginas -= 1; g.ordemPadrao = ['frente']; }
+    } else if (g.ordem && !g.ordem.includes('verso')) {
+      const i = g.ordem.indexOf('frente'); g.ordem = g.ordem.slice(); g.ordem.splice(i + 1, 0, 'verso'); g.paginas = g.ordem.length;
+    } else if (!g.ordem && g.paginas === 1) g.paginas = 2;
+    return l;
+  }
   /* ---------- leitura dos arquivos ---------- */
   async function lerArquivos(files) {
     const paginas = [];
@@ -449,6 +472,7 @@
     if (g.ordem && g.ordem.includes('faca')) g.faca = true;
     g.dobras = (gm && gm.dobras && typeof gm.dobras === 'object') ? gm.dobras : null;
     g.gira = !!(gm && gm.aceita_girar);
+    const lados = aplicarLados(g, a.item_descricao);
     const nomeGab = u.gabarito_nome ? `${esc(u.grupo_nome || '')}${u.grupo_nome ? ' — ' : ''}${esc(u.gabarito_nome)}` : '';
     const linhaGab = g.modo === 'area'
       ? `<b>${nomeGab}</b> · o arquivo precisa caber na área útil de ${mm(g.w)} × ${mm(g.h)} mm (em pé ou deitado)${g.regras.folha_mm ? ` · folha ${mm(g.regras.folha_mm[0])} × ${mm(g.regras.folha_mm[1])} mm` : ''}`
@@ -456,6 +480,7 @@
       ? `<b>${nomeGab}</b> · final ${mm(g.w)} × ${mm(g.h)} mm · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
       : g.modo === 'livre' ? `<b>${nomeGab}</b> · tamanho livre: escreva abaixo o tamanho final da arte · sangria ${mm(g.s)} · segurança ${mm(g.seg)} mm`
       : `<span class="muted">Sem gabarito com medidas neste item.</span>`;
+    const linhaLados = lados ? `<div class="small" style="margin-top:2px">Pedido <b>${lados.cores}</b>: ${lados.soFrente ? '<b>só frente</b> (o verso do gabarito não vale para este pedido)' : '<b>frente e verso</b>'}.</div>` : '';
     const ehCartao = /cart[ãa]o/i.test(u.grupo_nome || '') || (g.modo === 'fixo' && Math.max(g.w, g.h) <= 100);
     let paginas = [], analise = {}, enviando = false;
 
@@ -473,7 +498,7 @@
         .mt-av{font-size:13px;padding:6px 10px;border-radius:8px;margin-top:6px}
         .mt-av.vermelho{background:var(--vermelho-bg);color:var(--vermelho)}.mt-av.amarelo{background:var(--ambar-bg);color:#7d520d}.mt-av.verde{background:var(--verde-bg);color:#007a61}
       </style>
-      <div class="small" style="margin-bottom:8px">Gabarito: ${linhaGab}</div>
+      <div class="small" style="margin-bottom:8px">Gabarito: ${linhaGab}${linhaLados}</div>
       ${teste ? `<div class="mt-av amarelo" style="margin:0 0 10px">O arquivo é conferido aqui na tela, contra o gabarito do item. <b>Nada é salvo nem enviado ao cliente${direto && direto.arte ? ', a não ser que você clique em "Usar este arquivo e enviar para a pré-impressão"' : ''}.</b></div>` : ''}
       <div class="campo" style="margin-bottom:10px;${teste ? 'display:none' : ''}">O que você está enviando ao cliente?
         <label class="caixa-linha" style="margin-top:6px"><input type="radio" name="mt-tipo" value="prova" checked>
@@ -553,7 +578,7 @@
       // sugestão: pela ordem do gabarito (frente, verso, máscaras…); com faca, a última página é a faca
       const ehFaca = i => g.faca && paginas.length > 1 && i === paginas.length - 1;
       const usaveis = paginas.filter((p, i) => !ehFaca(i));
-      const ordem = (g.ordem || ['frente', 'verso']).filter(x => x !== 'faca');
+      const ordem = (g.ordem || g.ordemPadrao || ['frente', 'verso']).filter(x => x !== 'faca');
       const PAPEL_DA_ORDEM = { frente: 'frente', verso: 'verso', verniz_frente: 'verniz_frente', verniz_verso: 'verniz_verso', branco_frente: 'branco_frente', branco_verso: 'branco_verso' };
       usaveis.forEach((p, i) => { p.papel = PAPEL_DA_ORDEM[ordem[i]] || 'extra'; });
       paginas.forEach((p, i) => { if (ehFaca(i)) p.papel = 'faca'; });
@@ -661,7 +686,7 @@
           res.appendChild(box);
           const arqs = [...new Set(paginas.map(p => p.file))];
           const papeisConf = papeisDosArquivos(arqs);
-          window.conferirAvisosArquivos({ files: arqs, urgencia: u, papeis: papeisConf, prova: { largura_mm: fw, altura_mm: fh } }).then(cf => {
+          window.conferirAvisosArquivos({ files: arqs, urgencia: u, descricao: a.item_descricao, papeis: papeisConf, prova: { largura_mm: fw, altura_mm: fh } }).then(cf => {
             if (vez !== montar.vez || !box.isConnected) return;
             const ext = cf.itens.filter(i => !['tamanho_ok', 'tamanho', 'pag_tamanho'].includes(i.codigo));
             const nv = ext.filter(i => i.nivel === 'vermelho').length, na = ext.filter(i => i.nivel === 'amarelo').length;
@@ -681,7 +706,7 @@
       const arqs = [...new Set(paginas.map(p => p.file))];
       if (!arqs.length) return;
       const papeisConf = papeisDosArquivos(arqs);
-      const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: u, papeis: papeisConf,
+      const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: u, descricao: a.item_descricao, papeis: papeisConf,
         prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência do arquivo do cliente',
         limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
       if (!conf) return;
@@ -707,7 +732,7 @@
         const comFolha = !!(digital && folha);
         const arqsConf = comFolha ? [folha.file] : [...new Set(paginas.map(p => p.file))];
         const papeisConf = comFolha ? null : papeisDosArquivos(arqsConf);
-        conf = await window.conferirArquivosParaImpressao({ files: arqsConf, urgencia: u, folha: comFolha, papeis: papeisConf,
+        conf = await window.conferirArquivosParaImpressao({ files: arqsConf, urgencia: u, descricao: a.item_descricao, folha: comFolha, papeis: papeisConf,
           prova: { largura_mm: analise.frente.fw, altura_mm: analise.frente.fh }, titulo: 'Conferência da arte pronta para impressão',
           limiteMb: (typeof S !== 'undefined' && S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
         if (!conf) return;
@@ -828,6 +853,7 @@
     } else if (prova && prova.largura_mm && prova.altura_mm) {
       Object.assign(g, { modo: 'definido', w: +prova.largura_mm, h: +prova.altura_mm, medidaDaProva: true });
     } else g.modo = 'livre';
+    aplicarLados(g, u.item_descricao_pedido);
     return g;
   }
   // Quais páginas são arte (frente/verso) e quais são faca/máscara
@@ -1186,14 +1212,14 @@
     if (g && esperado && total) {
       const faltam = g.ordem ? g.ordem.filter(x => !papeis.includes(x)) : [];
       if (total < esperado || faltam.length) avisos.push({ nivel: total < esperado ? 'vermelho' : 'amarelo', codigo: 'paginas',
-        texto: `${files.length > 1 ? `Os ${files.length} arquivos têm` : 'O arquivo tem'} ${total} ${total === 1 ? 'página' : 'páginas'}; o gabarito pede ${esperado}${g.ordem ? ` (${g.ordem.map(x => NOMES_PAPEL[x] || x).join(', ')})` : ''}.${faltam.length ? ` Falta: ${faltam.map(x => NOMES_PAPEL[x] || x).join(', ')}.` : ''}` });
-      else if (total > esperado) avisos.push({ nivel: 'amarelo', codigo: 'paginas', texto: `${files.length > 1 ? 'Os arquivos têm' : 'O arquivo tem'} ${total} páginas; o gabarito pede ${esperado}. Confira se não sobrou página.` });
+        texto: `${files.length > 1 ? `Os ${files.length} arquivos têm` : 'O arquivo tem'} ${total} ${total === 1 ? 'página' : 'páginas'}; ${g.lados ? `o pedido (${g.lados.cores})` : 'o gabarito'} pede ${esperado}${g.ordem ? ` (${g.ordem.map(x => NOMES_PAPEL[x] || x).join(', ')})` : ''}.${faltam.length ? ` Falta: ${faltam.map(x => NOMES_PAPEL[x] || x).join(', ')}.` : ''}` });
+      else if (total > esperado) avisos.push({ nivel: 'amarelo', codigo: 'paginas', texto: `${files.length > 1 ? 'Os arquivos têm' : 'O arquivo tem'} ${total} páginas; ${g.lados ? `o pedido (${g.lados.cores})` : 'o gabarito'} pede ${esperado}. Confira se não sobrou página.` });
     }
     return { porArquivo, avisos, total };
   }
   // Só os avisos (sem janela): usado dentro do montador quando é arte pronta para impressão ou teste do arquivo do cliente
   window.conferirAvisosArquivos = async function (opts) {
-    const g = gabaritoConferencia(opts.urgencia || {}, opts.prova), plano = await planoPaginas(opts.files, g, opts.papeis), itens = [...plano.avisos];
+    const g = gabaritoConferencia({ ...(opts.urgencia || {}), item_descricao_pedido: opts.descricao }, opts.prova), plano = await planoPaginas(opts.files, g, opts.papeis), itens = [...plano.avisos];
     for (const [k, f] of opts.files.entries()) {
       try { (await conferirArquivo(f, g, { papeis: plano.porArquivo[k], limiteMb: opts.limiteMb || 100 })).itens.forEach(i => itens.push(i)); }
       catch (e) { itens.push({ nivel: 'amarelo', codigo: 'falha', texto: `${f.name}: não foi possível conferir automaticamente.`, arquivo: f.name }); }
@@ -1201,7 +1227,7 @@
     return { itens, semGabarito: !g };
   };
   window.conferirArquivosParaImpressao = async function (opts) {
-    const u = opts.urgencia || {}, g = opts.folha ? null : gabaritoConferencia(u, opts.prova);
+    const u = opts.urgencia || {}, g = opts.folha ? null : gabaritoConferencia({ ...u, item_descricao_pedido: opts.descricao }, opts.prova);
     const m = abrirModal({ titulo: opts.titulo || 'Conferência do arquivo para impressão', largo: true, corpo: '<p class="small muted" style="margin:0">Conferindo o arquivo… (pode levar alguns segundos)</p>',
       rodape: '<button class="btn" data-v>Voltar</button>' });
     let fechado = false; m.el.querySelector('[data-v]').onclick = () => { fechado = true; m.fechar(); };
