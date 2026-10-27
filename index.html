@@ -4290,6 +4290,7 @@ rota('producao', async (_p, el) => {
       <tbody>${pre.map(i => `<tr data-item="${i.id}">
         <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
         <td><b>${esc(i.descricao)}</b>${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · ' + esc(i.categoria_nome) : ''}</div>
+            ${i.refile ? `<div class="alerta" style="padding:4px 8px;margin:4px 0;font-size:12px"><b>Refile:</b> este tamanho não existe no offset. Pedir o formato <b>${esc(i.refile.formato)} cm</b> e refilar para <b>${esc(i.refile.final)} cm</b>.</div>` : ''}
             ${i.arte_drive_url ? `<a class="small" href="${esc(i.arte_drive_url)}" target="_blank" rel="noopener">Arte no Drive</a>` : ''}
             <div data-arq-item="${i.id}"></div>
             ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
@@ -4878,6 +4879,8 @@ async function carregarGabaritos(forcar) {
   return r;
 }
 const gruposGabarito = () => (S.cache.gabaritos?.dados?.grupos || []);
+const PAGINA_NOME = { frente: 'Frente', verso: 'Verso', verniz_frente: 'Verniz da frente', verniz_verso: 'Verniz do verso', branco_frente: 'Branco da frente',
+  branco_verso: 'Branco do verso', hot_stamping: 'Hot stamping', metalizado: 'Metalizado', calco_branco: 'Calço branco', faca: 'Faca', extra: 'Outra página' };
 const URG_NOME = { normal: 'Prazo normal', urgente: 'URGENTE', muito_urgente: 'MUITO URGENTE' };
 const fmtMm = v => v == null || v === '' ? '' : String(Number(v)).replace('.', ',');
 // Texto curto da conta, para o "title" e para a linha de detalhe
@@ -5361,6 +5364,7 @@ function modalVerGabarito(grupoId, id) {
       ${campo('Sangria (cada lado)', pend ? '—' : fmtMm(g.sangria_mm) + ' mm')}
       ${campo('Segurança', pend ? '—' : fmtMm(g.seguranca_mm) + ' mm')}
       ${campo('Páginas', (g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ` · última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}` : ''))}
+      ${g.paginas_ordem && g.paginas_ordem.length ? campo('Ordem das páginas', esc(g.paginas_ordem.map((x, k) => `${k + 1}. ${PAGINA_NOME[x] || x}`).join(' · '))) : ''}
       ${campo('Arte final', esc(textoFormatos(g)) + (g.dpi_min ? ` · mín. ${g.dpi_min} dpi` : ''))}
     </div>
     ${g.instrucoes ? `<p class="small" style="margin:14px 0 0"><span class="muted">Instruções:</span> ${esc(g.instrucoes)}</p>` : ''}
@@ -5434,6 +5438,8 @@ function modalGabarito(grupoId, id) {
       <label class="check" style="grid-column:1/-1"><input type="checkbox" name="ultima_pagina_faca" ${g.ultima_pagina_faca ? 'checked' : ''}> A última página é a faca (contorno de corte)</label>
       <div class="campo" id="gb-faca">Cor da faca
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${FACA_CORES.map(([v, n]) => `<label class="check" style="margin:0"><input type="checkbox" name="faca_cores" value="${v}" ${marc(g.faca_cores, v)}> ${n}</label>`).join('')}</div></div>
+      <div class="campo" style="grid-column:1/-1">Ordem das páginas <span class="muted">(o que é cada página do arquivo, na ordem; vazio = frente e verso). A conferência e o montador usam esta ordem.</span>
+        <div data-ordem style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px"></div></div>
     </div>
     <div class="grade g2" style="margin-top:10px">
       <label class="campo" style="grid-column:1/-1">Link do gabarito (arquivo ou pasta no Drive)<input type="url" name="arquivo_url" value="${esc(g.arquivo_url || '')}" placeholder="https://drive.google.com/file/d/…"></label>
@@ -5461,6 +5467,24 @@ function modalGabarito(grupoId, id) {
     $('#gb-arq', m.el).textContent = !livre && w && h ? `Tamanho do arquivo (com sangria): ${fmtMm(+(w + 2 * s).toFixed(2))} × ${fmtMm(+(h + 2 * s).toFixed(2))} mm` : '';
   };
   ['tamanho_livre', 'ultima_pagina_faca'].forEach(k => el[k].onchange = sinc);
+  // ordem das páginas: lista em chips, com "+ página"
+  let ordem = Array.isArray(g.paginas_ordem) ? [...g.paginas_ordem] : [];
+  const boxOrd = m.el.querySelector('[data-ordem]');
+  const desenharOrdem = () => {
+    const usados = new Set(ordem.filter(x => x !== 'extra'));
+    boxOrd.innerHTML = ordem.map((x, k) => `<span class="badge b-cinza" style="display:inline-flex;gap:6px;align-items:center;font-size:12px">${k + 1}. ${esc(PAGINA_NOME[x] || x)}
+        <a href="#" data-rm="${k}" title="Tirar" style="color:inherit;text-decoration:none">×</a></span>`).join('')
+      + `<select data-add style="width:auto;padding:3px 6px;font-size:12px"><option value="">+ página</option>${Object.entries(PAGINA_NOME).filter(([v]) => v === 'extra' || !usados.has(v)).map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join('')}</select>`
+      + (ordem.length ? ' <a href="#" data-limpa class="small">limpar</a>' : '');
+    boxOrd.querySelectorAll('[data-rm]').forEach(a => a.onclick = e => { e.preventDefault(); ordem.splice(+a.dataset.rm, 1); aplicarOrdem(); });
+    boxOrd.querySelector('[data-add]').onchange = e => { if (e.target.value) { ordem.push(e.target.value); aplicarOrdem(); } };
+    const lp = boxOrd.querySelector('[data-limpa]'); if (lp) lp.onclick = e => { e.preventDefault(); ordem = []; aplicarOrdem(); };
+  };
+  const aplicarOrdem = () => {
+    if (ordem.length) { el.paginas.value = ordem.length; el.ultima_pagina_faca.checked = ordem[ordem.length - 1] === 'faca'; sinc(); }
+    desenharOrdem();
+  };
+  desenharOrdem();
   const dh = m.el.querySelector('details[data-exp^="gb-hist-"]');
   const carregarHist = async () => {
     const box = m.el.querySelector('[data-gb-hist]'); if (!box || box.dataset.ok) return; box.dataset.ok = 1;
@@ -5483,7 +5507,7 @@ function modalGabarito(grupoId, id) {
       sangria_mm: el.sangria_mm.value, seguranca_mm: el.seguranca_mm.value,
       formatos: lista('formatos'), paginas: el.paginas.value, dpi_min: el.dpi_min.value,
       ultima_pagina_faca: el.ultima_pagina_faca.checked, faca_cores: el.ultima_pagina_faca.checked ? lista('faca_cores') : [],
-      arquivo_url: el.arquivo_url.value, instrucoes: el.instrucoes.value
+      arquivo_url: el.arquivo_url.value, instrucoes: el.instrucoes.value, paginas_ordem: ordem
     };
     if (id) { d.id = id; d.ativo = el.ativo.checked; }
     try { await api('salvar_gabarito', d); await carregarGabaritos(true); m.fechar(); toast('Gabarito salvo.'); recarregar(); } catch (e) {}
