@@ -3791,13 +3791,13 @@ function caixaAlteracao(a) {
   const alt = a.alteracao || {}, bruto = String(alt.texto || '');
   const daPre = /^Arte devolvida: pela pré-impressão/.test(bruto) && a.situacao === 'aprovada' && (!a.aprovada_em || !alt.em || new Date(alt.em) >= new Date(a.aprovada_em) - 5000);
   if (a.situacao !== 'em_alteracao' && a.situacao !== 'pausada' && !daPre) return '';
-  const titulo = daPre ? 'A pré-impressão devolveu a arte: feche o arquivo para impressão de novo'
+  const titulo = daPre ? 'URGENTE · A pré-impressão devolveu a arte: feche o arquivo para impressão de novo'
     : a.situacao === 'pausada' ? 'O cliente pediu mudança no material'
     : /^Arte devolvida:/.test(bruto) ? 'O vendedor devolveu a arte'
     : /^Material ajustado pelo vendedor:/.test(bruto) ? 'O vendedor ajustou o material'
     : /^Alteração no material:/.test(bruto) ? 'Voltou do vendedor (o cliente tinha pedido mudança no material)'
     : 'O cliente pediu alteração na arte';
-  const txt = bruto.replace(/^(Alteração no material|Material ajustado pelo vendedor|Arte devolvida): (pela pré-impressão — )?/, '');
+  const txt = bruto.replace(/^(Alteração no material|Material ajustado pelo vendedor|Arte devolvida): (pela pré-impressão( \(URGENTE\))? — )?/, '');
   return `<div class="caixa-alteracao"><div class="tit">${titulo}</div>${txt ? `<div class="txt">${esc(txt)}</div>` : ''}${alt.em ? `<div class="small muted" style="margin-top:4px">${dataHora(alt.em)}</div>` : ''}</div>`;
 }
 // Item na digital: a designer monta a cartela na folha (SRA3 ou A4)
@@ -4280,6 +4280,7 @@ rota('producao', async (_p, el) => {
   if (fForn) prod = prod.filter(i => i.fornecedor_id === fForn);
   const opForn = sel => opcoesFornecedor(sel);
   const criaForn = podeCadastrarFornecedor();
+  const podeDevolverArte = podeStatus('em_producao') || gerenciaArtes();
 
   let corpo;
   if (aba === 'pre_impressao') {
@@ -4301,7 +4302,8 @@ rota('producao', async (_p, el) => {
         <td><input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}" style="min-width:110px"></td>
         ${pode('ve_custo') ? `<td><input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}" style="max-width:110px"></td>` : ''}
         <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="salvarLinhaProd('${i.id}',false)">Salvar</button>
-          <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button></td>
+          <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button>
+          ${podeDevolverArte ? `<div style="margin-top:6px"><button class="btn link peq" style="color:var(--vermelho)" onclick="devolverItemPre('${i.id}')" title="O arquivo para impressão está errado: a arte volta para a designer fechar de novo">Devolver para a designer</button></div>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum item aguardando pré-impressão.</div>';
   } else {
     const grupos = {};
@@ -4928,6 +4930,12 @@ function verConferencia(id) {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bd = m.el.querySelector('[data-dev]');
   if (bd) bd.onclick = () => { m.fechar(); devolverArtePreImpressao(c); };
+}
+// Botão da linha da pré-impressão: devolve a arte de qualquer item (arquivo errado), com ou sem selo
+function devolverItemPre(itemId) {
+  const i = ((S.vistaAtual && S.vistaAtual.dados) || []).find(x => x.id === itemId);
+  if (!i) return toast('Item não encontrado. Atualize a tela.', true);
+  devolverArtePreImpressao({ ...(i.conferencia || {}), item_id: i.id, arte_id: i.conferencia && !i.conferencia.devolvida ? i.conferencia.arte_id : null });
 }
 // Pré-impressão devolve a arte para a designer refazer o arquivo (gabarito mudou, mudou para digital ou saiu dela)
 function devolverArtePreImpressao(c) {
