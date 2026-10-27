@@ -3537,7 +3537,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261026d';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261027a';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -3987,7 +3987,7 @@ function modalFecharArte(id) {
     if (!arqs.length) return toast(dig ? 'Escolha a folha montada.' : 'Escolha o arquivo para impressão.', true);
     // AR3b: conferência do arquivo para impressão (só avisa; vermelho pede "enviar mesmo assim" com motivo)
     if (!(await carregarMontador())) return;
-    const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: a.urgencia, prova: a.prova, folha: dig,
+    const conf = await window.conferirArquivosParaImpressao({ files: arqs, urgencia: a.urgencia, descricao: a.item_descricao, prova: a.prova, folha: dig,
       limiteMb: (S.cache.gabaritos && S.cache.gabaritos.dados && S.cache.gabaritos.dados.limite_mb) || 100 });
     if (!conf) return;
     const st = m.el.querySelector('#fa-status'), rot = m.el.querySelector('#fa-rot').value.trim();
