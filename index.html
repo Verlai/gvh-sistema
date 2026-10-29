@@ -4298,12 +4298,14 @@ rota('producao', async (_p, el) => {
   const despacha = podeStatus('despachado');
   const aba = soDespacha ? 'em_producao' : (S.cache.abaProd || (S.cache.abaProd = 'pre_impressao'));
   const fForn = S.cache.fornProd || '';
-  const r = await api('listar_itens', { status: ['pre_impressao','em_producao'] });
+  // (29/10) carrega só a aba aberta (a de produção pode ter muitas linhas); a contagem das duas vem junto
+  const r = await api('listar_itens', { status: [aba] });
   vistaDoEl(el).dados = r.itens;
   S.cache.preItens = r.itens;
+  const cont = r.contagem || {};
   const pre = r.itens.filter(i => i.status === 'pre_impressao');
   let prod = r.itens.filter(i => i.status === 'em_producao');
-  const atrasados = prod.filter(i => i.producao_atrasada).length;
+  const atrasados = cont.atrasados ?? prod.filter(i => i.producao_atrasada).length;
   if (fForn) prod = prod.filter(i => i.fornecedor_id === fForn);
   const opForn = sel => opcoesFornecedor(sel);
   const criaForn = podeCadastrarFornecedor();
@@ -4335,8 +4337,8 @@ rota('producao', async (_p, el) => {
   }
   el.innerHTML = `
     <div class="chips" style="margin-bottom:14px">
-      ${soDespacha ? '' : `<button class="chip ${aba === 'pre_impressao' ? 'ativo' : ''}" onclick="S.cache.abaProd='pre_impressao';recarregar()">Pré-impressão (${pre.length})</button>`}
-      <button class="chip ${aba === 'em_producao' ? 'ativo' : ''}" onclick="S.cache.abaProd='em_producao';recarregar()">Em produção (${r.itens.filter(i => i.status === 'em_producao').length}${atrasados ? ` · ${atrasados} atrasado${atrasados > 1 ? 's' : ''}` : ''})</button>
+      ${soDespacha ? '' : `<button class="chip ${aba === 'pre_impressao' ? 'ativo' : ''}" onclick="S.cache.abaProd='pre_impressao';recarregar()">Pré-impressão (${cont.pre_impressao ?? pre.length})</button>`}
+      <button class="chip ${aba === 'em_producao' ? 'ativo' : ''}" onclick="S.cache.abaProd='em_producao';recarregar()">Em produção (${cont.em_producao ?? prod.length}${atrasados ? ` · ${atrasados} atrasado${atrasados > 1 ? 's' : ''}` : ''})</button>
     </div>
     <div class="painel">${corpo}</div>`;
   if ($('#f-forn')) $('#f-forn').onchange = e => { S.cache.fornProd = e.target.value; recarregar(); };
