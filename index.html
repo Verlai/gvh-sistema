@@ -245,6 +245,11 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
 .tab-pre tr.pre-det td{background:#f7f9f9;padding:4px 10px 14px 14px;box-shadow:inset 4px 0 0 var(--linha)}
 .pre-caixa{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;background:#fff;border:1px solid var(--linha);border-radius:var(--raio);padding:14px 16px}
 .pre-form{display:grid;gap:10px;align-content:start}
+.forn-sug{font-style:italic;color:var(--texto-2);border-bottom:1px dashed var(--linha)}
+.sug-box{background:#f4fbf8;border:1px solid #d5efe6;border-radius:8px;padding:8px 10px;line-height:1.5}
+.imp-regra{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--linha);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.imp-regra.com-erro{background:var(--vermelho-bg)}
+.rg-lista{max-height:180px;overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:6px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 12px}
 .mk{display:inline-block;font-size:10.5px;font-weight:600;border-radius:4px;padding:1px 6px;margin:2px 2px 0 0;white-space:nowrap;line-height:1.5}
 .mk-verm{background:var(--vermelho-bg);color:var(--vermelho)}
 .mk-amb{background:var(--ambar-bg);color:#9a6410}
@@ -571,6 +576,7 @@ function itensMenu() {
   if (pode('gerencia_cadastros')) { m.push(['#/fornecedores', 'Fornecedores']); m.push(['#/categorias', 'Categorias']); }
   if (podeNovaCategoria()) m.push(['#/sugestoes', 'Produtos sugeridos']);
   m.push(['#/gabaritos', 'Gabaritos']);
+  if (podeCadastrarFornecedor()) m.push(['#/regras-fornecedor', 'Regras de fornecedor']);
   if (pode('gerencia_cadastros')) m.push(['#/feriados', 'Feriados']);
   if (pode('gerencia_usuarios')) m.push(['#/usuarios', 'Usuários']);
   if (S.perm.gerencia_artes) m.push(['#/meus-pagamentos', 'Pagamentos das artes']);
@@ -4287,13 +4293,14 @@ async function alternarSemArte(itemId, valor) {
 
 /* ---------- PRÉ-IMPRESSÃO E PRODUÇÃO ---------- */
 rota('producao', async (_p, el) => {
-  definirTopoEm(el, 'Pré-impressão e produção', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
+  definirTopoEm(el, 'Pré-impressão e produção', `${podeCadastrarFornecedor() ? '<a class="btn" href="#/regras-fornecedor">Regras de fornecedor</a> ' : ''}<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const soDespacha = !podeStatus('em_producao');   // ex.: Financeiro — confere a produção e despacha, não envia para produção
   const despacha = podeStatus('despachado');
   const aba = soDespacha ? 'em_producao' : (S.cache.abaProd || (S.cache.abaProd = 'pre_impressao'));
   const fForn = S.cache.fornProd || '';
   const r = await api('listar_itens', { status: ['pre_impressao','em_producao'] });
   vistaDoEl(el).dados = r.itens;
+  S.cache.preItens = r.itens;
   const pre = r.itens.filter(i => i.status === 'pre_impressao');
   let prod = r.itens.filter(i => i.status === 'em_producao');
   const atrasados = prod.filter(i => i.producao_atrasada).length;
@@ -4400,7 +4407,7 @@ function htmlPreImpressao(pre, { criaForn, podeDevolverArte }) {
         <td><b>${esc(i.pedido_numero)}</b><div class="small muted cortar">${esc(i.cliente_nome || '')}</div></td>
         <td><div class="cortar" title="${esc(i.descricao)}"><b>${esc(i.descricao)}</b></div>
           <div class="small"><span class="muted">${num(i.quantidade)} un</span> <span data-pre-marcas="${i.id}">${marcas}</span></div></td>
-        <td class="small">${i.fornecedor_nome ? esc(i.fornecedor_nome) : '<span class="muted">—</span>'}</td>
+        <td class="small">${i.fornecedor_nome ? esc(i.fornecedor_nome) : i.sugestao ? `<span class="forn-sug" title="${esc(i.sugestao.motivo)}">${esc(i.sugestao.fornecedor_nome)}</span><div class="muted" style="font-size:10.5px">sugerido</div>` : '<span class="muted">—</span>'}</td>
         <td class="num small" style="${pr.p <= 1 ? 'color:var(--vermelho);font-weight:600' : pr.d === 1 ? 'color:#9a6410;font-weight:600' : ''}">${data(i.data_prevista_entrega)}</td>
         <td class="num small" style="${prevDepois ? 'color:var(--vermelho);font-weight:600' : ''}" ${prevDepois ? 'title="Depois da previsão de entrega"' : ''}>${i.prazo_producao ? data(i.prazo_producao) : '<span class="muted">—</span>'}</td>
         <td class="small">${i.codigo_producao ? esc(i.codigo_producao) : '<span class="muted">—</span>'}</td>
@@ -4437,9 +4444,10 @@ function detalhePre(i, pr, { criaForn, podeDevolverArte, custo }) {
     </div>
     <div class="pre-form" data-form-item="${i.id}">
       <label class="campo">Fornecedor
-        <div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opcoesFornecedor(i.fornecedor_id)}</select>
+        <div style="display:flex;gap:4px"><select data-c="fornecedor_id" style="flex:1">${opcoesFornecedor(i.fornecedor_id || (i.sugestao && i.sugestao.fornecedor_id))}</select>
         ${criaForn ? `<button type="button" class="btn peq" title="Cadastrar fornecedor" onclick="novoFornecedorNaLinha('${i.id}')">+</button>` : ''}</div>
-        <span class="small" data-acesso="${i.id}">${linkAcessoFornecedor(i.fornecedor_id)}</span></label>
+        <span class="small" data-acesso="${i.id}">${linkAcessoFornecedor(i.fornecedor_id || (i.sugestao && i.sugestao.fornecedor_id))}</span></label>
+      ${caixaSugestao(i)}
       <div class="grade g2" style="gap:10px">
         <label class="campo">Previsão de produção<input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}" data-entrega="${esc(i.data_prevista_entrega || '')}"><span class="small aviso-prev" style="color:var(--vermelho)"></span></label>
         <label class="campo">Código do fornecedor<input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
@@ -4452,6 +4460,215 @@ function detalhePre(i, pr, { criaForn, podeDevolverArte, custo }) {
       </div>
     </div>
   </div>`;
+}
+// (29/10) regras escritas pelo Diretor: ficam pendentes até serem importadas pelo agente (Claude)
+const podeRegras = () => pode('gerencia_regras_fornecedor');
+// pergunta ao enviar para produção com fornecedor diferente do sugerido; resolve true para seguir, false para cancelar
+function perguntarPorQueTrocou(it, escolhidoId) {
+  const escolhido = ((S.base.fornecedores || []).find(f => f.id === escolhidoId) || {}).nome || 'outro fornecedor';
+  return new Promise(resolve => {
+    let feito = false; const fim = v => { if (!feito) { feito = true; resolve(v); } };
+    const m = abrirModal({ titulo: 'Por que trocou o fornecedor?', corpo: `
+      <p style="margin-top:0">O sistema sugeriu <b>${esc(it.sugestao.fornecedor_nome)}</b> e você escolheu <b>${esc(escolhido)}</b>.</p>
+      ${podeRegras() ? `<div style="display:grid;gap:6px;margin-bottom:10px">
+        <label class="check"><input type="radio" name="tp" value="so_desta_vez" checked> <span><b>Só desta vez</b> <span class="muted small">(preço, prazo do dia, falta de material…)</span></span></label>
+        <label class="check"><input type="radio" name="tp" value="regra"> <span><b>Virar regra</b> <span class="muted small">— escreva com suas palavras; o agente monta a regra na sexta</span></span></label></div>` : ''}
+      <label class="campo"><span data-rot>${podeRegras() ? 'Motivo (opcional)' : 'Motivo (opcional, ajuda o Diretor a criar regras)'}</span>
+        <textarea rows="3" data-txt placeholder="Ex.: KWG sem prazo esta semana"></textarea></label>`,
+      rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Continuar e enviar</button>` });
+    const tipo = () => (m.el.querySelector('input[name=tp]:checked') || {}).value || 'so_desta_vez';
+    m.el.querySelectorAll('input[name=tp]').forEach(r => r.onchange = () => {
+      const regra = tipo() === 'regra';
+      m.el.querySelector('[data-rot]').textContent = regra ? 'Regra (com suas palavras) *' : 'Motivo (opcional)';
+      m.el.querySelector('[data-txt]').placeholder = regra ? `Ex.: ${it.descricao || 'este material'} acima de 5.000 un vai para ${escolhido}` : 'Ex.: KWG sem prazo esta semana';
+    });
+    m.el.querySelector('[data-v]').onclick = () => { m.fechar(); fim(false); };
+    m.el.querySelector('[data-s]').onclick = async () => {
+      const texto = m.el.querySelector('[data-txt]').value.trim(), tp = tipo();
+      if (tp === 'regra' && !texto) return toast('Escreva a regra.', true);
+      if (texto) await api('registrar_regra_escrita', { tipo: tp, texto, item_id: it.id, fornecedor_escolhido: escolhidoId });
+      if (tp === 'regra') toast('Regra anotada. Ela entra no arquivo da sexta para o agente.');
+      m.fechar(); fim(true);
+    };
+  });
+}
+// escrever uma regra a partir do item, sem trocar o fornecedor
+function escreverRegra(itemId) {
+  const it = (S.cache.preItens || []).find(x => x.id === itemId) || {};
+  const box = $(`[data-form-item="${itemId}"]`); const sel = box && box.querySelector('select[data-c="fornecedor_id"]');
+  const m = abrirModal({ titulo: 'Escrever uma regra', corpo: `
+    <p class="small muted" style="margin-top:0">Escreva com suas palavras quando um material deve ir para um fornecedor. A regra fica guardada e, na sexta, o agente no Claude transforma em regra do sistema (conversando com você antes).</p>
+    <p class="small" style="margin:0 0 8px"><b>Item:</b> ${esc(it.descricao || '')} · ${num(it.quantidade)} un${(it.urgencia || {}).nivel ? ' · ' + esc(URG_REGRA[it.urgencia.nivel] || it.urgencia.nivel) : ''}</p>
+    <label class="campo">Regra *<textarea rows="3" data-txt placeholder="Ex.: Cartão com laminação holográfica acima de 500 un vai para a Zap"></textarea></label>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Guardar regra</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const texto = m.el.querySelector('[data-txt]').value.trim(); if (!texto) return toast('Escreva a regra.', true);
+    const r = await api('registrar_regra_escrita', { tipo: 'regra', texto, item_id: itemId, fornecedor_escolhido: (sel && sel.value) || it.fornecedor_id || '' });
+    m.fechar(); toast(`Regra guardada (${r.pendentes} aguardando o agente).`);
+  };
+}
+async function baixarArquivoRegras() {
+  const r = await api('arquivo_regras', {});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([r.texto], { type: 'text/markdown;charset=utf-8' }));
+  a.download = r.nome; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(r.pendentes ? `Arquivo baixado com ${r.pendentes} ${r.pendentes > 1 ? 'regras pendentes' : 'regra pendente'}.` : 'Arquivo baixado (nenhuma regra pendente).');
+}
+// lê o bloco "GVH-REGRAS v1" devolvido pelo agente
+function lerBlocoRegras(txt) {
+  const t = String(txt || ''); const i = t.indexOf('GVH-REGRAS');
+  const corpo = i >= 0 ? t.slice(i) : t; const a = corpo.indexOf('{'), b = corpo.lastIndexOf('}');
+  if (a < 0 || b < a) throw new Error('Não encontrei o bloco GVH-REGRAS v1 com o JSON.');
+  try { return JSON.parse(corpo.slice(a, b + 1)); } catch { throw new Error('O bloco não está num formato válido. Peça ao agente para gerar de novo.'); }
+}
+function modalImportarRegras() {
+  const m = abrirModal({ titulo: 'Importar regras do agente', largo: true, corpo: `
+    <p class="small muted" style="margin-top:0">Cole aqui o bloco que o agente entregou (começa com <code>GVH-REGRAS v1</code>). Antes de salvar, você confere cada regra.</p>
+    <textarea rows="8" data-txt style="width:100%;font-family:monospace;font-size:12px" placeholder="GVH-REGRAS v1&#10;{&quot;regras&quot;: [...]}"></textarea>
+    <div data-prev style="margin-top:12px"></div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn" data-c>Conferir</button><button class="btn prim" data-s disabled>Importar selecionadas</button>` });
+  let dados = null;
+  const prev = m.el.querySelector('[data-prev]'), bs = m.el.querySelector('[data-s]');
+  const linhaRes = x => {
+    const r = x.resumo || {}, p = [];
+    if (r.materiais && r.materiais.length) p.push(r.materiais.length > 3 ? `${r.materiais.length} materiais (${esc(r.materiais[0])}, …)` : r.materiais.map(esc).join(', '));
+    if (r.palavras && r.palavras.length) p.push('produto com “' + r.palavras.map(esc).join('” ou “') + '”');
+    if (r.qtd_min != null || r.qtd_max != null) p.push(r.qtd_min != null && r.qtd_max != null ? `${num(r.qtd_min)} a ${num(r.qtd_max)} un` : r.qtd_min != null ? `a partir de ${num(r.qtd_min)} un` : `até ${num(r.qtd_max)} un`);
+    if (r.urgencias && r.urgencias.length) p.push(r.urgencias.map(u => URG_REGRA[u] || u).join(' ou '));
+    if (r.digital != null) p.push(r.digital ? 'só digital' : 'fora da digital');
+    return p.join(' · ');
+  };
+  const NOME_ACAO = { criar: 'Nova', alterar: 'Alterar', desativar: 'Desativar' };
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-c]').onclick = async () => {
+    try { dados = lerBlocoRegras(m.el.querySelector('[data-txt]').value); } catch (e) { prev.innerHTML = `<p class="alerta">${esc(e.message)}</p>`; bs.disabled = true; return; }
+    const r = await api('importar_regras', { modo: 'previa', dados });
+    prev.innerHTML = `
+      ${r.regras.map(x => `<label class="check imp-regra ${x.erros.length ? 'com-erro' : ''}"><input type="checkbox" data-ap="${x.n}" ${x.erros.length ? 'disabled' : 'checked'}>
+        <span><b>${NOME_ACAO[x.acao] || esc(x.acao)}: ${esc(x.nome || '')}</b>
+          ${x.acao !== 'desativar' ? `<div class="small">${linhaRes(x)} → <b>${esc(x.resumo.fornecedor || '')}</b>${x.resumo.alternativo ? ` <span class="muted">(alternativo ${esc(x.resumo.alternativo)})</span>` : ''}</div>` : `<div class="small muted">${esc(x.resumo.motivo || '')}</div>`}
+          ${x.duplicada ? `<div class="small" style="color:#9a6410">Igual à regra “${esc(x.duplicada)}” que já existe.</div>` : ''}
+          ${x.erros.length ? `<div class="small" style="color:var(--vermelho)">${x.erros.map(esc).join(' · ')}</div>` : ''}
+          <div class="small muted">${x.atende.length ? `Resolve ${x.atende.length} ${x.atende.length > 1 ? 'regras escritas' : 'regra escrita'}` : 'Não resolve nenhuma regra escrita'}</div></span></label>`).join('')}
+      ${r.descartar.length ? `<p class="small" style="margin:10px 0 4px"><b>Regras escritas que o agente propõe descartar</b></p>
+        ${r.descartar.map(x => `<label class="check imp-regra"><input type="checkbox" data-desc="${esc(x.id)}" ${x.existe ? 'checked' : 'disabled'}>
+          <span>${esc(x.texto || '(não está pendente)')}<div class="small muted">${esc(x.motivo || '')}</div></span></label>`).join('')}` : ''}
+      ${r.pendentes_fora.length ? `<p class="alerta small" style="margin-top:10px">${r.pendentes_fora.length} ${r.pendentes_fora.length > 1 ? 'regras escritas não foram tratadas' : 'regra escrita não foi tratada'} pelo agente e ${r.pendentes_fora.length > 1 ? 'continuam pendentes' : 'continua pendente'}: ${r.pendentes_fora.map(x => '“' + esc(x.texto) + '”').join(', ')}</p>` : ''}`;
+    const atualiza = () => { bs.disabled = !prev.querySelector('input[data-ap]:checked, input[data-desc]:checked'); };
+    prev.querySelectorAll('input').forEach(i => i.onchange = atualiza); atualiza();
+  };
+  bs.onclick = async () => {
+    const aprovadas = [...prev.querySelectorAll('input[data-ap]:checked')].map(i => +i.dataset.ap);
+    const descartes = [...prev.querySelectorAll('input[data-desc]:checked')].map(i => i.dataset.desc);
+    const r = await api('importar_regras', { modo: 'salvar', dados, aprovadas, descartes });
+    m.fechar();
+    const p = [r.criadas && `${r.criadas} criada${r.criadas > 1 ? 's' : ''}`, r.alteradas && `${r.alteradas} alterada${r.alteradas > 1 ? 's' : ''}`,
+      r.desativadas && `${r.desativadas} desativada${r.desativadas > 1 ? 's' : ''}`, r.descartadas && `${r.descartadas} descartada${r.descartadas > 1 ? 's' : ''}`].filter(Boolean);
+    toast(`Regras importadas: ${p.join(', ') || 'nada mudou'}. ${r.pendentes ? r.pendentes + ' ainda pendente(s).' : 'Nenhuma pendente.'}`);
+    recarregar();
+  };
+}
+// (29/10) sugestão de fornecedor: regra escrita pela pré-impressão ou histórico do material
+function caixaSugestao(i) {
+  const g = i.sugestao;
+  const criar = podeRegras() ? `<button type="button" class="btn link peq" onclick="escreverRegra('${i.id}')">Escrever uma regra</button> <button type="button" class="btn link peq" onclick="regraDoItem('${i.id}')">Montar no formulário</button>` : '';
+  if (!g) return `<div class="small muted sug-box">Nenhuma regra para este material ainda. ${criar}</div>`;
+  const outro = i.fornecedor_id && i.fornecedor_id !== g.fornecedor_id;
+  return `<div class="small sug-box"><b>${outro ? 'Sugestão do sistema' : 'Sugerido'}: ${esc(g.fornecedor_nome)}</b> <span class="muted">· ${esc(g.motivo)}</span>
+    ${g.alternativo_nome ? `<div>Alternativo: <b>${esc(g.alternativo_nome)}</b>${g.quando_alternativo ? ` <span class="muted">· ${esc(g.quando_alternativo)}</span>` : ''}</div>` : ''}
+    ${g.observacao ? `<div class="muted">${esc(g.observacao)}</div>` : ''}
+    <div>${criar}</div></div>`;
+}
+function regraDoItem(itemId) {
+  const i = (S.cache.preItens || []).find(x => x.id === itemId) || {};
+  const box = $(`[data-form-item="${itemId}"]`); const sel = box && box.querySelector('select[data-c="fornecedor_id"]');
+  const nivel = (i.urgencia || {}).nivel;
+  modalRegraFornecedor(null, {
+    nome: '', grupos: i.gabarito_grupo_id ? [i.gabarito_grupo_id] : null,
+    urgencias: nivel ? [nivel] : null, fornecedor_id: (sel && sel.value) || i.fornecedor_id || '', ativo: true,
+    _dica: i.gabarito_grupo_id ? '' : 'Este item não tem material (gabarito) definido: use uma palavra do produto.'
+  }, () => recarregar());
+}
+const URG_REGRA = { normal: 'Normal', urgente: 'Urgente', muito_urgente: 'Muito urgente' };
+function resumoRegra(r, grupos) {
+  const nomeG = id => (grupos.find(g => g.id === id) || {}).nome || '?';
+  const p = [];
+  if (r.grupos) p.push(r.grupos.length > 2 ? `${r.grupos.length} materiais (${esc(nomeG(r.grupos[0]))}, …)` : r.grupos.map(x => esc(nomeG(x))).join(', '));
+  if (r.palavras) p.push('produto com “' + r.palavras.map(esc).join('” ou “') + '”');
+  if (r.qtd_min != null || r.qtd_max != null) p.push(r.qtd_min != null && r.qtd_max != null ? `${num(r.qtd_min)} a ${num(r.qtd_max)} un` : r.qtd_min != null ? `a partir de ${num(r.qtd_min)} un` : `até ${num(r.qtd_max)} un`);
+  if (r.urgencias) p.push(r.urgencias.map(u => URG_REGRA[u] || u).join(' ou '));
+  if (r.digital != null) p.push(r.digital ? 'só digital' : 'fora da digital');
+  return p.join(' · ');
+}
+rota('regras-fornecedor', async (_p, el) => {
+  definirTopoEm(el, 'Regras de fornecedor', podeRegras() ? `<button class="btn" onclick="baixarArquivoRegras()">Baixar arquivo para o agente</button> <button class="btn" onclick="modalImportarRegras()">Importar regras</button> <button class="btn prim" onclick="modalRegraFornecedor(null, null, recarregar)">Nova regra</button>` : '');
+  const [r] = await Promise.all([api('listar_regras_fornecedor', {}), carregarGabaritos(), carregarBase()]);
+  vistaDoEl(el).dados = r.regras;
+  const grupos = gruposGabarito();
+  let escritas = null; if (podeRegras() && r.pendentes) { try { escritas = (await api('listar_regras_escritas', {}, true)).escritas.filter(e => e.status === 'pendente'); } catch {} }
+  el.innerHTML = `${escritas && escritas.length ? `<div class="alerta" style="margin-bottom:12px"><b>${escritas.length} ${escritas.length > 1 ? 'regras escritas aguardando' : 'regra escrita aguardando'} importação.</b> Baixe o arquivo, converse com o agente no Claude e importe o bloco que ele devolver.
+      <ul class="small" style="margin:6px 0 0;padding-left:18px">${escritas.map(e => `<li>${esc(e.texto)} <span class="muted">· ${esc(e.contexto && e.contexto.produto || 'sem item')}${e.contexto && e.contexto.pedido ? ' · pedido ' + esc(e.contexto.pedido) : ''} · ${dataHora(e.created_at)}</span></li>`).join('')}</ul></div>` : ''}
+    <div class="painel">
+    ${blocoExp('ajuda-regras', 'Como funciona', '<p class="small muted" style="margin:0">Na pré-impressão o sistema sugere o fornecedor pela regra que combina com o item. Se mais de uma combinar, vale a mais específica (palavra do produto, urgência e material pesam mais). Item que vai para a digital não recebe fornecedor de offset. Sem regra, o sistema sugere o fornecedor mais escolhido para aquele material nos últimos 12 meses. A sugestão nunca é obrigatória: quem faz a pré-impressão pode trocar.</p>', false, 'leve')}
+    ${r.regras.length ? `<div class="tabela-wrap" style="margin-top:10px"><table><thead><tr><th>Regra</th><th>Quando</th><th>Fornecedor</th><th>Alternativo</th><th></th></tr></thead><tbody>
+    ${r.regras.map(x => `<tr class="clicavel" data-regra="${x.id}"><td><b>${esc(x.nome)}</b>${x.observacao ? `<div class="small muted">${esc(x.observacao)}</div>` : ''}</td>
+      <td class="small">${resumoRegra(x, grupos)}</td>
+      <td><b>${esc(x.fornecedor_nome)}</b></td>
+      <td class="small">${x.alternativo_nome ? esc(x.alternativo_nome) + (x.quando_alternativo ? `<div class="muted">${esc(x.quando_alternativo)}</div>` : '') : '<span class="muted">—</span>'}</td>
+      <td>${x.ativo ? '' : badge('Inativa', 'b-cinza')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vazio">Nenhuma regra ainda.</div>'}</div>`;
+  if (podeRegras()) el.querySelectorAll('[data-regra]').forEach(tr => tr.onclick = () => modalRegraFornecedor(r.regras.find(x => x.id === tr.dataset.regra), null, recarregar));
+  else el.querySelectorAll('[data-regra]').forEach(tr => tr.classList.remove('clicavel'));
+});
+async function modalRegraFornecedor(regra, base, aoSalvar) {
+  await Promise.all([carregarGabaritos(), S.base ? null : carregarBase()]);
+  const r = regra || base || { ativo: true };
+  const grupos = gruposGabarito().filter(g => g.ativo !== false).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const sel = new Set(r.grupos || []);
+  const urg = new Set(r.urgencias || []);
+  const forn = (S.base.fornecedores || []).filter(f => f.ativo || f.id === r.fornecedor_id || f.id === r.alternativo_id);
+  const opF = (v, vazio) => `<option value="">${vazio}</option>` + forn.map(f => `<option value="${f.id}" ${f.id === v ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+  const m = abrirModal({ titulo: regra ? 'Regra de fornecedor' : 'Nova regra de fornecedor', largo: true, corpo: `<form id="f-regra" class="grade g2">
+    ${r._dica ? `<p class="alerta" style="grid-column:1/-1;margin:0">${esc(r._dica)}</p>` : ''}
+    <label class="campo" style="grid-column:1/-1">Nome da regra *<input type="text" name="nome" value="${esc(r.nome || '')}" placeholder="Ex.: Folheto urgente"></label>
+    <div class="campo" style="grid-column:1/-1">Material (gabarito) <span class="muted small">— deixe sem marcar para valer para qualquer material</span>
+      <input type="search" id="rg-busca" placeholder="Buscar material" style="margin:4px 0">
+      <div id="rg-lista" class="rg-lista">${grupos.map(g => `<label class="check" data-nome="${esc(normTxt(g.nome))}"><input type="checkbox" value="${g.id}" ${sel.has(g.id) ? 'checked' : ''}> ${esc(g.nome)}</label>`).join('')}</div>
+      <span class="small muted" id="rg-n"></span></div>
+    <label class="campo" style="grid-column:1/-1">Palavras no produto <span class="muted small">— separadas por vírgula; vale se o produto tiver qualquer uma (ex.: bopp, laminação)</span><input type="text" name="palavras" value="${esc((r.palavras || []).join(', '))}"></label>
+    <label class="campo">Quantidade a partir de<input type="number" min="0" name="qtd_min" value="${esc(r.qtd_min ?? '')}"></label>
+    <label class="campo">Quantidade até<input type="number" min="0" name="qtd_max" value="${esc(r.qtd_max ?? '')}"></label>
+    <div class="campo">Urgência <span class="muted small">— nenhuma marcada = qualquer</span><div style="display:flex;gap:12px;flex-wrap:wrap;padding-top:6px">
+      ${Object.entries(URG_REGRA).map(([k, n]) => `<label class="check"><input type="checkbox" name="urg" value="${k}" ${urg.has(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div>
+    <label class="campo">Digital<select name="digital"><option value="">Tanto faz</option><option value="true" ${r.digital === true ? 'selected' : ''}>Só quando vai para a digital</option><option value="false" ${r.digital === false ? 'selected' : ''}>Só fora da digital</option></select></label>
+    <label class="campo">Fornecedor sugerido *<select name="fornecedor_id">${opF(r.fornecedor_id, 'Selecione')}</select></label>
+    <label class="campo">Fornecedor alternativo<select name="alternativo_id">${opF(r.alternativo_id, 'Nenhum')}</select></label>
+    <label class="campo" style="grid-column:1/-1">Quando usar o alternativo<input type="text" name="quando_alternativo" value="${esc(r.quando_alternativo || '')}" placeholder="Ex.: quando o preço compensar"></label>
+    <label class="campo" style="grid-column:1/-1">Observação<input type="text" name="observacao" value="${esc(r.observacao || '')}"></label>
+    ${regra ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" value="true" ${r.ativo ? 'checked' : ''}> Ativa</label>` : ''}
+  </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar regra</button>` });
+  const lista = m.el.querySelector('#rg-lista');
+  const cont = () => { const n = lista.querySelectorAll('input:checked').length; m.el.querySelector('#rg-n').textContent = n ? `${n} ${n > 1 ? 'materiais marcados' : 'material marcado'}` : 'Qualquer material'; };
+  lista.addEventListener('change', cont); cont();
+  m.el.querySelector('#rg-busca').oninput = e => { const q = normTxt(e.target.value); lista.querySelectorAll('[data-nome]').forEach(l => l.hidden = !!q && !l.dataset.nome.includes(q)); };
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const f = $('#f-regra', m.el);
+    const d = { nome: f.nome.value.trim(), fornecedor_id: f.fornecedor_id.value, alternativo_id: f.alternativo_id.value,
+      grupos: [...lista.querySelectorAll('input:checked')].map(x => x.value),
+      palavras: f.palavras.value.split(',').map(x => x.trim()).filter(Boolean),
+      qtd_min: f.qtd_min.value, qtd_max: f.qtd_max.value, digital: f.digital.value,
+      urgencias: [...f.querySelectorAll('input[name=urg]:checked')].map(x => x.value),
+      quando_alternativo: f.quando_alternativo.value, observacao: f.observacao.value };
+    if (!d.nome) return toast('Dê um nome para a regra.', true);
+    if (!d.fornecedor_id) return toast('Escolha o fornecedor sugerido.', true);
+    if (!d.grupos.length && !d.palavras.length && !d.digital) return toast('Marque pelo menos um material ou escreva uma palavra do produto.', true);
+    if (regra) { d.id = regra.id; d.ativo = !!f.ativo.checked; }
+    await api('salvar_regra_fornecedor', d); m.fechar(); toast('Regra salva.');
+    if (aoSalvar) aoSalvar();
+  };
 }
 function ligarPreImpressao(el) {
   const tab = el.querySelector('.tab-pre'); if (!tab) return;
@@ -4494,6 +4711,10 @@ async function salvarLinhaProd(id, enviar) {
   $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
   if (d.custo === '') delete d.custo;
   if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, previsão de produção e código do fornecedor.', true);
+  const it = (S.cache.preItens || []).find(x => x.id === id);
+  if (enviar && it && it.sugestao && it.sugestao.fornecedor_id && d.fornecedor_id !== it.sugestao.fornecedor_id) {
+    const ok = await perguntarPorQueTrocou(it, d.fornecedor_id); if (!ok) return;
+  }
   await api('salvar_item', d);
   if (enviar) await api('mudar_status_itens', { itens: [id], status: 'em_producao' });
   toast(enviar ? 'Item enviado para produção.' : 'Dados salvos.'); recarregar();
