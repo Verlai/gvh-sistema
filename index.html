@@ -4835,7 +4835,7 @@ function modalCategoria(id, aoSalvar) {
 }
 
 /* ---------- FORNECEDORES ---------- */
-const CAT_FORN = { offset: 'Offset', comunicacao_visual: 'Comunicação visual' };
+const CAT_FORN = { offset: 'Offset', digital: 'Digital', digital_cv: 'Digital e comunicação visual', comunicacao_visual: 'Comunicação visual' };
 const podeCadastrarFornecedor = () => pode('gerencia_cadastros') || podeStatus('em_producao');
 function opcoesFornecedor(sel) {
   const lista = (S.base.fornecedores || []).filter(f => f.ativo || f.id === sel);
@@ -4898,7 +4898,7 @@ function modalFornecedor(id, aoSalvar) {
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados($('#f-forn', m.el));
     if (!d.nome.trim()) return toast('Informe o nome do fornecedor.', true);
-    if (!d.categoria) return toast('Escolha a categoria: Offset ou Comunicação visual.', true);
+    if (!d.categoria) return toast('Escolha a categoria do fornecedor.', true);
     if (!d.senha_site) delete d.senha_site;
     if (id) { d.id = id; d.ativo = !!d.ativo; } else d.ativo = true;
     const r = await api('salvar_fornecedor', d); m.fechar(); toast('Fornecedor salvo.');
