@@ -247,6 +247,10 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
 .pre-form{display:grid;gap:10px;align-content:start}
 .forn-sug{font-style:italic;color:var(--texto-2);border-bottom:1px dashed var(--linha)}
 .sug-box{background:#f4fbf8;border:1px solid #d5efe6;border-radius:8px;padding:8px 10px;line-height:1.5}
+.gd-pastas{display:flex;flex-wrap:wrap;gap:6px;max-height:260px;overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:8px}
+.gd-pasta{border:1px solid var(--linha);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;text-align:left}
+.gd-pasta:hover{border-color:var(--verde);background:#f4fbf8}
+.gd-envio{margin-top:12px;padding-top:10px;border-top:1px solid var(--linha-2)}
 .imp-regra{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--linha);border-radius:8px;padding:8px 10px;margin-bottom:6px}
 .imp-regra.com-erro{background:var(--vermelho-bg)}
 .rg-lista{max-height:180px;overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:6px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 12px}
@@ -322,6 +326,7 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
    Comunicação: POST {token, acao, dados} → n8n → Supabase (função api)
    ============================================================ */
 const API_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-sistema';
+const API_GAB_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-gabaritos';
 // Chave pública (feita para ficar no navegador). Ela só consegue OUVIR o canal de avisos
 // "gvh-mudancas" — não lê nenhuma tabela. Os dados sempre vêm pelo n8n.
 const SUPABASE_URL = 'https://zvcvdfkumjlvwqjdbiiw.supabase.co';
@@ -400,7 +405,7 @@ async function aguarde(texto, fn) {
 async function api(acao, dados = {}, silencioso = false) {
   setCarregando(1);
   try {
-    const r = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
+    const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
                                      body: JSON.stringify({ token: S.token, acao, dados }) });
     let j; try { j = await r.json(); } catch { throw new Error('Resposta inválida do servidor.'); }
     if (Array.isArray(j)) j = j[0];
@@ -411,7 +416,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -5373,7 +5378,7 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
         <option value="">${u && u.gabarito_sugerido_id ? 'Sugestão do sistema (' + esc(u.gabarito_sugerido_nome) + ')' : 'Sugestão do sistema'}</option>
         ${variacoes.map(([id, n]) => `<option value="${id}" ${u && id === u.gabarito_escolhido_id ? 'selected' : ''}>${esc(n)}</option>`).join('')}
       </select>` : ''}
-      <button type="button" class="btn link peq" data-gab-novo="${itemId}" data-gab-gr="${grupoId || ''}" data-gab-cli="${esc((u && u.cliente_nome) || '')}">+ Novo gabarito</button>
+      ${podeGabaritos() ? `<button type="button" class="btn link peq" data-gab-novo="${itemId}" data-gab-gr="${grupoId || ''}" data-gab-cli="${esc((u && u.cliente_nome) || '')}">+ Novo gabarito</button>` : ''}
     </div>
     <div class="small" style="margin-top:4px">${atual}</div>${linhaGabaritoDigital(u)}`;
 }
@@ -5449,11 +5454,12 @@ function modalNovoGabaritoItem(itemId, grupoId, clienteNome) {
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${FACA_CORES.map(([v, n]) => `<label class="check" style="margin:0"><input type="checkbox" name="faca_cores" value="${v}"> ${n}</label>`).join('')}</div></div>
       </div>
       <div class="grade g2" style="margin-top:8px">
-        <label class="campo" style="grid-column:1/-1">Link do gabarito (arquivo ou pasta no Drive)<input type="url" name="arquivo_url" placeholder="https://drive.google.com/file/d/…"></label>
+        ${campoArquivoGabarito('')}
         <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="2"></textarea></label>
       </div>`, false)}</div>
   </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar gabarito</button>` });
   const f = $('#f-ngi', m.el), el = f.elements;
+  const arqGab = ligarArquivoGabarito(m.el, () => ((grupos.find(g => g.id === el.grupo_id.value) || {}).pasta_url) || null);
   const lista = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(c => c.value);
   const destino = () => (f.querySelector('[name=destino]:checked') || {}).value || 'material';
   const sinc = () => {
@@ -5483,6 +5489,7 @@ function modalNovoGabaritoItem(itemId, grupoId, clienteNome) {
   const enviar = async d => {
     const r = await api('criar_gabarito_item', d);
     if (r.repetido) { modalGabaritoRepetido(r, d, enviar); return r; }
+    arqGab.enviado = null;
     await carregarGabaritos(true); m.fechar();
     toast(d.destino === 'item' ? 'Gabarito criado só para este item.'
       : d.destino === 'cliente' && r.acao === 'novo' ? `Gabarito gravado para o cliente ${clienteNome} e escolhido no item.`
@@ -5493,7 +5500,7 @@ function modalNovoGabaritoItem(itemId, grupoId, clienteNome) {
       toast(`Pelas regras, o sistema sugeriria "${r.sugestao_para_item}" para este item; ele ficou com o gabarito escolhido.`);
     recarregar(); return r;
   };
-  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-v]').onclick = () => { arqGab.cancelar && arqGab.cancelar(); m.fechar(); };
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = coletar();
     if (d.destino !== 'item' && !d.grupo_id && !(d.material_novo || '').trim()) return toast('Escolha o material ou escreva o nome de um material novo.', true);
@@ -5619,7 +5626,8 @@ rota('gabaritos', async (_p, el) => {
   const todos = ed && S.cache.gabTodos;
   const dados = todos ? await api('gabaritos', { todos: true }, true) : r;
   definirTopoEm(el, 'Gabaritos', ed ? `<label class="check" style="margin:0"><input type="checkbox" ${todos ? 'checked' : ''} onchange="S.cache.gabTodos=this.checked;recarregar()"> Mostrar inativos</label>
-    <button class="btn prim" onclick="modalGrupoGabarito(null)">Novo material</button>` : '');
+    <button class="btn" onclick="modalGrupoGabarito(null)">Novo material</button>
+    <button class="btn prim" onclick="assistenteEnviarGabarito()">Enviar gabarito</button>` : '');
   const grupos = dados.grupos || [];
   vistaDoEl(el).gabaritos = grupos;
   const todosGab = grupos.flatMap(gr => gr.gabaritos.filter(g => g.ativo));
@@ -5723,21 +5731,187 @@ function modalVerGabarito(grupoId, id) {
     rodape: `${g.arquivo_url ? `<a class="btn" href="${esc(g.arquivo_url)}" target="_blank" rel="noopener">${g.arquivo_url.includes('/folders/') ? 'Abrir pasta' : 'Abrir arquivo'}</a>` : ''}<button class="btn prim" data-v>Fechar</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
 }
-function grupoDaTela(id) { return (S.vistaAtual?.gabaritos || gruposGabarito()).find(g => g.id === id); }
-async function modalGrupoGabarito(id) {
+/* ---------- (30/10) Gabaritos no Drive: escolher Offset/Digital, a pasta e enviar o arquivo pelo sistema ---------- */
+const podeGabaritos = () => !!(S.perm && S.perm.pode_gabaritos);
+const idDriveDoLink = u => { const m = String(u || '').match(/\/(?:file\/d|folders)\/([A-Za-z0-9_-]{10,})/) || String(u || '').match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : null; };
+const linkArquivoDrive = id => `https://drive.google.com/file/d/${id}/view`;
+const linkPastaDrive = id => `https://drive.google.com/drive/folders/${id}`;
+// janela que escolhe Offset/Digital → pasta (navega, cria) → e, no modo arquivo, envia o arquivo
+// resolve { tipo:'arquivo', id, nome, url, pasta } ou { tipo:'pasta', id, nome, url } ou null
+function janelaDriveGabarito({ modo = 'arquivo', pastaInicial = null, nomeSugerido = '', titulo } = {}) {
+  return new Promise(resolve => {
+    let feito = false; const fim = v => { if (!feito) { feito = true; resolve(v); } };
+    let caminho = []; // [{id, nome}]
+    const pastaIni = idDriveDoLink(pastaInicial);
+    const m = abrirModal({ titulo: titulo || (modo === 'arquivo' ? 'Enviar arquivo do gabarito' : 'Pasta do material no Drive'), largo: true, corpo: `
+      <div data-passo1>
+        <p style="margin-top:0">Onde fica este gabarito na pasta <b>Gabaritos GVH</b>?</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn" data-raiz="offset" style="min-width:150px"><b>Offset</b></button>
+          <button type="button" class="btn" data-raiz="digital" style="min-width:150px"><b>Digital</b></button>
+          ${pastaIni ? `<button type="button" class="btn link" data-atual>Usar a pasta atual do material</button>` : ''}
+        </div>
+      </div>
+      <div data-passo2 hidden>
+        <div class="small" data-trilha style="margin-bottom:8px"></div>
+        <div data-pastas class="gd-pastas"><span class="muted small">Carregando…</span></div>
+        <div style="display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" data-nova placeholder="Nome da pasta nova" style="flex:1;min-width:180px" value="${esc(modo === 'pasta' ? nomeSugerido : '')}">
+          <button type="button" class="btn peq" data-criar>Criar pasta aqui</button>
+        </div>
+        ${modo === 'arquivo' ? `<div class="gd-envio">
+          <label class="campo" style="margin:0">Arquivo do gabarito (.cdr, .pdf…)<input type="file" data-arq></label>
+          <div class="small muted" data-prog style="margin-top:4px"></div>
+        </div>` : ''}
+      </div>`,
+      rodape: `<button class="btn" data-v>Voltar</button>${modo === 'arquivo' ? '<button class="btn prim" data-ok disabled>Enviar para esta pasta</button>' : '<button class="btn prim" data-ok disabled>Usar esta pasta</button>'}` });
+    const q = s => m.el.querySelector(s);
+    const bOk = q('[data-ok]');
+    const atual = () => caminho[caminho.length - 1];
+    const desenharTrilha = () => {
+      q('[data-trilha]').innerHTML = caminho.map((c, k) => k < caminho.length - 1 ? `<a href="#" data-volta="${k}">${esc(c.nome)}</a>` : `<b>${esc(c.nome)}</b>`).join(' › ');
+      q('[data-trilha]').querySelectorAll('[data-volta]').forEach(a => a.onclick = e => { e.preventDefault(); caminho = caminho.slice(0, +a.dataset.volta + 1); abrir(); });
+      bOk.disabled = modo === 'arquivo' ? !(q('[data-arq]') && q('[data-arq]').files.length) : false;
+    };
+    const abrir = async pre => {
+      desenharTrilha();
+      const box = q('[data-pastas]'); box.innerHTML = '<span class="muted small">Carregando…</span>';
+      try {
+        const r = pre || await api('gabarito_drive', { op: 'pastas', pasta_id: atual().id }, true);
+        const l = r.pastas || [];
+        box.innerHTML = l.length ? l.map(p => `<button type="button" class="gd-pasta" data-id="${esc(p.id)}" data-nome="${esc(p.name)}">📁 ${esc(p.name)}</button>`).join('')
+          : '<span class="muted small">Nenhuma subpasta aqui. O arquivo fica nesta pasta, ou crie uma pasta nova.</span>';
+        box.querySelectorAll('[data-id]').forEach(b => b.onclick = () => { caminho.push({ id: b.dataset.id, nome: b.dataset.nome }); abrir(); });
+      } catch (e) { box.innerHTML = `<span class="small" style="color:var(--vermelho)">${esc(e.message)}</span>`; }
+    };
+    const comecar = (id, nome, pre) => { caminho = [{ id, nome }]; q('[data-passo1]').hidden = true; q('[data-passo2]').hidden = false; abrir(pre); };
+    m.el.querySelectorAll('[data-raiz]').forEach(b => b.onclick = async () => {
+      try { const r = await api('gabarito_drive', { op: 'pastas', raiz: b.dataset.raiz }, true); comecar(r.pasta_id, b.dataset.raiz === 'offset' ? 'Offset' : 'Digital', r); }
+      catch (e) { toast(e.message, true); }
+    });
+    const ba = q('[data-atual]'); if (ba) ba.onclick = () => comecar(pastaIni, 'Pasta do material');
+    q('[data-criar]').onclick = async () => {
+      const nome = q('[data-nova]').value.trim(); if (!nome) return toast('Escreva o nome da pasta.', true);
+      const btn = q('[data-criar]');
+      await ocupado(btn, async () => {
+        try { const r = await api('gabarito_drive', { op: 'criar_pasta', pasta_id: atual().id, nome }, true);
+          q('[data-nova]').value = ''; caminho.push({ id: r.pasta.id, nome: r.pasta.name || nome }); toast('Pasta criada.'); abrir(); }
+        catch (e) { toast(e.message, true); }
+      });
+    };
+    const arq = q('[data-arq]'); if (arq) arq.onchange = desenharTrilha;
+    q('[data-v]').onclick = () => { m.fechar(); fim(null); };
+    bOk.onclick = async () => {
+      const p = atual(); if (!p) return;
+      if (modo === 'pasta') { m.fechar(); fim({ tipo: 'pasta', id: p.id, nome: p.nome, url: linkPastaDrive(p.id) }); return; }
+      const f = arq.files[0]; if (!f) return toast('Escolha o arquivo.', true);
+      await ocupado(bOk, async () => {
+        try {
+          const mime = f.type || 'application/octet-stream';
+          const r = await api('gabarito_drive', { op: 'upload', pasta_id: p.id, nome: f.name, mime, tamanho: f.size }, true);
+          if (!r.upload_url) throw new Error('O Drive não devolveu o endereço de envio.');
+          const resp = await new Promise((ok, falha) => {
+            const x = new XMLHttpRequest(); x.open('PUT', r.upload_url); x.setRequestHeader('Content-Type', mime);
+            x.upload.onprogress = e => { if (e.lengthComputable) q('[data-prog]').textContent = `Enviando… ${Math.round(e.loaded / e.total * 100)}%`; };
+            x.onload = () => { if (x.status >= 200 && x.status < 300) { try { ok(JSON.parse(x.responseText || '{}')); } catch { falha(new Error('Resposta inválida do Drive.')); } } else falha(new Error(`O Drive recusou o envio (${x.status}).`)); };
+            x.onerror = () => falha(new Error('Falha de conexão ao enviar para o Drive.'));
+            x.send(f);
+          });
+          if (!resp.id) throw new Error('O Drive não confirmou o arquivo.');
+          m.fechar(); fim({ tipo: 'arquivo', id: resp.id, nome: f.name, url: linkArquivoDrive(resp.id), pasta: caminho.map(c => c.nome).join(' › ') });
+        } catch (e) { q('[data-prog]').textContent = ''; toast(e.message, true); }
+      });
+    };
+  });
+}
+// campo "Arquivo do gabarito": link + botão Enviar arquivo
+function campoArquivoGabarito(valor) {
+  return `<div class="campo" style="grid-column:1/-1" data-arq-gab>Arquivo do gabarito
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="url" name="arquivo_url" value="${esc(valor || '')}" placeholder="Envie o arquivo ou cole o link do Drive" style="flex:1;min-width:220px">
+      ${podeGabaritos() ? `<button type="button" class="btn peq prim" data-env-gab>${valor ? 'Trocar arquivo' : 'Enviar arquivo'}</button>` : ''}
+      ${valor ? `<a class="btn peq" href="${esc(valor)}" target="_blank" rel="noopener">Abrir</a>` : ''}
+    </div>
+    <span class="small muted" data-env-info>${valor ? 'Ao trocar o arquivo, o anterior vai para a lixeira do Drive quando ninguém mais usar.' : ''}</span></div>`;
+}
+// liga o botão; pastaPadrao() devolve o link da pasta do material (ou null)
+function ligarArquivoGabarito(raiz, pastaPadrao) {
+  const box = raiz.querySelector('[data-arq-gab]'); if (!box) return {};
+  const inp = box.querySelector('[name=arquivo_url]'), bt = box.querySelector('[data-env-gab]');
+  const estado = { anterior: inp.value || '', enviado: null };
+  if (bt) bt.onclick = async () => {
+    const r = await janelaDriveGabarito({ modo: 'arquivo', pastaInicial: pastaPadrao ? pastaPadrao() : null });
+    if (!r) return;
+    estado.enviado = r.id; inp.value = r.url;
+    box.querySelector('[data-env-info]').innerHTML = `Enviado para <b>${esc(r.pasta)}</b>: ${esc(r.nome)}. Salve o gabarito para valer.`;
+  };
+  estado.depoisDeSalvar = async () => {
+    // arquivo trocado: o antigo vai para a lixeira (o banco só deixa se nenhum gabarito ou material usar mais)
+    const velho = idDriveDoLink(estado.anterior), novo = idDriveDoLink(inp.value);
+    if (velho && velho !== novo && /\/file\/d\//.test(estado.anterior)) { try { await api('gabarito_drive', { op: 'lixeira', file_id: velho }, true); } catch (e) {} }
+  };
+  estado.cancelar = async () => { // enviou e desistiu: tira o arquivo que acabou de subir
+    if (estado.enviado) { try { await api('gabarito_drive', { op: 'lixeira', file_id: estado.enviado }, true); } catch (e) {} }
+  };
+  return estado;
+}
+// "Enviar gabarito": produto novo, gabarito novo de uma regra nova ou substituir um gabarito que já existe
+async function assistenteEnviarGabarito() {
+  if (!podeGabaritos()) return toast('Você não tem permissão para incluir gabaritos.', true);
+  await carregarGabaritos();
+  const grupos = gruposGabarito().filter(g => g.ativo !== false).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const m = abrirModal({ titulo: 'Enviar gabarito', corpo: `
+    <div style="display:grid;gap:6px">
+      <label class="check"><input type="radio" name="tp" value="produto" checked> <span><b>Produto novo</b> <span class="muted small">— material que ainda não existe no sistema (cria a pasta dele no Drive)</span></span></label>
+      <label class="check"><input type="radio" name="tp" value="novo"> <span><b>Gabarito novo</b> <span class="muted small">— outra variação ou regra de um material que já existe</span></span></label>
+      <label class="check"><input type="radio" name="tp" value="trocar"> <span><b>Substituir um gabarito</b> <span class="muted small">— troca o arquivo de um gabarito que já existe</span></span></label>
+    </div>
+    <div data-esc-mat hidden style="margin-top:12px">
+      <label class="campo">Material<select data-mat><option value="">Selecione</option>${grupos.map(g => `<option value="${g.id}">${esc(g.nome)}</option>`).join('')}</select></label>
+      <label class="campo" data-esc-gab hidden>Gabarito<select data-gab></select></label>
+    </div>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Continuar</button>` });
+  const tp = () => m.el.querySelector('[name=tp]:checked').value;
+  const sel = m.el.querySelector('[data-mat]'), selG = m.el.querySelector('[data-gab]');
+  const sinc = () => {
+    m.el.querySelector('[data-esc-mat]').hidden = tp() === 'produto';
+    m.el.querySelector('[data-esc-gab]').hidden = tp() !== 'trocar';
+    const gr = grupos.find(g => g.id === sel.value);
+    selG.innerHTML = `<option value="">Selecione</option>` + ((gr && gr.gabaritos) || []).filter(g => g.ativo).map(g => `<option value="${g.id}">${esc(g.nome)}</option>`).join('');
+  };
+  m.el.querySelectorAll('[name=tp]').forEach(r => r.onchange = sinc); sel.onchange = sinc; sinc();
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = () => {
+    const t = tp();
+    if (t === 'produto') { m.fechar(); modalGrupoGabarito(null, { depois: 'gabarito' }); return; }
+    if (!sel.value) return toast('Escolha o material.', true);
+    if (t === 'trocar' && !selG.value) return toast('Escolha o gabarito que será substituído.', true);
+    m.fechar(); modalGabarito(sel.value, t === 'trocar' ? selG.value : null, { abrirEnvio: true });
+  };
+}
+function grupoDaTela(id) { return (S.vistaAtual?.gabaritos || []).find(g => g.id === id) || gruposGabarito().find(g => g.id === id); }
+async function modalGrupoGabarito(id, opts = {}) {
   await carregarBase();
   const g = id ? grupoDaTela(id) : { ativo: true, ordem: 100 };
   const m = abrirModal({ titulo: id ? 'Material' : 'Novo material', largo: true, corpo: `<form id="f-gr" class="grade g2">
       <label class="campo" style="grid-column:1/-1">Nome * <span class="muted">(ex.: Cartão de Visita UVF, Adesivo impressão e recorte)</span><input type="text" name="nome" maxlength="80" value="${esc(g.nome || '')}"></label>
       <label class="campo">Categoria<select name="categoria_id">${opcoesCategoria(g.categoria_id, false).replace('Selecione a categoria', 'Sem categoria')}</select></label>
       <label class="campo">Ordem <span class="muted">(menor aparece primeiro)</span><input type="number" name="ordem" value="${esc(g.ordem ?? 100)}"></label>
-      <label class="campo" style="grid-column:1/-1">Link da pasta na "Gabaritos GVH"<input type="url" name="pasta_url" value="${esc(g.pasta_url || '')}" placeholder="https://drive.google.com/drive/folders/…"></label>
+      <div class="campo" style="grid-column:1/-1">Pasta na "Gabaritos GVH"
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="url" name="pasta_url" value="${esc(g.pasta_url || '')}" placeholder="Escolha ou crie a pasta (Offset ou Digital)" style="flex:1;min-width:220px">
+          <button type="button" class="btn peq prim" data-pasta-gab>${g.pasta_url ? 'Trocar pasta' : 'Escolher ou criar pasta'}</button>
+        </div></div>
       <label class="campo" style="grid-column:1/-1">Link das instruções (documento)<input type="url" name="instrucoes_url" value="${esc(g.instrucoes_url || '')}" placeholder="https://docs.google.com/document/…"></label>
       <label class="campo" style="grid-column:1/-1">Observações<textarea name="observacoes" rows="2">${esc(g.observacoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo (aparece para escolher no item)</label>` : ''}
       ${id && g.itens_usando ? `<p class="small muted" style="grid-column:1/-1;margin:0">Usado em ${g.itens_usando} ${g.itens_usando == 1 ? 'item' : 'itens'} de pedido: não dá para excluir, só desativar.</p>` : ''}
     </form>`, rodape: `${id && !g.itens_usando ? '<button class="btn perigo" data-x style="margin-right:auto">Excluir material</button>' : ''}<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
   const f = $('#f-gr', m.el);
+  m.el.querySelector('[data-pasta-gab]').onclick = async () => {
+    const r = await janelaDriveGabarito({ modo: 'pasta', pastaInicial: f.elements.pasta_url.value || null, nomeSugerido: f.elements.nome.value.trim() });
+    if (r) f.elements.pasta_url.value = r.url;
+  };
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bx = m.el.querySelector('[data-x]');
   if (bx) bx.onclick = async () => {
@@ -5747,10 +5921,15 @@ async function modalGrupoGabarito(id) {
   };
   m.el.querySelector('[data-s]').onclick = async () => {
     const d = formDados(f); if (id) { d.id = id; d.ativo = f.elements.ativo.checked; }
-    try { await api('salvar_gabarito_grupo', d); await carregarGabaritos(true); m.fechar(); toast('Material salvo.'); recarregar(); } catch (e) {}
+    try {
+      const r = await api('salvar_gabarito_grupo', d); await carregarGabaritos(true); m.fechar();
+      if (!id && opts.depois === 'gabarito' && r && r.id) { toast('Material criado. Agora inclua o gabarito dele.'); modalGabarito(r.id, null, { abrirEnvio: true }); }
+      else toast('Material salvo.');
+      recarregar();
+    } catch (e) {}
   };
 }
-function modalGabarito(grupoId, id) {
+function modalGabarito(grupoId, id, opts = {}) {
   const gr = grupoDaTela(grupoId) || {};
   const g = id ? (gr.gabaritos || []).find(x => x.id === id) : { ativo: true, formatos: ['pdf'], sangria_mm: 0, seguranca_mm: 0, cond_modo: 'e', prioridade: ((gr.gabaritos || []).length + 1) * 10 };
   const marc = (lista, v) => (lista || []).includes(v) ? 'checked' : '';
@@ -5793,7 +5972,7 @@ function modalGabarito(grupoId, id) {
         <div data-ordem style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px"></div></div>
     </div>
     <div class="grade g2" style="margin-top:10px">
-      <label class="campo" style="grid-column:1/-1">Link do gabarito (arquivo ou pasta no Drive)<input type="url" name="arquivo_url" value="${esc(g.arquivo_url || '')}" placeholder="https://drive.google.com/file/d/…"></label>
+      ${campoArquivoGabarito(g.arquivo_url)}
       <label class="campo" style="grid-column:1/-1">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(g.instrucoes || '')}</textarea></label>
       ${id ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="ativo" ${g.ativo ? 'checked' : ''}> Ativo</label>` : ''}
     </div>
@@ -5803,6 +5982,8 @@ function modalGabarito(grupoId, id) {
     </form>`,
     rodape: `${id ? '<button class="btn perigo" data-x style="margin-right:auto">Excluir gabarito</button>' : ''}<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar gabarito</button>` });
   const f = $('#f-gb', m.el), el = f.elements;
+  const arqGab = ligarArquivoGabarito(m.el, () => gr.pasta_url || null);
+  if (opts.abrirEnvio) setTimeout(() => { const b = m.el.querySelector('[data-env-gab]'); if (b) b.click(); }, 50);
   const bx = m.el.querySelector('[data-x]');
   if (bx) bx.onclick = async () => {
     if (!await confirmar(`Excluir o gabarito "${esc(g.nome)}" de ${esc(gr.nome || 'este material')}? Não dá para desfazer. O arquivo no Drive não é apagado.`, 'Excluir', true)) return;
@@ -5861,8 +6042,9 @@ function modalGabarito(grupoId, id) {
       arquivo_url: el.arquivo_url.value, instrucoes: el.instrucoes.value, paginas_ordem: ordem
     };
     if (id) { d.id = id; d.ativo = el.ativo.checked; }
-    try { await api('salvar_gabarito', d); await carregarGabaritos(true); m.fechar(); toast('Gabarito salvo.'); recarregar(); } catch (e) {}
+    try { await api('salvar_gabarito', d); await arqGab.depoisDeSalvar(); arqGab.enviado = null; await carregarGabaritos(true); m.fechar(); toast('Gabarito salvo.'); recarregar(); } catch (e) {}
   };
+  m.el.querySelector('[data-v]').addEventListener('click', () => arqGab.cancelar && arqGab.cancelar());
 }
 
 rota('feriados', async (_p, el) => {
@@ -5889,9 +6071,9 @@ async function excluirFeriado(d) { if (!await confirmar('Excluir este feriado?',
 rota('usuarios', async (_p, el) => {
   definirTopoEm(el, 'Usuários', `<button class="btn prim" onclick="modalUsuario(null)">Novo usuário</button>`);
   const r = await api('listar_usuarios'); vistaDoEl(el).dados = r;
-  el.innerHTML = `<div class="painel"><div class="tabela-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Comissão</th><th></th></tr></thead><tbody>
+  el.innerHTML = `<div class="painel"><div class="tabela-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Comissão</th><th>Gabaritos</th><th></th></tr></thead><tbody>
     ${r.usuarios.map(u => `<tr class="clicavel" onclick="modalUsuario('${u.id}')"><td>${tagPessoa(u.nome, u.cor)}</td><td>${esc(u.email)}</td><td>${esc(u.perfil_nome)}</td>
-      <td>${u.recebe_comissao ? num(u.percentual_comissao) + '%' : 'Não recebe (economizada)'}</td><td>${u.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
+      <td>${u.recebe_comissao ? num(u.percentual_comissao) + '%' : 'Não recebe (economizada)'}</td><td>${u.pode_gabaritos ? 'Pode alterar' : '<span class="muted">Só consulta</span>'}</td><td>${u.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}
     </tbody></table></div></div>`;
 });
 function modalUsuario(id) {
@@ -5909,7 +6091,8 @@ function modalUsuario(id) {
       <div id="u-cor-previa" style="margin-top:8px"></div>
     </div>
     <label class="check"><input type="checkbox" name="recebe_comissao" value="true" ${u.recebe_comissao ? 'checked' : ''}> Recebe comissão</label>
-    <label class="check"><input type="checkbox" name="ativo" value="true" ${u.ativo ? 'checked' : ''}> Ativo</label></form>
+    <label class="check"><input type="checkbox" name="ativo" value="true" ${u.ativo ? 'checked' : ''}> Ativo</label>
+    <label class="check" style="grid-column:1/-1"><input type="checkbox" name="pode_gabaritos" value="true" ${u.pode_gabaritos ? 'checked' : ''}> Pode incluir, editar e excluir gabaritos</label></form>
     <p class="small muted" style="margin:0">Quem não recebe comissão tem o valor registrado como "comissão economizada". Trocar a senha encerra as sessões abertas desse usuário.</p>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar usuário</button>` });
   // paleta: as cinco primeiras são as cores combinadas da equipe; as demais ficam para quem entrar depois
@@ -5935,7 +6118,7 @@ function modalUsuario(id) {
   $('#f-usu', m.el).elements.nome.addEventListener('input', desenharCores);
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
-    const d = formDados($('#f-usu', m.el)); d.ativo = !!d.ativo; d.recebe_comissao = !!d.recebe_comissao; if (id) d.id = id;
+    const d = formDados($('#f-usu', m.el)); d.ativo = !!d.ativo; d.recebe_comissao = !!d.recebe_comissao; d.pode_gabaritos = !!d.pode_gabaritos; if (id) d.id = id;
     await api('salvar_usuario', d); m.fechar(); toast('Usuário salvo.'); await carregarBase(); recarregar();
   };
 }
