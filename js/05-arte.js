@@ -24,37 +24,8 @@ rota('arte', async (_p, el) => {
   preencherArquivosArte(el);
 });
 function filtrarFilaArte(k) { S.cache.filtroArteFila = k; recarregar(); }
-async function moverItem(id, status) { await api('mudar_status_itens', { itens: [id], status }); toast(`Item movido para ${nomeStatusItem(status)}.`); recarregar(); }
-function modalArte(id) {
-  const i = S.vistaAtual.dados.find(x => x.id === id);
-  const m = abrirModal({ titulo: `Arte · ${i.descricao}`, corpo: `
-    <form id="f-arte" class="grade">
-      <label class="campo">Link da prova / aprovação<input type="text" name="arte_url" value="${esc(i.arte_url || '')}"></label>
-      <label class="campo">Link da arte no Drive<input type="text" name="arte_drive_url" value="${esc(i.arte_drive_url || '')}"></label>
-      <label class="campo">Enviar arte final (produção)<input type="file" id="arq" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.ai,.eps,.psd,.cdr,.svg,.zip"></label>
-      <label class="campo">Identificação <span class="muted">(opcional — ex.: Frente, Verso, Faca)</span><input type="text" id="arq-rot" maxlength="40"></label>
-    </form>`, rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar</button>` });
-  m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelector('[data-s]').onclick = async () => {
-    await api('salvar_item', { id, ...formDados($('#f-arte', m.el)) });
-    for (const arq of [...$('#arq', m.el).files]) {
-      try { await enviarArquivoDrive(i.pedido_id, arq, 'producao', id, $('#arq-rot', m.el).value.trim()); }
-      catch (e) { toast(`${arq.name}: ${e.message}`, true); }
-    }
-    m.fechar(); toast('Arte atualizada.'); recarregar();
-  };
-}
 
 /* ---------- ARTES (AR2) ---------- */
-// Situações da arte. A designer move a arte; o item anda sozinho conforme as artes dele.
-const ARTE_SIT = {
-  a_fazer: ['Arte pendente', 'b-cinza'], em_criacao: ['Em andamento', 'b-azul'],
-  em_alteracao: ['Em andamento', 'b-azul'], aguardando_cliente: ['Em aprovação', 'b-ambar'],
-  pausada: ['Pausada · com o vendedor', 'b-vermelho'], aprovada: ['Aprovado pelo cliente', 'b-azul'],
-  pronta: ['Arquivo pronto para impressão', 'b-verde'], resolvida_vendedor: ['Resolvida pelo vendedor', 'b-cinza'],
-  cancelada: ['Cancelada', 'b-vermelho']
-};
-const badgeArte = s => badge((ARTE_SIT[s] || [s])[0], (ARTE_SIT[s] || [, 'b-cinza'])[1]);
 // Cada pessoa tem uma cor no cadastro (Cadastros › Usuários). Sem cor, cai numa cor
 // derivada do nome, para nunca ficar sem identificação visual.
 const COR_PESSOA_PADRAO = '#5D6B73';
@@ -96,17 +67,6 @@ function tempoCurto(seg) {
   if (h < 24) return h + 'h' + (mm ? ' ' + mm + 'min' : '');
   const d = Math.floor(h / 24); return d + (d === 1 ? ' dia' : ' dias') + (h % 24 ? ' ' + (h % 24) + 'h' : '');
 }
-function etiquetasArte(a) {
-  const e = [];
-  if (a.urgente) e.push(badge('URGENTE', 'b-vermelho'));
-  if (a.entrega_atrasada) e.push(badge('ATRASADO', 'b-vermelho'));
-  if (a.tempo_estourado) e.push(badge('Passou do tempo previsto', 'b-ambar'));
-  if (a.situacao === 'aprovada') e.push(badge('FALTA FECHAR O ARQUIVO', 'b-ambar'));
-  if (a.situacao === 'em_alteracao') e.push(badge('Alteração pedida', 'b-ambar'));
-  if (a.falta_pagamento) e.push(badge('Falta pagamento', 'b-ambar'));
-  return e.join(' ');
-}
-// Botões da designer: um passo por vez, na ordem do trabalho dela.
 /* ---------- AR3c: montador de provas (arquivo montador.js, carregado só no clique) ---------- */
 const podeMontarProva = a => ['a_fazer', 'em_criacao', 'em_alteracao', 'aguardando_cliente'].includes(a.situacao) && !!a.item_id;
 let carregandoMontador = null;
@@ -173,39 +133,6 @@ function linhaProva(a) {
   const sit = { enviada: 'com o cliente', aprovada: 'aprovada', alteracao: 'cliente pediu alteração', substituida: 'substituída' }[pv.situacao] || pv.situacao;
   return `<div class="small muted" style="margin-top:6px">Prova v${pv.versao}${pv.modo === '3d' ? ' (3D)' : ''}${pv.final ? ' · <b>arte pronta para impressão</b>' : ''} · ${sit}${pv.decidido_nome ? ' por ' + esc(pv.decidido_nome) : ''} · ${dataHora(pv.decidido_em || pv.em)}</div>`;
 }
-function acoesDesigner(a) {
-  const b = [];
-  if (a.situacao === 'a_fazer') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','em_criacao')">Começar a arte</button>`);
-  if (podeMontarProva(a)) b.push(`<button class="btn prim peq" onclick="montarProva('${a.id}')">${a.situacao === 'aguardando_cliente' ? 'Nova versão da prova' : 'Montar prova'}</button>`);
-  if (a.situacao === 'em_criacao' || a.situacao === 'em_alteracao') b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','aguardando_cliente')" title="Use quando a prova foi mandada por fora do sistema">Enviei a prova por fora</button>`);
-  if (a.situacao === 'aguardando_cliente') {
-    b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
-    b.push(`<button class="btn peq" onclick="modalAlteracaoCliente('${a.id}')">Cliente pediu alteração</button>`);
-  }
-  if (a.situacao === 'em_criacao' || a.situacao === 'em_alteracao') b.push(`<button class="btn peq" onclick="modalAlteracaoCliente('${a.id}', true)" title="O cliente quer mudar quantidade, tamanho, papel… — a arte fica com o vendedor">Pausar (alteração no material)</button>`);
-  if (a.situacao === 'aprovada') {
-    b.push(`<button class="btn prim peq" onclick="modalFecharArte('${a.id}')">Enviar arquivo para impressão</button>`);
-    b.push(`<button class="btn peq" onclick="modalAlteracaoCliente('${a.id}', true)">Pausar (alteração no material)</button>`);
-  }
-  if (a.situacao === 'pausada') b.push(`<span class="small muted">Aguardando o vendedor ajustar o material.</span>`);
-  return b.join(' ');
-}
-function acoesVendedorArte(a, pode) {
-  if (!pode) return '';
-  const b = [];
-  if (podeMontarProva(a) && a.designer_id) b.push(`<button class="btn peq" onclick="montarProva('${a.id}')">${a.situacao === 'aguardando_cliente' ? 'Nova versão da prova' : 'Montar prova'}</button>`);
-  if (a.situacao === 'aguardando_cliente') {
-    b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','aprovada')">Cliente aprovou</button>`);
-    b.push(`<button class="btn peq" onclick="modalAlteracaoCliente('${a.id}')">Cliente pediu alteração</button>`);
-  }
-  if (a.situacao === 'pausada') b.push(`<button class="btn prim peq" onclick="arteSituacao('${a.id}','em_alteracao',2)">Material ajustado · devolver para a designer</button>`);
-  if (a.situacao === 'aprovada' || a.situacao === 'pronta') b.push(`<button class="btn peq" onclick="arteSituacao('${a.id}','em_alteracao',1)">Devolver para a designer</button>`);
-  if (['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao', 'pausada', 'aprovada'].includes(a.situacao)) {
-    b.push(`<button class="btn peq" onclick="modalArteEditar('${a.id}')">Editar</button>`);
-    b.push(`<button class="btn peq" onclick="arteResolverVendedor('${a.id}')">Resolvida pelo vendedor</button>`);
-  }
-  return b.join(' ');
-}
 
 // Filtros rápidos da fila. Cada um é uma pergunta que a equipe faz de verdade no dia a dia.
 const FILTROS_ARTE = [
@@ -248,95 +175,6 @@ function chipsFiltroArte(artes, atual, aoClicar, dentroDoPainel) {
   }).join('')}</div>`;
 }
 const filtroArteFn = k => (FILTROS_ARTE.find(f => f[0] === k) || FILTROS_ARTE[0])[2];
-// pedidos abertos no "ver mais" — guardado por tela, para não fechar sozinho ao atualizar
-const abertoArte = (nome, id) => !!(S.cache.artesAbertas?.[nome]?.[id]);
-function alternarPedidoArte(nome, id) {
-  S.cache.artesAbertas = S.cache.artesAbertas || {};
-  const m = (S.cache.artesAbertas[nome] = S.cache.artesAbertas[nome] || {});
-  m[id] = !m[id]; recarregar();
-}
-// Resumo do pedido: o que a pessoa precisa para decidir se abre ou não.
-function resumoArtes(lista) {
-  const por = {};
-  lista.forEach(a => { por[a.situacao] = (por[a.situacao] || 0) + 1; });
-  const ordem = ['a_fazer', 'em_criacao', 'em_alteracao', 'aguardando_cliente', 'pausada', 'aprovada', 'pronta', 'resolvida_vendedor', 'cancelada'];
-  return ordem.filter(k => por[k]).map(k => `${badge((por[k] > 1 ? por[k] + ' ' : '') + (ARTE_SIT[k] || [k])[0], (ARTE_SIT[k] || [, 'b-cinza'])[1])}`).join(' ');
-}
-
-// Um card por pedido, com as artes dele agrupadas por item — é assim que a equipe de arte trabalha hoje.
-// Fechado mostra só o resumo; "Ver mais" abre os itens.
-// Lista: um card-resumo por pedido; clicar abre a tela "Artes do pedido" (uma de cada vez, como em Pedidos).
-// detalhe = true: é a própria tela do pedido, com tudo aberto.
-function cardsArtesPorPedido(artes, modo, nomeTela, detalhe) {
-  if (!artes.length) return '<div class="vazio">Nenhuma arte por aqui.</div>';
-  const porPedido = new Map();
-  artes.forEach(a => { if (!porPedido.has(a.pedido_id)) porPedido.set(a.pedido_id, []); porPedido.get(a.pedido_id).push(a); });
-  return [...porPedido.values()].map(lista => {
-    const p = lista[0];
-    const porItem = new Map();
-    lista.forEach(a => { const k = a.item_id || a.id; if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(a); });
-    const urgente = lista.some(a => a.urgente);
-    const zap = p.cliente_whatsapp ? `<a class="btn peq" href="https://wa.me/${esc(p.cliente_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a>` : '';
-    const aberto = !!detalhe;
-    const nItens = porItem.size, nArtes = lista.length;
-    const urgProd = lista.find(a => a.urgencia?.nivel === 'muito_urgente') || lista.find(a => a.urgencia?.nivel === 'urgente');
-    const alertas = [lista.some(a => a.entrega_atrasada) ? badge('ATRASADO', 'b-vermelho') : '',
-                     urgProd ? badgeUrgencia(urgProd.urgencia) : '',
-                     urgente ? badge('URGENTE', 'b-vermelho') : '',
-                     lista.some(a => a.tempo_estourado) ? badge('Passou do tempo previsto', 'b-ambar') : '',
-                     lista.some(a => a.falta_pagamento) ? badge('Falta pagamento', 'b-ambar') : ''].filter(Boolean).join(' ');
-    return `
-    <div class="painel ${detalhe ? '' : 'clicavel'}" ${detalhe ? '' : `data-abrir-arte="${p.pedido_id}"`} style="${urgente || urgProd ? 'border-left:3px solid var(--vermelho)' : ''}">
-      <div class="painel-cab">
-        <div>
-          <h2 style="margin:0">Pedido ${esc(p.pedido_numero)} · ${esc(p.cliente_nome || 'Sem cliente')}</h2>
-          <div class="small muted">Entrega prevista ${data(p.data_prevista_entrega)} · ${nItens} ${nItens === 1 ? 'material' : 'materiais'} · ${nArtes} ${nArtes === 1 ? 'arte' : 'artes'}</div>
-          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            ${tagPessoa(p.vendedor_nome, p.vendedor_cor, 'vendedor')}
-            ${[...new Set(lista.filter(a => a.designer_nome).map(a => a.designer_nome + '|' + (a.designer_cor || '')))]
-              .map(x => tagPessoa(x.split('|')[0], x.split('|')[1], 'designer')).join('')}
-            ${lista.some(a => !a.designer_id) ? badge('Sem designer', 'b-ambar') : ''}
-          </div>
-          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${resumoArtes(lista)} ${alertas}</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${zap}
-          ${modo === 'designer' ? '' : `<a class="btn peq" href="#/pedido/${p.pedido_id}">Abrir pedido</a>`}
-          ${detalhe ? '' : `<a class="btn peq prim" href="#/arte-pedido/${p.pedido_id}">Abrir</a>`}</div>
-      </div>
-      ${!aberto ? '' : `<div class="lista-exp" style="border-top:1px solid var(--linha);margin-top:12px">${[...porItem.values()].map(as => {
-        const it = as[0];
-        // resumo do item (fechado); ao abrir: gabarito, observação e cada arte com as ações
-        const resumoItem = `<b>${esc(it.item_descricao)}</b>${it.quantidade ? ` <span class="small muted">${num(it.quantidade)} un</span>` : ''}
-            ${as.length > 1 ? `<span class="small muted">· ${as.length} artes</span>` : ''} ${resumoArtes(as)} ${badgeUrgencia(it.urgencia)} ${seloSemGabarito(it.urgencia)}
-            ${it.urgencia && it.urgencia.gabarito_nome ? `<span class="small muted">· ${esc(it.urgencia.grupo_nome || '')}${it.urgencia.grupo_nome ? ' — ' : ''}${esc(it.urgencia.gabarito_nome)}</span>` : ''}`;
-        return `<div>${blocoExp('arte-ped-item-' + (it.item_id || it.id), resumoItem, `
-          ${it.categoria_nome ? `<div class="small muted">${esc(catCurta(it.categoria_nome))}</div>` : ''}
-          ${it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, it.urgencia,
-              as.some(a => ['a_fazer', 'em_criacao', 'aguardando_cliente', 'em_alteracao', 'pausada', 'aprovada'].includes(a.situacao))
-              && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
-          ${it.item_observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Observação:</span> ${esc(it.item_observacao)}</div>` : ''}
-          ${as.map((a, k) => `
-            <div style="margin-top:10px;padding:10px;background:var(--fundo-2, #f7f8f9);border-radius:8px">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                ${as.length > 1 ? `<span class="small muted">Arte ${k + 1}</span>` : ''}
-                ${badgeArte(a.situacao)} ${badge(nomeTipoArte(a.tipo), 'b-cinza')} ${etiquetasArte(a)}
-                ${a.valor != null ? badge(brl(a.valor), 'b-cinza') : ''}
-              </div>
-              ${a.instrucoes ? `<div class="small" style="margin-top:6px"><span class="muted">Instruções:</span> ${esc(a.instrucoes)}</div>` : ''}
-              <div class="small muted" style="margin-top:6px">Na sua mão ${tempoCurto(a.seg_designer)} · Esperando o cliente ${tempoCurto(a.seg_cliente)}</div>${linhaProva(a)}
-              ${modo !== 'designer' && a.designer_nome ? `<div style="margin-top:6px">${tagPessoa(a.designer_nome, a.designer_cor, 'designer')}</div>` : ''}
-              <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
-              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-                ${modo === 'designer' ? acoesDesigner(a) : acoesVendedorArte(a, true)}
-                ${a.item_id && modo === 'designer' && a.situacao !== 'cancelada' ? `<button class="btn peq" onclick="modalEnviarArteDesigner('${a.id}')">Enviar arquivo</button>` : ''}
-                ${a.item_id && modo !== 'designer' && k === 0 ? `<button class="btn peq" onclick="testarArquivo('${a.item_id}')">Testar arquivo do cliente</button>` : ''}
-                ${a.item_id ? `<button class="btn peq" onclick="modalConversaArte('${a.id}')">Conversa${a.ultima_mensagem_em ? ' •' : ''}</button>` : ''}
-              </div>
-            </div>`).join('')}`, porItem.size === 1)}</div>`;
-      }).join('')}</div>`}
-    </div>`;
-  }).join('');
-}
 
 /* ---------- telas de arte simples (14/10, teste do dono): lista curta e, no pedido, o passo a passo de cada material ---------- */
 const ITEM_NA_ARTE = ['arte_a_fazer', 'arte_em_alteracao', 'arte_em_aprovacao', 'arte_pausada', 'arte_fechando', 'arte_aprovada'];
@@ -632,7 +470,7 @@ function modalArteEditar(id) {
   const m = abrirModal({
     titulo: `Arte · ${a.item_descricao}`, corpo: `
     <form id="f-arte-ed" class="grade">
-      <label class="campo">Tipo de arte<select name="tipo">${arteTipos().map(t => `<option value="${t.codigo}" ${a.tipo === t.codigo ? 'selected' : ''}>${esc(t.nome)}${t.valor != null ? ' — ' + brl(t.valor) : ''}</option>`).join('')}</select></label>
+      <label class="campo">Tipo de arte<select name="tipo">${arteTipos().map(t => `<option value="${esc(t.codigo)}" ${a.tipo === t.codigo ? 'selected' : ''}>${esc(t.nome)}${t.valor != null ? ' — ' + brl(t.valor) : ''}</option>`).join('')}</select></label>
       <label class="campo">Instruções para a designer<textarea name="instrucoes" rows="3">${esc(a.instrucoes || '')}</textarea></label>
       <label class="caixa-linha"><input type="checkbox" name="urgente" ${a.urgente ? 'checked' : ''}>
         <span><b>Arte urgente</b><br><span class="small muted">Vai para o topo da fila da designer.</span></span></label>
@@ -864,4 +702,3 @@ async function alternarSemArte(itemId, valor) {
   try { await api('item_sem_arte', { item_id: itemId, sem_arte: valor }); toast('Item atualizado.'); recarregar(); }
   catch (e) { toast(e.message, true); }
 }
-

@@ -212,52 +212,6 @@ function novoFornecedorNaLinha(itemId) {
   });
 }
 
-/* ---------- PRODUTOS ---------- */
-rota('produtos', async (_p, el) => {
-  definirTopoEm(el, 'Produtos', `<button class="btn prim" onclick="modalProduto(null)">Novo produto</button>`);
-  await carregarBase();
-  const l = S.base.produtos; const forn = id => S.base.fornecedores.find(f => f.id === id)?.nome || '—';
-  el.innerHTML = `<div class="painel">${l.length ? `<div class="tabela-wrap"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Fornecedor padrão</th><th>Faixas de preço</th><th></th></tr></thead><tbody>
-    ${l.map(p => `<tr class="clicavel" onclick="modalProduto('${p.id}')"><td><b>${esc(p.nome)}</b><div class="small muted">${esc(p.descricao || '')}</div></td><td>${esc(p.categoria || '')}</td>
-      <td>${esc(forn(p.fornecedor_padrao_id))}</td><td class="small">${(p.faixas || []).map(f => `${num(f.qtd_min)}${f.qtd_max ? '–' + num(f.qtd_max) : '+'}: ${brl(f.preco_unitario)}`).join('<br>') || (p.preco_base ? brl(p.preco_base) : '—')}</td>
-      <td>${p.ativo ? '' : badge('Inativo', 'b-cinza')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhum produto no catálogo ainda. Todo item de pedido ou orçamento precisa de um produto cadastrado.</div>'}</div>`;
-});
-function modalProduto(id) {
-  const p = id ? S.base.produtos.find(x => x.id === id) : { ativo: true, unidade: 'un', faixas: [] };
-  let faixas = (p.faixas || []).map(f => ({ ...f }));
-  const m = abrirModal({ titulo: id ? p.nome : 'Novo produto', largo: true, corpo: `<form id="f-prod" class="grade g3">
-    <label class="campo" style="grid-column:span 2">Nome<input type="text" name="nome" value="${esc(p.nome || '')}"></label>
-    <label class="campo">Categoria<input type="text" name="categoria" value="${esc(p.categoria || '')}"></label>
-    <label class="campo" style="grid-column:1/-1">Descrição<input type="text" name="descricao" value="${esc(p.descricao || '')}"></label>
-    <label class="campo">Fornecedor padrão<select name="fornecedor_padrao_id"><option value="">Nenhum</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === p.fornecedor_padrao_id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
-    <label class="campo">Prazo padrão (dias)<input type="number" name="prazo_padrao_dias" value="${esc(p.prazo_padrao_dias ?? '')}"></label>
-    <label class="campo">Preço base (R$/un)<input type="number" step="0.0001" name="preco_base" value="${esc(p.preco_base ?? '')}"></label>
-    <label class="campo">Unidade<input type="text" name="unidade" value="${esc(p.unidade || 'un')}"></label>
-    <label class="campo" style="grid-column:span 2">Link do gabarito<input type="text" name="gabarito_url" value="${esc(p.gabarito_url || '')}"></label>
-    <label class="campo">CNAE<input type="text" name="cnae" value="${esc(p.cnae || '')}"></label>
-    <label class="campo">Código de serviço municipal<input type="text" name="codigo_servico" value="${esc(p.codigo_servico || '')}"></label>
-    <label class="campo">NCM<input type="text" name="ncm" value="${esc(p.ncm || '')}"></label>
-    <label class="check"><input type="checkbox" name="ativo" value="true" ${p.ativo ? 'checked' : ''}> Ativo</label></form>
-    <div><div class="painel-cab" style="margin-bottom:6px"><h3>Faixas de preço por quantidade</h3><button type="button" class="btn peq" id="add-fx">Adicionar faixa</button></div><div id="fx"></div></div>`,
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar produto</button>` });
-  const desenhar = () => {
-    $('#fx', m.el).innerHTML = faixas.length ? faixas.map((f, k) => `<div class="linha-form" style="margin-bottom:6px">
-      <input type="number" placeholder="De (qtd)" value="${esc(f.qtd_min ?? '')}" data-k="${k}" data-f="qtd_min">
-      <input type="number" placeholder="Até (vazio = sem limite)" value="${esc(f.qtd_max ?? '')}" data-k="${k}" data-f="qtd_max">
-      <input type="number" step="0.0001" placeholder="Preço unitário" value="${esc(f.preco_unitario ?? '')}" data-k="${k}" data-f="preco_unitario">
-      <button type="button" class="btn link peq" data-rm="${k}" style="flex:0">Remover</button></div>`).join('') : '<p class="small muted" style="margin:0">Sem faixas: vale o preço base.</p>';
-    $$('#fx [data-f]', m.el).forEach(i => i.oninput = () => faixas[i.dataset.k][i.dataset.f] = i.value);
-    $$('#fx [data-rm]', m.el).forEach(b => b.onclick = () => { faixas.splice(b.dataset.rm, 1); desenhar(); });
-  };
-  desenhar();
-  $('#add-fx', m.el).onclick = () => { faixas.push({}); desenhar(); };
-  m.el.querySelector('[data-v]').onclick = m.fechar;
-  m.el.querySelector('[data-s]').onclick = async () => {
-    const d = formDados($('#f-prod', m.el)); d.ativo = !!d.ativo; d.faixas = faixas.filter(f => f.qtd_min !== '' && f.qtd_min != null && f.preco_unitario !== '' && f.preco_unitario != null); if (id) d.id = id;
-    await api('salvar_produto', d); m.fechar(); toast('Produto salvo.'); recarregar();
-  };
-}
-
 /* ---------- FERIADOS ---------- */
 rota('sugestoes', async (_p, el) => {
   definirTopoEm(el, 'Produtos sugeridos', `<button class="btn prim" onclick="modalSugestao(null)">Novo produto sugerido</button>`);
@@ -328,7 +282,7 @@ function modalUsuario(id) {
   const m = abrirModal({ titulo: id ? u.nome : 'Novo usuário', corpo: `<form id="f-usu" class="grade g2">
     <label class="campo">Nome<input type="text" name="nome" value="${esc(u.nome || '')}"></label>
     <label class="campo">E-mail<input type="email" name="email" value="${esc(u.email || '')}"></label>
-    <label class="campo">Perfil<select name="perfil">${S.vistaAtual.dados.perfis.map(p => `<option value="${p.codigo}" ${p.codigo === u.perfil ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
+    <label class="campo">Perfil<select name="perfil">${S.vistaAtual.dados.perfis.map(p => `<option value="${esc(p.codigo)}" ${p.codigo === u.perfil ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></label>
     <label class="campo">${id ? 'Nova senha (deixe em branco para manter)' : 'Senha'}<input type="text" name="senha" autocomplete="off"></label>
     <label class="campo">Comissão (%)<input type="number" step="0.01" name="percentual_comissao" value="${esc(u.percentual_comissao)}"></label>
     <div class="campo" style="grid-column:1/-1">
@@ -369,4 +323,3 @@ function modalUsuario(id) {
     await api('salvar_usuario', d); m.fechar(); toast('Usuário salvo.'); await carregarBase(); recarregar();
   };
 }
-

@@ -159,7 +159,7 @@ async function paginaPublicaProva(chave) {
     const nPend = pend.reduce((n, i) => n + i.artes.filter(x => x.situacao === 'aguardando').length, 0);
     const arteHtml = (i, x) => `<div class="arte" data-prova="${x.prova_id}">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-          <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${x.situacao}">${SIT[x.situacao] || x.situacao}</span></div>
+          <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${esc(x.situacao)}">${esc(SIT[x.situacao] || x.situacao)}</span></div>
           <div style="font-size:12px;color:#8a959c">Versão ${x.versao}${tam(x) ? ' · tamanho final ' + tam(x) : ''}</div></div>
         ${(() => { const imgs = x.formato === 'pdf'
              ? `<div class="imgs" data-pdf="${x.prova_id}" data-verso="${x.tem_verso ? 1 : 0}" data-papeis="${esc(JSON.stringify(x.papeis || null))}"><div class="carregando">carregando a prova…</div></div>`

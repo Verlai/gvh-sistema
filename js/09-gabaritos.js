@@ -55,7 +55,7 @@ function verConferencia(id) {
     ${c.devolvida ? '<div class="alerta">A arte já foi devolvida para a designer refazer o arquivo para impressão.</div>' : ''}
     ${c.gabarito_mudou && !c.devolvida ? `<div class="alerta erro"><b>O gabarito mudou.</b> O arquivo foi conferido com "${esc(c.gabarito_nome)}", mas com a urgência de agora o gabarito é <b>"${esc(c.gabarito_atual_nome)}"</b>. Devolva para a designer ou combine com o cliente antes de produzir.</div>` : ''}
     ${c.resultado === 'erro' ? `<div class="alerta erro"><b>Enviado mesmo assim.</b> Motivo: ${esc(c.motivo || '')}</div>` : ''}
-    ${c.checklist ? `<div class="alerta">Conferido pelo checklist: ${Object.keys(c.checklist).map(k => ({ tamanho: 'tamanho', sangria: 'sangria', seguranca: 'segurança' })[k] || k).join(', ')}.</div>` : ''}
+    ${c.checklist ? `<div class="alerta">Conferido pelo checklist: ${Object.keys(c.checklist).map(k => ({ tamanho: 'tamanho', sangria: 'sangria', seguranca: 'segurança' })[k] || esc(k)).join(', ')}.</div>` : ''}
     ${(c.itens || []).length ? (c.itens || []).map(i => `<div class="alerta ${cor[i.nivel] || ''}" style="margin-top:6px;${i.nivel === 'info' ? 'background:var(--verde-bg);color:#007a61' : ''}">${esc(i.texto)}</div>`).join('')
       : '<div class="alerta" style="background:var(--verde-bg);color:#007a61">Nenhum alerta.</div>'}`,
     rodape: `${podeDevolver ? '<button class="btn perigo" data-dev style="margin-right:auto">Devolver para a designer</button>' : ''}<button class="btn prim" data-v>Fechar</button>` });
@@ -155,9 +155,6 @@ function htmlGabaritoItem(itemId, grupoId, u, podeEscolher) {
     </div>
     <div class="small" style="margin-top:4px">${atual}</div>${linhaGabaritoDigital(u)}`;
 }
-// Selo pequeno "sem gabarito" (vendedor, Diretor e arte)
-const veSeloGabarito = () => pode('cria_pedidos') || gerenciaArtes() || !!S.perm.so_painel_arte || pode('gerencia_cadastros');
-const seloSemGabarito = u => !u || !veSeloGabarito() ? '' : u.confirmar_cliente ? badge('confirmar gabarito do cliente', 'b-ambar') : u.sem_gabarito ? badge('sem gabarito', 'b-cinza') : '';
 // Material cujos gabaritos ativos ainda estão todos com medidas pendentes (devolve o material)
 function gabaritoSoPendente(grupoId) {
   const g = gruposGabarito().find(x => x.id === grupoId);
@@ -289,7 +286,7 @@ function modalGabaritoRepetido(r, d, enviar) {
   const pend = !!ex.medidas_pendentes;
   const linhas = [['Quando usar', g => esc(textoCondicao(g)), false], ['Tamanho final', g => textoMedidas(g), false],
                   ['Sangria', g => fmtMm(g.sangria_mm || 0) + ' mm', true], ['Segurança', g => fmtMm(g.seguranca_mm || 0) + ' mm', true],
-                  ['Páginas', g => (g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ' · última = faca' : ''), true], ['Arte final', g => esc(textoFormatos(g)), false]];
+                  ['Páginas', g => esc((g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ' · última = faca' : '')), true], ['Arte final', g => esc(textoFormatos(g)), false]];
   const m = abrirModal({ titulo: r.mesmo_nome ? 'Já existe um gabarito com esse nome' : 'Já existe um gabarito com essas regras', largo: true, corpo: `
     <p class="small" style="margin:0 0 10px">No material <b>${esc(r.material_nome || '')}</b> já existe <b>${esc(ex.nome)}</b>${ex.cliente_nome ? ` (gabarito do cliente ${esc(ex.cliente_nome)})` : ''}${pend ? ' (ainda sem medidas)' : ''}. Compare e escolha:</p>
     <div class="tabela-wrap"><table><thead><tr><th></th><th>Já existe: ${esc(ex.nome)}</th><th>O seu${d.nome ? ': ' + esc(d.nome) : ''}</th></tr></thead><tbody>
@@ -495,7 +492,7 @@ function modalVerGabarito(grupoId, id) {
       ${campo('Tamanho final', textoMedidas(g))}
       ${campo('Sangria (cada lado)', pend ? '—' : fmtMm(g.sangria_mm) + ' mm')}
       ${campo('Segurança', pend ? '—' : fmtMm(g.seguranca_mm) + ' mm')}
-      ${campo('Páginas', (g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ` · última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}` : ''))}
+      ${campo('Páginas', esc((g.paginas || 'Qualquer') + (g.ultima_pagina_faca ? ` · última = faca${g.faca_cores?.length ? ' (' + g.faca_cores.join(' ou ') + ')' : ''}` : '')))}
       ${g.paginas_ordem && g.paginas_ordem.length ? campo('Ordem das páginas', esc(g.paginas_ordem.map((x, k) => `${k + 1}. ${PAGINA_NOME[x] || x}`).join(' · '))) : ''}
       ${campo('Arte final', esc(textoFormatos(g)) + (g.dpi_min ? ` · mín. ${g.dpi_min} dpi` : ''))}
     </div>
@@ -689,7 +686,7 @@ async function modalGrupoGabarito(id, opts = {}) {
   const bx = m.el.querySelector('[data-x]');
   if (bx) bx.onclick = async () => {
     const n = (g.gabaritos || []).length;
-    if (!await confirmar(`Excluir o material "${esc(g.nome)}"${n ? ` e ${n === 1 ? 'o gabarito dele' : `os ${n} gabaritos dele`}` : ''}? Não dá para desfazer. Os arquivos no Drive não são apagados.`, 'Excluir', true)) return;
+    if (!await confirmar(`Excluir o material "${g.nome}"${n ? ` e ${n === 1 ? 'o gabarito dele' : `os ${n} gabaritos dele`}` : ''}? Não dá para desfazer. Os arquivos no Drive não são apagados.`, 'Excluir', true)) return;
     try { await api('excluir_gabarito_grupo', { id }); await carregarGabaritos(true); delete S.exp['gab-' + id]; m.fechar(); toast('Material excluído.'); recarregar(); } catch (e) {}
   };
   m.el.querySelector('[data-s]').onclick = async () => {
@@ -759,7 +756,7 @@ function modalGabarito(grupoId, id, opts = {}) {
   if (opts.abrirEnvio) setTimeout(() => { const b = m.el.querySelector('[data-env-gab]'); if (b) b.click(); }, 50);
   const bx = m.el.querySelector('[data-x]');
   if (bx) bx.onclick = async () => {
-    if (!await confirmar(`Excluir o gabarito "${esc(g.nome)}" de ${esc(gr.nome || 'este material')}? Não dá para desfazer. O arquivo no Drive não é apagado.`, 'Excluir', true)) return;
+    if (!await confirmar(`Excluir o gabarito "${g.nome}" de ${gr.nome || 'este material'}? Não dá para desfazer. O arquivo no Drive não é apagado.`, 'Excluir', true)) return;
     try { await api('excluir_gabarito', { id }); await carregarGabaritos(true); m.fechar(); toast('Gabarito excluído.'); recarregar(); } catch (e) {}
   };
   const lista = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(c => c.value);
@@ -819,4 +816,3 @@ function modalGabarito(grupoId, id, opts = {}) {
   };
   m.el.querySelector('[data-v]').addEventListener('click', () => arqGab.cancelar && arqGab.cancelar());
 }
-

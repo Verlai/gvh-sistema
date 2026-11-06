@@ -43,7 +43,6 @@ const data = v => { if (!v) return '—'; const [a,m,d] = String(v).slice(0,10).
 const dataHora = v => v ? new Date(v).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
 const hoje = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
 const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
-const somaMeses = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0,10); };
 const pode = chave => !!S.perm[chave];
 const podeStatus = st => (S.perm.status_item_permitidos || []).includes(st);
 /* fornecedor: só quem acessa a aba Pré-impressão (mesma regra do banco: fn_ve_fornecedor) */
@@ -133,9 +132,9 @@ function abrirModal({ titulo, corpo, rodape = '', largo = false, aoAbrir }) {
   if (aoAbrir) aoAbrir(f, fechar);
   return { el: f, fechar };
 }
-function confirmar(texto, rotulo = 'Confirmar', perigo = false) {
+function confirmar(texto, rotulo = 'Confirmar', perigo = false, { html = false } = {}) {
   return new Promise(res => {
-    const m = abrirModal({ titulo: 'Confirmação', corpo: `<p style="margin:0">${texto}</p>`,
+    const m = abrirModal({ titulo: 'Confirmação', corpo: `<p style="margin:0">${html ? texto : esc(texto)}</p>`,
       rodape: `<button class="btn" data-n>Voltar</button><button class="btn ${perigo ? 'perigo' : 'prim'}" data-s>${esc(rotulo)}</button>` });
     m.el.querySelector('[data-n]').onclick = () => { m.fechar(); res(false); };
     m.el.querySelector('[data-s]').onclick = () => { m.fechar(); res(true); };
@@ -286,22 +285,12 @@ function definirTopoEm(el, titulo, acoes = '') {
   v.topo = t;
   if (v === S.vistaAtual) aplicarTopo(t);
 }
-function definirTopo(titulo, acoes = '') {
-  const v = vistaRender();
-  // guarda os próprios botões (e não só o HTML): ao voltar para a tela, os cliques ligados por código continuam funcionando
-  const caixa = document.createElement('div'); caixa.innerHTML = acoes;
-  const t = { titulo, acoes, nos: [...caixa.childNodes] };
-  if (v) v.topo = t;
-  if (!v || v === S.vistaAtual) aplicarTopo(t);
-}
 function aplicarTopo(t) {
   $('#titulo', document).textContent = t.titulo;
   const box = $('#topo-acoes', document);
   if (t.nos) box.replaceChildren(...t.nos); else box.innerHTML = t.acoes || '';
   document.title = (t.titulo || 'Sistema') + ' · GVH';
 }
-// vista que está sendo desenhada agora (ou a atual, se nenhuma)
-const vistaRender = () => S.vistaEmRender || S.vistaAtual;
 
 async function renderVista(v, manter) {
   // nunca desenha a mesma tela duas vezes ao mesmo tempo (o aviso do Realtime chegava no meio e quebrava a tela)
@@ -412,4 +401,3 @@ function iniciarAtualizacaoAutomatica() {
   clearInterval(timerSeguranca);
   timerSeguranca = setInterval(() => { if (document.visibilityState === 'visible') { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); } }, INTERVALO_SEGURANCA_MS);
 }
-

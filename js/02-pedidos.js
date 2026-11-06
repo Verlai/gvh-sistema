@@ -399,7 +399,7 @@ function trocarArquivo(p, a) {
 }
 async function decidirTrocaArte(a, aceitar) {
   let motivo = null;
-  if (aceitar) { if (!await confirmar(`Aceitar a troca? ${esc(a.nome)} passa a ser a arte final do item${a.troca_substitui_nome ? ` e ${esc(a.troca_substitui_nome)} vai para a lixeira do Drive` : ''}. Se o item já está com o fornecedor, avise o fornecedor.`, 'Aceitar troca')) return; }
+  if (aceitar) { if (!await confirmar(`Aceitar a troca? ${a.nome} passa a ser a arte final do item${a.troca_substitui_nome ? ` e ${a.troca_substitui_nome} vai para a lixeira do Drive` : ''}. Se o item já está com o fornecedor, avise o fornecedor.`, 'Aceitar troca')) return; }
   else { motivo = prompt('Por que a troca foi recusada? (aparece no histórico do pedido)'); if (!motivo || !motivo.trim()) return; }
   const r = await api('decidir_troca_arte', { id: a.id, aceitar, motivo: motivo && motivo.trim() });
   if (r.drive_ok === false) toast('Decisão registrada, mas o Drive não respondeu ao tirar o arquivo. Confira a pasta do pedido.', true);
@@ -548,7 +548,7 @@ function modalCancelarItem(id) {
 }
 async function excluirItemCancelado(id) {
   const i = S.vistaAtual.dados.itens.find(x => x.id === id);
-  if (!await confirmar(`Excluir o item cancelado <b>${esc(i.descricao)}</b>? Ele some da lista do pedido; o cancelamento e o motivo continuam no histórico. Arquivos dele ficam em "Pedido inteiro".`, 'Excluir item', true)) return;
+  if (!await confirmar(`Excluir o item cancelado <b>${esc(i.descricao)}</b>? Ele some da lista do pedido; o cancelamento e o motivo continuam no histórico. Arquivos dele ficam em "Pedido inteiro".`, 'Excluir item', true, { html: true })) return;
   await api('excluir_item', { id }); toast('Item excluído.'); recarregar();
 }
 async function decidirCancelItem(id, aceitar) {

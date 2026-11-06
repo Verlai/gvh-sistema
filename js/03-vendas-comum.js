@@ -140,27 +140,6 @@ function opcoesStatusInicial(sel = 'arte_a_fazer') {
 }
 
 const unitario = (total, qtd) => Number(qtd) > 0 ? (Number(total || 0) / Number(qtd)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—';
-async function sugerirTotal(produtoId, qtd) {
-  if (!produtoId || !(Number(qtd) > 0)) return null;
-  const r = await api('calcular_preco', { produto_id: produtoId, quantidade: qtd }, true).catch(() => null);
-  return r && r.total != null ? Number(r.total) : null;
-}
-function modalProdutoRapido(aoSalvar) {
-  const m = abrirModal({ titulo: 'Cadastrar produto', corpo: `<form id="f-prod-r" class="grade g2">
-      <label class="campo" style="grid-column:1/-1">Nome do produto *<input type="text" name="nome" required></label>
-      <label class="campo">Categoria<input type="text" name="categoria"></label>
-      <label class="campo">Unidade<input type="text" name="unidade" value="un"></label>
-      <label class="campo">Preço base (R$/un)<input type="number" step="0.0001" min="0" name="preco_base"></label>
-    </form><p class="small muted" style="margin:0">Faixas de preço, fornecedor padrão e dados fiscais podem ser completados depois em Cadastros › Produtos.</p>`,
-    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Cadastrar</button>` });
-  m.el.querySelector('[data-v]').onclick = m.fechar;
-  setTimeout(() => $('#f-prod-r', m.el).nome.focus(), 50);
-  m.el.querySelector('[data-s]').onclick = async () => {
-    const d = formDados($('#f-prod-r', m.el)); d.ativo = true;
-    const r = await api('salvar_produto', d); await carregarBase(); m.fechar(); toast('Produto cadastrado.'); aoSalvar && aoSalvar(r.id);
-  };
-}
-
 
 /* ---------- PARCELAS ---------- */
 const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vista:'À vista', parcela:'Parcela' };
@@ -240,54 +219,6 @@ async function excluirParcela(id) {
   await api('excluir_recebimento', { id }); toast('Parcela excluída.'); recarregar();
 }
 
-/* gerador de parcelas (usado no pedido e no novo pedido) */
-function htmlGeradorParcelas(total, venc1) {
-  return `<div class="grade g4" id="gerador">
-    <label class="campo">Sinal (R$)<input type="number" step="0.01" min="0" data-g="sinal" value="0"></label>
-    <label class="campo">Vencimento do sinal<input type="date" data-g="venc_sinal" value="${hoje()}"></label>
-    <label class="campo">Restante em<select data-g="modo"><option value="restante">1 pagamento (na entrega)</option><option value="boleto">Boletos</option><option value="parcela">Parcelas</option></select></label>
-    <label class="campo">Quantidade<input type="number" min="1" max="24" data-g="qtd" value="1"></label>
-    <label class="campo">1º vencimento<input type="date" data-g="venc1" value="${venc1 || somaDias(hoje(), 30)}"></label>
-    <label class="campo">Forma<select data-g="forma">${opcoesForma('boleto')}</select></label>
-    <label class="campo">Valor a parcelar (R$)<input type="number" step="0.01" min="0" data-g="total" value="${Number(total || 0).toFixed(2)}"></label>
-    <div style="align-self:end"><button type="button" class="btn" data-g-gerar>Gerar parcelas</button></div>
-  </div>
-  <div id="preview-parcelas" style="margin-top:12px"></div>`;
-}
-function ligarGerador(el, onChange) {
-  let parcelas = [];
-  const g = k => el.querySelector(`[data-g="${k}"]`).value;
-  const desenhar = () => {
-    const alvo = el.querySelector('#preview-parcelas');
-    alvo.innerHTML = parcelas.length ? `<table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th></th></tr></thead><tbody>
-      ${parcelas.map((p, k) => `<tr><td>${esc(TIPOS_PARC[p.tipo])}${p.parcela_num ? ' ' + p.parcela_num + '/' + p.parcelas_total : ''}</td>
-        <td><input type="date" value="${p.vencimento}" data-k="${k}" data-c="vencimento"></td>
-        <td class="dir"><input type="number" step="0.01" value="${p.valor}" data-k="${k}" data-c="valor" style="max-width:130px;text-align:right"></td>
-        <td>${esc(FORMAS[p.forma_pagamento] || '—')}</td>
-        <td><button type="button" class="btn link peq" data-rm="${k}">Remover</button></td></tr>`).join('')}</tbody></table>
-      <p class="small muted">Soma: <b>${brl(parcelas.reduce((s, p) => s + Number(p.valor), 0))}</b></p>` : '<p class="small muted">Nenhuma parcela gerada. Preencha acima e clique em "Gerar parcelas".</p>';
-    alvo.querySelectorAll('[data-c]').forEach(inp => inp.onchange = () => { parcelas[inp.dataset.k][inp.dataset.c] = inp.value; desenhar(); });
-    alvo.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { parcelas.splice(b.dataset.rm, 1); desenhar(); });
-    onChange && onChange(parcelas);
-  };
-  el.querySelector('[data-g-gerar]').onclick = () => {
-    parcelas = [];
-    const sinal = Number(g('sinal') || 0), total = Number(g('total') || 0), qtd = Math.max(1, Number(g('qtd') || 1)), modo = g('modo');
-    if (sinal > 0) parcelas.push({ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: g('venc_sinal'), forma_pagamento: 'pix' });
-    const resto = Math.round((total - sinal) * 100);
-    if (resto > 0) {
-      const n = modo === 'restante' ? 1 : qtd; const base = Math.floor(resto / n);
-      for (let k = 0; k < n; k++) {
-        const cent = k === n - 1 ? resto - base * (n - 1) : base;
-        parcelas.push({ tipo: modo === 'restante' ? 'restante' : modo, parcela_num: n > 1 ? k + 1 : null, parcelas_total: n > 1 ? n : null,
-          valor: (cent / 100).toFixed(2), vencimento: somaMeses(g('venc1'), k), forma_pagamento: g('forma') || null });
-      }
-    }
-    desenhar();
-  };
-  desenhar();
-  return () => parcelas;
-}
 /* ---------- FORMA DE PAGAMENTO (V4) — novo pedido, conversão de orçamento, troca de forma e lançamento ---------- */
 const FORMAS_COMB = { pix:'Pix', transferencia:'Transferência', cartao_credito:'Cartão de crédito', boleto:'Boleto', retirada:'Paga na retirada', sinal_restante:'Sinal + restante', outros:'Outros' };
 const FORMAS_LIBERAM = ['boleto', 'retirada'];   // liberam a pré-impressão sem pagamento (V11)
@@ -960,4 +891,3 @@ function modalAlterarEntrega() {
     await api('editar_pedido', { id: p.id, ...formDados($('#f-ent', m.el)) }); m.fechar(); toast('Entrega atualizada.'); recarregar();
   };
 }
-
