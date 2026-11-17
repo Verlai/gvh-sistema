@@ -159,14 +159,15 @@ async function paginaPublicaProva(chave) {
     const nPend = pend.reduce((n, i) => n + i.artes.filter(x => x.situacao === 'aguardando').length, 0);
     const arteHtml = (i, x) => `<div class="arte" data-prova="${x.prova_id}">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-          <div>${x.total > 1 ? `<b>Arte ${x.numero} de ${x.total}</b> · ` : ''}<span class="selo ${esc(x.situacao)}">${esc(SIT[x.situacao] || x.situacao)}</span></div>
+          <div>${x.total > 1 ? `<b>Modelo ${x.numero} de ${x.total}${x.nome ? ' · ' + esc(x.nome) : ''}</b> · ` : ''}<span class="selo ${esc(x.situacao)}">${esc(SIT[x.situacao] || x.situacao)}</span></div>
           <div style="font-size:12px;color:#8a959c">Versão ${x.versao}${tam(x) ? ' · tamanho final ' + tam(x) : ''}</div></div>
         ${(() => { const imgs = x.formato === 'pdf'
              ? `<div class="imgs" data-pdf="${x.prova_id}" data-verso="${x.tem_verso ? 1 : 0}" data-papeis="${esc(JSON.stringify(x.papeis || null))}"><div class="carregando">carregando a prova…</div></div>`
              : `<div class="imgs">${['frente'].concat(x.tem_verso ? ['verso'] : []).map(l => `<figure><figcaption>${x.tem_verso ? l : 'arte'}</figcaption><div class="carregando" data-img="${x.prova_id}|${l}">carregando a prova…</div></figure>`).join('')}</div>`;
            return x.situacao === 'aguardando' ? imgs : `<details class="vista3d"><summary>Ver a arte</summary>${imgs}</details>`; })()}
         ${x.modo === '3d' && x.tem_verso && x.situacao === 'aguardando' ? `<details class="vista3d" data-3d="${x.prova_id}"><summary>Ver em 3D (girar frente e verso)</summary><div class="palco3d"></div></details>` : ''}
-        ${x.situacao === 'aprovada' ? `<div class="ok" style="margin-top:12px"><b>Aprovada ✓</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}.</div>` : ''}
+        ${x.situacao === 'aprovada' ? `<div class="ok" style="margin-top:12px"><b>Aprovada ✓</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}.${x.total > 1 && (x.total > i.artes.length || i.artes.some(y => y.situacao !== 'aprovada'))
+          ? `<br><span style="font-size:12.5px">Este material segue para a produção quando os ${x.total} modelos estiverem aprovados.</span>` : ''}</div>` : ''}
         ${x.situacao === 'alteracao' ? `<div class="aviso" style="margin-top:12px"><b>Alteração pedida</b> por ${esc(x.decidido_nome || '')}${x.decidido_em ? ' em ' + dataHoraLonga(x.decidido_em) : ''}: ${esc(x.texto_alteracao || '')}<br><span style="font-size:12.5px;color:#5a6770">A nova versão aparece aqui neste mesmo link.</span></div>` : ''}
         ${x.situacao === 'aguardando' ? `<div class="aprovar">
             <h2>Confira antes de aprovar</h2>

@@ -324,6 +324,7 @@ function blocoMaterialArte(as, modo, o = {}) {
       <h3 style="font-size:16px;font-weight:700;margin:0">${esc(it.item_descricao)} <span class="small muted" style="font-weight:400">${it.quantidade ? num(it.quantidade) + ' un' : ''}</span></h3>
       <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}${seloConferencia(u && u.conferencia)}</div></div>
     ${linhaGabaritoCurta(u)}
+    ${as.length > 1 && as.some(a => a.valor != null) ? `<div class="small muted" style="margin-top:4px">${as.length} modelos · ${brl(as.reduce((s, a) => s + Number(a.valor || 0), 0))} para a designer</div>` : ''}
     ${it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item${as.length > 1 ? ' (vale para todos os modelos)' : ''}:</span> ${esc(it.item_observacao)}</div>` : ''}
     ${[...as].sort((x, y) => (x.modelo_num || 99) - (y.modelo_num || 99)).map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
       return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Modelo ${a.modelo_num || k + 1} de ${as.length}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}${a.incluida_pela_designer && modo !== 'designer' ? ' ' + badge('incluído pela designer', 'b-ambar') : ''}</div>` : ''}
@@ -338,7 +339,7 @@ function blocoMaterialArte(as, modo, o = {}) {
           ${modo !== 'designer' && a.designer_nome ? `<div class="small muted">Designer: ${esc(a.designer_nome)}</div>` : ''}
           <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
           ${k === 0 && it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, u, ativa && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
-          ${as.length > 1 && podeNomearModelo(a, modo, podeMexer) ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Nome do modelo <span class="muted">(opcional)</span>
+          ${as.length > 1 && podeNomearModelo(a, modo, podeMexer) ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Nome do modelo <span class="muted">(opcional, aparece para o cliente)</span>
             <input type="text" maxlength="60" value="${esc(a.modelo_nome || '')}" placeholder="Ex.: Dra. Ana" style="max-width:220px" data-modelo-nome="${a.id}"></label>` : ''}
           ${k === 0 && modo === 'designer' && it.item_id && ITEM_NA_ARTE.includes(it.item_status) && as.some(x => x.designer_id === S.usuario.id)
             ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Modelos deste material <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${it.item_id}">
@@ -645,7 +646,7 @@ rota('meus-pagamentos', async (_p, el) => {
           <b class="num">${brl(s.total)}</b></div>
         <div class="tabela-wrap"><table><thead><tr><th>Pedido</th><th>Item</th><th>Tipo</th><th class="dir">Valor</th><th>Arquivo pronto em</th></tr></thead>
           <tbody>${(r.artes || []).filter(a => (!s.designer_id || a.designer_id === s.designer_id) && String(a.aprovada_em).slice(0, 10) >= String(s.semana) && String(a.aprovada_em).slice(0, 10) <= addDiasISO(s.semana, 6))
-            .map(a => `<tr><td><b>${esc(a.pedido_numero)}</b></td><td>${esc(a.item_descricao)}</td><td>${esc(a.tipo_nome)}</td>
+            .map(a => `<tr><td><b>${esc(a.pedido_numero)}</b></td><td>${esc(a.item_descricao)}${a.modelos_total > 1 ? `<div class="small muted">Modelo ${esc(a.modelo_num)} de ${esc(a.modelos_total)}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}</div>` : ''}</td><td>${esc(a.tipo_nome)}</td>
               <td class="dir num">${brl(a.valor)}</td><td class="small">${dataHora(a.aprovada_em)}</td></tr>`).join('')}</tbody></table></div>
       </div>`).join('') : '<div class="vazio">Nenhuma arte aprovada no período.</div>'}`;
 });
