@@ -299,6 +299,16 @@ function podeNomearModelo(a, modo, podeMexer) {
   if (a.situacao === 'cancelada' || !ITEM_NA_ARTE.includes(a.item_status)) return false;
   return modo === 'designer' ? a.designer_id === S.usuario.id : podeMexer && (pode('cria_pedidos') || gerenciaArtes());
 }
+// "dar nome / trocar nome" ao lado do título do modelo: abre o campo ali mesmo
+document.addEventListener('click', e => {
+  const l = e.target.closest && e.target.closest('[data-nomear]'); if (!l) return;
+  e.preventDefault();
+  const box = l.parentElement.querySelector(`[data-nomear-box="${l.dataset.nomear}"]`); if (!box) return;
+  box.classList.toggle('hidden'); if (!box.classList.contains('hidden')) box.querySelector('input').focus();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-modelo-nome]')) { e.preventDefault(); e.target.blur(); }
+});
 // Quantidade e nome dos modelos: um ouvinte só, para a tela do pedido e o painel da designer
 document.addEventListener('change', async e => {
   const q = e.target.closest && e.target.closest('[data-qtd-artes]');
@@ -327,7 +337,10 @@ function blocoMaterialArte(as, modo, o = {}) {
     ${as.length > 1 && as.some(a => a.valor != null) ? `<div class="small muted" style="margin-top:4px">${as.length} modelos · ${brl(as.reduce((s, a) => s + Number(a.valor || 0), 0))} para a designer</div>` : ''}
     ${it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item${as.length > 1 ? ' (vale para todos os modelos)' : ''}:</span> ${esc(it.item_observacao)}</div>` : ''}
     ${[...as].sort((x, y) => (x.modelo_num || 99) - (y.modelo_num || 99)).map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
-      return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Modelo ${a.modelo_num || k + 1} de ${as.length}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}${a.incluida_pela_designer && modo !== 'designer' ? ' ' + badge('incluído pela designer', 'b-ambar') : ''}</div>` : ''}
+      const nomeia = as.length > 1 && podeNomearModelo(a, modo, podeMexer);
+      return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Modelo ${a.modelo_num || k + 1} de ${as.length}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}${a.incluida_pela_designer && modo !== 'designer' ? ' ' + badge('incluído pela designer', 'b-ambar') : ''}
+          ${nomeia ? `<a href="#" class="small" style="font-weight:400;margin-left:6px" data-nomear="${a.id}">${a.modelo_nome ? 'trocar nome' : 'dar nome'}</a>
+            <span class="hidden" data-nomear-box="${a.id}" style="font-weight:400;margin-left:6px"><input type="text" maxlength="60" value="${esc(a.modelo_nome || '')}" placeholder="Ex.: Dra. Ana · aparece para o cliente" style="max-width:240px;font-size:12px;padding:3px 6px" data-modelo-nome="${a.id}"></span>` : ''}</div>` : ''}
         ${passosArte(a)}
         ${caixaAlteracao(a)}
         ${a.instrucoes ? `<div class="small" style="margin-top:6px"><b>Instruções do vendedor:</b> ${esc(a.instrucoes)}</div>` : ''}
@@ -339,8 +352,6 @@ function blocoMaterialArte(as, modo, o = {}) {
           ${modo !== 'designer' && a.designer_nome ? `<div class="small muted">Designer: ${esc(a.designer_nome)}</div>` : ''}
           <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
           ${k === 0 && it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, u, ativa && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
-          ${as.length > 1 && podeNomearModelo(a, modo, podeMexer) ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Nome do modelo <span class="muted">(opcional, aparece para o cliente)</span>
-            <input type="text" maxlength="60" value="${esc(a.modelo_nome || '')}" placeholder="Ex.: Dra. Ana" style="max-width:220px" data-modelo-nome="${a.id}"></label>` : ''}
           ${k === 0 && modo === 'designer' && it.item_id && ITEM_NA_ARTE.includes(it.item_status) && as.some(x => x.designer_id === S.usuario.id)
             ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Modelos deste material <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${it.item_id}">
                 <span class="muted">(o vendedor é avisado do modelo que você incluir)</span></label>` : ''}
