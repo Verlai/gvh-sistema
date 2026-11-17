@@ -77,7 +77,7 @@ async function copiarLinkProva(chave) {
 async function carregarMontador() {
   if (!window.abrirMontador) {
     carregandoMontador = carregandoMontador || new Promise((ok, falha) => {
-      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261027a';
+      const sc = document.createElement('script'); sc.src = 'montador.js?v=20261117b';
       sc.onload = ok; sc.onerror = () => { carregandoMontador = null; falha(new Error('Não foi possível abrir o montador de provas. Atualize a página (Ctrl+F5).')); };
       document.head.appendChild(sc);
     });
@@ -294,6 +294,26 @@ function passoArteAcoes(a, modo, podeMexer) {
   if (!d && a.item_id) mais.push(B('Testar arquivo do cliente', `testarArquivo('${a.item_id}')`));
   return { texto, bot, mais };
 }
+// Nome do modelo: a designer no modelo dela; vendedor/Diretor quando podem mexer na arte (o banco confere de novo)
+function podeNomearModelo(a, modo, podeMexer) {
+  if (a.situacao === 'cancelada' || !ITEM_NA_ARTE.includes(a.item_status)) return false;
+  return modo === 'designer' ? a.designer_id === S.usuario.id : podeMexer && (pode('cria_pedidos') || gerenciaArtes());
+}
+// Quantidade e nome dos modelos: um ouvinte só, para a tela do pedido e o painel da designer
+document.addEventListener('change', async e => {
+  const q = e.target.closest && e.target.closest('[data-qtd-artes]');
+  if (q) {
+    try { await api('item_qtd_artes', { item_id: q.dataset.qtdArtes, qtd: Number(q.value) }); toast('Quantidade de modelos atualizada.'); }
+    catch (er) { toast(er.message, true); }
+    return recarregar();
+  }
+  const n = e.target.closest && e.target.closest('[data-modelo-nome]');
+  if (n) {
+    try { await api('arte_modelo_nome', { arte_id: n.dataset.modeloNome, nome: n.value.trim() }); toast('Nome do modelo salvo.'); }
+    catch (er) { toast(er.message, true); }
+    recarregar();
+  }
+});
 // Um material (item) com as artes dele: passo a passo, alteração em destaque e o próximo passo
 function blocoMaterialArte(as, modo, o = {}) {
   const it = as[0], u = it.urgencia, podeMexer = o.podeMexer !== false;
@@ -304,8 +324,8 @@ function blocoMaterialArte(as, modo, o = {}) {
       <h3 style="font-size:16px;font-weight:700;margin:0">${esc(it.item_descricao)} <span class="small muted" style="font-weight:400">${it.quantidade ? num(it.quantidade) + ' un' : ''}</span></h3>
       <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}${seloConferencia(u && u.conferencia)}</div></div>
     ${linhaGabaritoCurta(u)}
-    ${as.map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
-      return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Arte ${k + 1} de ${as.length}</div>` : ''}
+    ${[...as].sort((x, y) => (x.modelo_num || 99) - (y.modelo_num || 99)).map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
+      return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Modelo ${a.modelo_num || k + 1} de ${as.length}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}${a.incluida_pela_designer && modo !== 'designer' ? ' ' + badge('incluído pela designer', 'b-ambar') : ''}</div>` : ''}
         ${passosArte(a)}
         ${caixaAlteracao(a)}
         ${a.instrucoes ? `<div class="small" style="margin-top:6px"><b>Instruções do vendedor:</b> ${esc(a.instrucoes)}</div>` : ''}
@@ -318,6 +338,11 @@ function blocoMaterialArte(as, modo, o = {}) {
           <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
           ${k === 0 && it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, u, ativa && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
           ${k === 0 && it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item:</span> ${esc(it.item_observacao)}</div>` : ''}
+          ${as.length > 1 && podeNomearModelo(a, modo, podeMexer) ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Nome do modelo <span class="muted">(opcional)</span>
+            <input type="text" maxlength="60" value="${esc(a.modelo_nome || '')}" placeholder="Ex.: Dra. Ana" style="max-width:220px" data-modelo-nome="${a.id}"></label>` : ''}
+          ${k === 0 && modo === 'designer' && it.item_id && ITEM_NA_ARTE.includes(it.item_status) && as.some(x => x.designer_id === S.usuario.id)
+            ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Modelos deste material <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${it.item_id}">
+                <span class="muted">(o vendedor é avisado do modelo que você incluir)</span></label>` : ''}
           ${k === 0 && o.extraItem ? o.extraItem : ''}`, false, 'leve')}</div>`; }).join('')}
   </div>`;
 }
@@ -679,11 +704,11 @@ async function preencherArtesPedido(el, p) {
             ${podeMexer && naArte && i.sem_arte ? `<button class="btn peq" onclick="alternarSemArte('${i.id}',false)">Este item precisa de arte</button>` : ''}
             <button class="btn peq" onclick="testarArquivo('${i.id}')">Testar arquivo do cliente</button></div></div>`;
       const extra = podeMexer && naArte && p.status !== 'cancelado' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-          <label class="small muted">Qtde de artes <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
+          <label class="small muted" title="Quantos modelos (artes diferentes) o item tem; cada um tem prova e aprovação próprias">Modelos <input type="number" min="1" max="20" value="${as.length}" style="width:64px" data-qtd-artes="${i.id}"></label>
           <button class="btn peq" onclick="alternarSemArte('${i.id}',true)">Não precisa de arte</button></div>` : '';
       return blocoMaterialArte(as, 'interno', { podeMexer: podeMexer && p.status !== 'cancelado', extraItem: extra });
     }).join('') : '<p class="small muted" style="margin:0">Nenhum item ativo.</p>'}
-    <div style="margin-top:10px">${blocoExp('ajuda-artes', 'Como funciona', '<p class="small muted" style="margin:0">O item sai da etapa de arte quando todas as artes dele tiverem o arquivo pronto para impressão. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>', false, 'leve')}</div>`;
+    <div style="margin-top:10px">${blocoExp('ajuda-artes', 'Como funciona', '<p class="small muted" style="margin:0">O item sai da etapa de arte quando todos os modelos (artes) dele tiverem o arquivo pronto para impressão. Cada modelo tem prova e aprovação próprias. Arte final enviada pelo vendedor marca a arte como resolvida por ele, sem pagamento à designer.</p>', false, 'leve')}</div>`;
 
   const sel = alvo.querySelector('#des-pedido');
   if (sel) sel.onchange = async () => {
@@ -691,11 +716,7 @@ async function preencherArtesPedido(el, p) {
     catch (e) { toast(e.message, true); sel.value = desPedido; }
   };
   ligarSelectsGabarito(alvo);
-  alvo.querySelectorAll('[data-qtd-artes]').forEach(inp => inp.onchange = async () => {
-    const id = inp.dataset.qtdArtes, qtd = Number(inp.value);
-    try { await api('item_qtd_artes', { item_id: id, qtd }); toast('Quantidade de artes atualizada.'); recarregar(); }
-    catch (e) { toast(e.message, true); recarregar(); }
-  });
+  // quantidade e nome dos modelos: ouvinte único (ver podeNomearModelo)
 }
 async function alternarSemArte(itemId, valor) {
   if (valor && !confirm('Marcar que este item não precisa de arte? Ele não aparece para a designer e não gera pagamento.')) return;

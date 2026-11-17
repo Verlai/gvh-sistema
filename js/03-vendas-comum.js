@@ -23,6 +23,35 @@ const opcoesCategoria = (sel, podeNova) => `<option value="">Selecione a categor
   (S.base.categorias || []).filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.nome)}${c.servico && !/servi[cç]o/i.test(c.nome) ? ' (serviço)' : ''}</option>`).join('') +
   (podeNova ? '<option value="__nova">+ Cadastrar nova categoria</option>' : '');
 const podeNovaCategoria = () => pode('cadastra_produtos') || pode('gerencia_cadastros');
+// Categoria compacta (17/11): uma linha pequena em cima do produto; a lista só abre no "trocar".
+// O <select> continua no formulário (mesmo nome/atributos), só fica escondido.
+const htmlCatLinha = (sel, sugAttr) => `<div class="small muted" data-catl style="margin-bottom:3px">Categoria: <b data-catn style="font-weight:600"></b>
+  · <a href="#" data-cat-trocar>trocar</a> <span ${sugAttr}></span><div data-cat-box class="hidden" style="margin-top:4px">${sel}</div></div>`;
+function atualizarCatLinhas(raiz) {
+  raiz.querySelectorAll('[data-catl]').forEach(l => {
+    const s = l.querySelector('select'); if (!s) return;
+    const c = (S.base.categorias || []).find(x => x.id === s.value);
+    const d = l.closest('td, form'); const desc = d && d.querySelector('[data-f=descricao], [name=descricao]');
+    const n = l.querySelector('[data-catn]');
+    n.textContent = c ? catCurta(c.nome) : 'escolher'; n.title = c ? c.nome : '';
+    n.style.color = !c && desc && desc.value.trim() ? 'var(--vermelho)' : '';
+  });
+}
+function ligarCatLinhas(raiz) {
+  if (!raiz || raiz._catLigado) return; raiz._catLigado = true;
+  raiz.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('[data-cat-trocar]'); if (!a) return;
+    e.preventDefault(); const b = a.closest('[data-catl]').querySelector('[data-cat-box]');
+    b.classList.toggle('hidden'); if (!b.classList.contains('hidden')) b.querySelector('select').focus();
+  });
+  const atu = e => setTimeout(() => {
+    atualizarCatLinhas(raiz);
+    const s = e.type === 'change' && e.target.closest && e.target.closest('[data-cat-box] select');
+    if (s && s.value && s.value !== '__nova') s.closest('[data-cat-box]').classList.add('hidden');
+  }, 0);
+  ['input', 'change', 'click'].forEach(t => raiz.addEventListener(t, atu));
+  atualizarCatLinhas(raiz);
+}
 
 /* acabamento do item */
 
@@ -51,8 +80,8 @@ function modalItem(itemId) {
   const m = abrirModal({ titulo: itemId ? 'Editar item' : 'Adicionar item', largo: true, corpo: `
     <form id="f-item" class="grade g3">
       ${cria ? `
-        <label class="campo" style="grid-column:span 2">Produto * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" list="dl-sugestoes" autocomplete="off" value="${esc(i.descricao || '')}" placeholder="Digite ou escolha: Folheto 10x14…"><div class="small muted" id="it-mat">${textoMaterialSugerido(i.descricao)}</div><div class="small muted" id="it-conf"></div></label>
-        <label class="campo">Categoria *<select name="categoria_id">${opcoesCategoria(i.categoria_id, podeNovaCategoria())}</select><span class="small muted" id="it-sug"></span></label>
+        <div style="grid-column:1/-1">${htmlCatLinha(`<select name="categoria_id" style="font-size:12px;padding:3px 6px;max-width:320px">${opcoesCategoria(i.categoria_id, podeNovaCategoria())}</select>`, 'id="it-sug"')}
+        <label class="campo" style="margin:0">Produto * <span class="muted">(vai para o cliente)</span><input type="text" name="descricao" list="dl-sugestoes" autocomplete="off" value="${esc(i.descricao || '')}" placeholder="Digite ou escolha: Folheto 10x14…"><div class="small muted" id="it-mat">${textoMaterialSugerido(i.descricao)}</div><div class="small muted" id="it-conf"></div></label></div>
         ${i.especificacao ? `<div class="small muted" style="grid-column:1/-1">Especificação (campo antigo): ${esc(i.especificacao)}</div>` : ''}
         <label class="campo">Quantidade *<input type="number" step="any" min="0" name="quantidade" value="${esc(i.quantidade ?? 1)}"></label>
         <label class="campo">Valor total (R$) *<input type="number" step="0.01" min="0" name="valor_total" value="${esc(i.valor_total ?? '')}"><span class="unit-calc" id="it-unit"></span></label>
@@ -80,7 +109,7 @@ function modalItem(itemId) {
       const sug = () => {
         const l = sugerirCategorias(f.descricao.value);
         if (!catManual && l[0]) f.categoria_id.value = l[0].id;
-        $('#it-sug', el).innerHTML = l.length > 1 ? 'Também pode ser: ' + l.slice(1).map(c => `<a href="#" data-cat="${c.id}">${esc(c.nome)}</a>`).join(' · ') : '';
+        $('#it-sug', el).innerHTML = l.length > 1 ? '· também: ' + l.slice(1).map(c => `<a href="#" data-cat="${c.id}" title="${esc(c.nome)}">${esc(catCurta(c.nome))}</a>`).join(' · ') : '';
         $$('[data-cat]', el).forEach(a => a.onclick = e => { e.preventDefault(); f.categoria_id.value = a.dataset.cat; catManual = true; });
       };
       f.descricao.oninput = () => {
@@ -95,8 +124,9 @@ function modalItem(itemId) {
       f.categoria_id.onchange = () => {
         catManual = true;
         if (f.categoria_id.value === '__nova') { f.categoria_id.value = ''; modalCategoria(null, id => {
-          f.categoria_id.innerHTML = opcoesCategoria(id, podeNovaCategoria()); f.categoria_id.value = id; }); }
+          f.categoria_id.innerHTML = opcoesCategoria(id, podeNovaCategoria()); f.categoria_id.value = id; atualizarCatLinhas(f); }); }
       };
+      ligarCatLinhas(f);
     } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
@@ -703,24 +733,30 @@ function htmlDigitalEditor(it, k) {
       <input type="checkbox" data-digk="${k}" ${marcado ? 'checked' : ''}> <span class="badge ${marcado ? 'b-digital' : 'b-cinza'}">Digital</span></label>
     <span class="muted">${it.digital_manual != null ? (it.digital_manual ? 'marcado por você' : 'desmarcado por você') : regra ? esc(it._conf.digital.motivo || 'pela regra') : 'muito urgente também vai sozinho'}</span>`;
 }
+// "para 2 modelos" → 2 (de 1 a 20; o banco usa a mesma regra em fn_qtd_modelos_texto)
+function qtdModelosTexto(t) {
+  const m = String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().match(/(?:^|\D)(\d{1,2})\s*modelos?\b/);
+  const n = m ? parseInt(m[1], 10) : 0; return n >= 1 && n <= 20 ? n : 0;
+}
 function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigital = false } = {}) {
   if (!S.cache.gabaritos) carregarGabaritos().then(() => itens.forEach((it, k) => { const b = $(`[data-mat="${k}"]`, alvo); if (b) b.innerHTML = textoMaterialSugerido(it.descricao); })).catch(() => {});
   const novo = () => ({ quantidade: 1, valor_total: '', status: 'arte_a_fazer' });
-  let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x, _catManual: true })) : [novo()];
+  let itens = itensIniciais.length ? itensIniciais.map(x => ({ ...x, qtd_artes: x.qtd_artes || qtdModelosTexto(x.descricao) || 1, _catManual: true })) : [novo()];
   const podeCad = podeNovaCategoria();
   const timers = {};
   const desenhar = () => {
     alvo.innerHTML = `<div class="tabela-wrap"><table class="itens-editor"><thead><tr>
-        <th style="min-width:220px">Produto * <span class="muted">(vai para o cliente)</span></th><th style="min-width:190px">Categoria *</th>
+        <th style="min-width:260px">Produto * <span class="muted">(vai para o cliente)</span></th>
         <th style="min-width:170px">Observação <span class="muted">(interna)</span></th><th style="width:90px">Qtd. *</th>
-        <th style="width:130px">Total (R$) *</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
+        <th style="width:130px">Total (R$) *</th><th data-col="status" style="width:80px" title="Quantos modelos (artes diferentes) o item tem">Modelos</th><th data-col="status" style="min-width:160px">Status inicial</th><th></th></tr></thead>
       <tbody>${itens.map((it, k) => `<tr>
-        <td><input type="text" list="dl-sugestoes" autocomplete="off" placeholder="Digite ou escolha: Folheto 10x14…" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"><div class="small muted" data-mat="${k}">${it._conf ? htmlConferencia(it._conf, it.descricao) : textoMaterialSugerido(it.descricao)}</div>
+        <td>${htmlCatLinha(`<select data-k="${k}" data-f="categoria_id" style="font-size:12px;padding:3px 6px;max-width:320px">${opcoesCategoria(it.categoria_id, podeCad)}</select>`, `data-sug="${k}"`)}
+          <input type="text" list="dl-sugestoes" autocomplete="off" placeholder="Digite ou escolha: Folheto 10x14…" value="${esc(it.descricao || '')}" data-k="${k}" data-f="descricao"><div class="small muted" data-mat="${k}">${it._conf ? htmlConferencia(it._conf, it.descricao) : textoMaterialSugerido(it.descricao)}</div>
           ${comDigital ? `<div class="small" data-dig="${k}">${htmlDigitalEditor(it, k)}</div>` : ''}</td>
-        <td><select data-k="${k}" data-f="categoria_id">${opcoesCategoria(it.categoria_id, podeCad)}</select><div class="small muted" data-sug="${k}"></div></td>
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
         <td><input type="number" step="0.01" min="0" value="${esc(it.valor_total)}" data-k="${k}" data-f="valor_total"><div class="unit-calc" data-u="${k}">Unit. ${unitario(it.valor_total, it.quantidade)}</div></td>
+        <td data-col="status">${comStatus ? `<input type="number" min="1" max="20" step="1" value="${esc(it.qtd_artes || 1)}" data-k="${k}" data-f="qtd_artes" title="Ex.: cartão com 2 modelos de 200 cada = 2">` : ''}</td>
         <td data-col="status">${comStatus ? `<select data-k="${k}" data-f="status">${opcoesStatusInicial(it.status)}</select>` : ''}</td>
         <td>${itens.length > 1 ? `<button type="button" class="btn link peq" data-rm="${k}">Remover</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>
@@ -731,7 +767,7 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
       const it = itens[k]; const l = sugerirCategorias(it.descricao);
       if (!it._catManual && l[0] && it.categoria_id !== l[0].id) { it.categoria_id = l[0].id; const sel = $(`[data-k="${k}"][data-f=categoria_id]`, alvo); if (sel) sel.value = l[0].id; }
       const box = $(`[data-sug="${k}"]`, alvo); if (!box) return;
-      box.innerHTML = l.length > 1 ? 'Também: ' + l.slice(1).map(c => `<a href="#" data-k2="${k}" data-cat="${c.id}">${esc(c.nome)}</a>`).join(' · ') : '';
+      box.innerHTML = l.length > 1 ? '· também: ' + l.slice(1).map(c => `<a href="#" data-k2="${k}" data-cat="${c.id}" title="${esc(c.nome)}">${esc(catCurta(c.nome))}</a>`).join(' · ') : '';
       $$(`[data-k2="${k}"]`, box).forEach(a => a.onclick = e => { e.preventDefault(); it.categoria_id = a.dataset.cat; it._catManual = true;
         const sel = $(`[data-k="${k}"][data-f=categoria_id]`, alvo); if (sel) sel.value = it.categoria_id; });
     };
@@ -743,6 +779,12 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
         it.categoria_id = el.value; it._catManual = true; aoMudar && aoMudar(itens); return;
       }
       it[f] = el.value;
+      if (f === 'qtd_artes') { it._modManual = true; aoMudar && aoMudar(itens); return; }
+      // "2 modelos" no texto já preenche a coluna Modelos (o vendedor pode corrigir)
+      if (f === 'descricao' && !it._modManual) {
+        const n = qtdModelosTexto(el.value); it.qtd_artes = n || 1;
+        const cm = $(`[data-k="${k}"][data-f=qtd_artes]`, alvo); if (cm) cm.value = it.qtd_artes;
+      }
       if (f === 'descricao') { const bm = $(`[data-mat="${k}"]`, alvo); if (bm) bm.innerHTML = it._conf ? htmlConferencia(it._conf, el.value) : textoMaterialSugerido(el.value); }
       if (f === 'descricao' || f === 'quantidade') {
         it._ck = it._ck || ('c' + Math.random().toString(36).slice(2));
@@ -768,6 +810,7 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
     $$('[data-rm]', alvo).forEach(b => b.onclick = () => { itens.splice(b.dataset.rm, 1); desenhar(); });
     itens.forEach((_, k) => ligarDigital(k));
     $('#add-item', alvo).onclick = () => { itens.push({ ...novo(), status: itens[itens.length - 1]?.status || 'arte_a_fazer' }); desenhar(); };
+    ligarCatLinhas(alvo); atualizarCatLinhas(alvo);
     aoMudar && aoMudar(itens);
   };
   function ligarDigital(k) {
@@ -783,6 +826,7 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
   const usado = i => (i.descricao || '').trim() || i.categoria_id || Number(i.valor_total);
   const pegar = () => itens.filter(usado).map(i => ({ categoria_id: i.categoria_id, descricao: (i.descricao || '').trim(), observacao: i.observacao || '',
     especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: i.status,
+    ...(comStatus ? { qtd_artes: Math.min(20, Math.max(1, parseInt(i.qtd_artes, 10) || 1)) } : {}),
     ...(comDigital && i.digital_manual != null ? { digital_manual: i.digital_manual } : {}) }));
   pegar.definirStatus = v => { comStatus = v; alvo.classList.toggle('ocultar-status', !v); };
   pegar.incompletos = () => itens.filter(usado).filter(i => !(i.descricao || '').trim() || !i.categoria_id

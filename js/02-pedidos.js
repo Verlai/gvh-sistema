@@ -264,17 +264,24 @@ async function carregarArquivosPedido(p, el) {
   // bloco "Arquivos de arte": só material do cliente, provas e artes finais
   const arqs = todos.filter(a => GRUPO_ARQ(a.tipo) === 'artes');
   const tiposArte = ['producao', 'arte'].filter(t => pe[t]);
-  const grupos = [...(p.itens || []).map(i => ({ titulo: i.descricao, lista: arqs.filter(a => a.item_id === i.id) })),
-                  { titulo: 'Pedido inteiro', lista: arqs.filter(a => !a.item_id || !(p.itens || []).some(i => i.id === a.item_id)) }]
+  const grupos = [...(p.itens || []).map(i => ({ chave: i.id, titulo: i.descricao, lista: arqs.filter(a => a.item_id === i.id) })),
+                  { chave: 'pedido', titulo: 'Pedido inteiro', lista: arqs.filter(a => !a.item_id || !(p.itens || []).some(i => i.id === a.item_id)) }]
                  .filter(g => g.lista.length);
+  // princípio 11: uma linha de resumo por item (quantos arquivos de cada tipo); a tabela abre ao clicar
+  const CONTA_ARQ = { arte: ['material do cliente', 'materiais do cliente'], prova: ['prova', 'provas'], producao: ['arte final', 'artes finais'] };
+  const resumoGrupo = g => {
+    const cont = ['arte', 'prova', 'producao'].map(t => { const n = g.lista.filter(a => a.tipo === t).length; return n ? `${n} ${CONTA_ARQ[t][n > 1 ? 1 : 0]}` : ''; }).filter(Boolean).join(' · ');
+    const troca = g.lista.some(a => a.troca_pendente);
+    return `<b>${esc(g.titulo)}</b> <span class="small muted">· ${cont}</span>${troca ? ` ${badge('Troca pendente', 'b-ambar')}` : ''}`;
+  };
   alvo.innerHTML = `<div class="painel-cab"><h2>Arquivos de arte</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${r.pasta_url ? `<a class="btn" href="${esc(r.pasta_url)}" target="_blank" rel="noopener">Pasta no Drive</a>` : ''}
         ${pe.producao && (p.itens || []).length ? `<button class="btn" data-trazer-arte>Trazer arte de outro pedido</button>` : ''}
         ${tiposArte.length ? `<button class="btn" data-enviar-arq>Enviar arquivo</button>` : ''}</div></div>
-    ${grupos.length ? grupos.map(g => `<h3 style="font-size:14px;margin:14px 0 6px">${esc(g.titulo)}</h3>
-      <div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:150px"></th></tr></thead>
-      <tbody>${g.lista.map(a => linhaArq(a)).join('')}</tbody></table></div>`).join('')
+    ${grupos.length ? `<div class="lista-exp">${grupos.map(g => blocoExp('arq-' + p.id + '-' + g.chave, resumoGrupo(g),
+      `<div class="tabela-wrap"><table><thead><tr><th style="width:190px">Tipo</th><th>Arquivo</th><th style="width:170px">Enviado por</th><th style="width:150px"></th></tr></thead>
+      <tbody>${g.lista.map(a => linhaArq(a)).join('')}</tbody></table></div>`, grupos.length === 1)).join('')}</div>`
       : `<p class="small muted" style="margin:0">Nenhum arquivo de arte ainda. A pasta do pedido no Drive é criada sozinha quando o primeiro arquivo for enviado.</p>`}`;
 
   // documentos do bloco Financeiro: orçamento aprovado (automático), comprovantes e notas fiscais guardados no Drive

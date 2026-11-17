@@ -483,8 +483,10 @@
     const linhaLados = lados ? `<div class="small" style="margin-top:2px">Pedido <b>${lados.cores}</b>: ${lados.soFrente ? '<b>só frente</b> (o verso do gabarito não vale para este pedido)' : '<b>frente e verso</b>'}.</div>` : '';
     const ehCartao = /cart[ãa]o/i.test(u.grupo_nome || '') || (g.modo === 'fixo' && Math.max(g.w, g.h) <= 100);
     let paginas = [], analise = {}, enviando = false;
+    // item com mais de um modelo: " - Modelo 2 Dra. Ana" no título e nos nomes dos arquivos
+    const sufModelo = !teste && a.modelo_num && Number(a.outras_artes_item) > 0 ? ` - Modelo ${a.modelo_num}${a.modelo_nome ? ' ' + a.modelo_nome : ''}` : '';
 
-    const m = abrirModal({ titulo: `${teste ? 'Testar arquivo do cliente' : 'Montar prova'} · ${a.item_descricao || ''}`, largo: true, corpo: `
+    const m = abrirModal({ titulo: `${teste ? 'Testar arquivo do cliente' : 'Montar prova'} · ${a.item_descricao || ''}${sufModelo}`, largo: true, corpo: `
       <style>
         .mt-drop{border:2px dashed var(--linha);border-radius:12px;padding:18px;text-align:center;color:var(--texto-2);cursor:pointer;font-size:13px}
         .mt-drop.sobre{border-color:var(--verde);background:var(--verde-bg)}
@@ -752,7 +754,7 @@
           if (pm && an && (papel === 'verniz_frente' || ve)) { canv.push({ c: await desenharMascara(pm, an), wmm: an.fw, hmm: an.fh }); papeis.push(papel); }
         }
         const usadas = paginas.filter(p => p.papel);
-        const base = String(a.item_descricao || 'arte').replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80).trim();
+        const base = (String(a.item_descricao || 'arte').slice(0, 80) + sufModelo).replace(/[\\/:*?"<>|]+/g, ' ').trim();
         const pdf = await montarPdf(canv);
         bt.textContent = 'Enviando ao Drive…';
         const idP = await enviarArquivoDrive(a.pedido_id, new File([pdf], `Prova - ${base}.pdf`, { type: 'application/pdf' }),
@@ -804,7 +806,11 @@
           ${zap ? `<a class="btn" href="${esc(zap)}" target="_blank" rel="noopener">Abrir no WhatsApp</a>` : '<span class="small muted" style="align-self:center">Cliente sem WhatsApp no cadastro.</span>'}
           <a class="btn" id="mt-baixar" download="prova.pdf">Baixar a prova (PDF)</a>
         </div>`;
+      // nome do arquivo: "Pedido 1234 - <material>.pdf" (sem caracteres que o Windows não aceita)
+      const nomeArq = `Pedido ${a.pedido_numero || ''} - ${a.item_descricao || 'prova'}${sufModelo}`
+        .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
       $m('#mt-baixar').href = r.pdfUrl || cF.toDataURL('image/jpeg', 0.84);
+      $m('#mt-baixar').download = nomeArq + (r.pdfUrl ? '.pdf' : '.jpg');
       $m('#mt-copiar').onclick = async () => {
         const t = $m('#mt-msg').value;
         try { await navigator.clipboard.writeText(t); } catch (e) { $m('#mt-msg').select(); document.execCommand('copy'); }
