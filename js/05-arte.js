@@ -324,6 +324,7 @@ function blocoMaterialArte(as, modo, o = {}) {
       <h3 style="font-size:16px;font-weight:700;margin:0">${esc(it.item_descricao)} <span class="small muted" style="font-weight:400">${it.quantidade ? num(it.quantidade) + ' un' : ''}</span></h3>
       <div>${urg ? badge('URGENTE', 'b-vermelho') : ''}${modo !== 'designer' && as.some(a => a.falta_pagamento) ? ' ' + badge('Falta pagamento', 'b-ambar') : ''}${seloConferencia(u && u.conferencia)}</div></div>
     ${linhaGabaritoCurta(u)}
+    ${it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item${as.length > 1 ? ' (vale para todos os modelos)' : ''}:</span> ${esc(it.item_observacao)}</div>` : ''}
     ${[...as].sort((x, y) => (x.modelo_num || 99) - (y.modelo_num || 99)).map((a, k) => { const ac = passoArteAcoes(a, modo, podeMexer);
       return `<div>${as.length > 1 ? `<div class="small" style="margin-top:12px;font-weight:600">Modelo ${a.modelo_num || k + 1} de ${as.length}${a.modelo_nome ? ' · ' + esc(a.modelo_nome) : ''}${a.incluida_pela_designer && modo !== 'designer' ? ' ' + badge('incluído pela designer', 'b-ambar') : ''}</div>` : ''}
         ${passosArte(a)}
@@ -337,7 +338,6 @@ function blocoMaterialArte(as, modo, o = {}) {
           ${modo !== 'designer' && a.designer_nome ? `<div class="small muted">Designer: ${esc(a.designer_nome)}</div>` : ''}
           <div data-arte-arq="${a.id}" data-arte-item="${a.item_id || ''}" class="small" style="margin-top:6px"></div>
           ${k === 0 && it.item_id ? htmlGabaritoItem(it.item_id, it.gabarito_grupo_id, u, ativa && (modo === 'designer' || pode('cria_pedidos') || gerenciaArtes() || pode('gerencia_cadastros'))) : ''}
-          ${k === 0 && it.item_observacao ? `<div class="small" style="margin-top:6px"><span class="muted">Observação do item:</span> ${esc(it.item_observacao)}</div>` : ''}
           ${as.length > 1 && podeNomearModelo(a, modo, podeMexer) ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:8px">Nome do modelo <span class="muted">(opcional)</span>
             <input type="text" maxlength="60" value="${esc(a.modelo_nome || '')}" placeholder="Ex.: Dra. Ana" style="max-width:220px" data-modelo-nome="${a.id}"></label>` : ''}
           ${k === 0 && modo === 'designer' && it.item_id && ITEM_NA_ARTE.includes(it.item_status) && as.some(x => x.designer_id === S.usuario.id)

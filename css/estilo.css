@@ -216,6 +216,10 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
 .grupo-forn:first-child{margin-top:0}
 .grupo-forn h3{display:flex;gap:8px;align-items:center;margin-bottom:6px}
 .itens-editor td{padding:6px}
+/* categoria compacta (17/11): linha pequena no alto da célula do produto, sem empurrar o campo; todas as células ganham o mesmo espaço em cima para os campos ficarem alinhados */
+.itens-editor tbody td{position:relative;padding-top:24px}
+.itens-editor [data-catl]{position:absolute;top:5px;left:6px;right:6px;margin:0!important;white-space:nowrap;line-height:16px;z-index:2}
+.itens-editor [data-cat-box]{position:absolute;top:100%;left:0;margin:2px 0 0!important;background:#fff;border:1px solid var(--linha);border-radius:8px;padding:6px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .itens-editor input,.itens-editor select{padding:6px 8px;font-size:13px}
 .totais{display:grid;gap:4px;justify-content:end;text-align:right;margin-top:10px}
 .totais b{font-size:18px}
