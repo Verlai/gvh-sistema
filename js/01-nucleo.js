@@ -78,8 +78,10 @@ async function aguarde(texto, fn) {
   try { return await fn(); } finally { d.remove(); }
 }
 
-async function api(acao, dados = {}, silencioso = false) {
-  setCarregando(1);
+// semBarra: busca em segundo plano (ex.: balão de tarefas) não acende a barra de carregamento
+async function api(acao, dados = {}, silencioso = false, semBarra = false) {
+  const barra = semBarra ? 0 : 1;
+  setCarregando(barra);
   try {
     const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
                                      body: JSON.stringify({ token: S.token, acao, dados }) });
@@ -97,7 +99,7 @@ async function api(acao, dados = {}, silencioso = false) {
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
     throw e;
-  } finally { setCarregando(-1); }
+  } finally { setCarregando(-barra); }
 }
 
 /* ---------- paginação ("mostrar mais") ---------- */
@@ -471,7 +473,7 @@ async function carregarTarefas() {
   if (TF.carregando) { TF.deNovo = true; return; }
   TF.carregando = true;
   try {
-    do { TF.deNovo = false; TF.dados = await api('tarefas', {}, true); desenharTarefas(); } while (TF.deNovo);
+    do { TF.deNovo = false; TF.dados = await api('tarefas', {}, true, true); desenharTarefas(); } while (TF.deNovo);
   } catch (e) { console.warn('Tarefas indisponíveis', e); }
   finally { TF.carregando = false; }
 }
