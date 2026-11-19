@@ -416,13 +416,16 @@ function iniciarAtualizacaoAutomatica() {
 /* ---------- balão de tarefas (canto inferior direito, em todas as telas) ----------
    JC e Fátima (config_sistema.tarefas_producao_usuarios): alertas da produção (mesma regra do e-mail, fn_producao_alertas)
    + anotações da produção, com responsável. Os outros: só anotações pessoais. Regras e permissão ficam no banco. */
-const TAREFA_SECOES = {
-  0: ['🔎 Código não achado no site', 'vermelho'], 1: ['🧾 Recusado ou cancelado no fornecedor', 'vermelho'],
-  2: ['🚨 Prazo do cliente hoje ou vencido', 'vermelho'], 10: ['⚠️ Site do fornecedor não lido', 'vermelho'],
-  3: ['⏱️ Prazo do fornecedor não bate', 'ambar'], 4: ['🔄 Prazo mudou no fornecedor', 'ambar'],
-  5: ['📞 Cobrar fornecedor', 'ambar'], 8: ['📱 Confirmar com o fornecedor', 'azul'], 6: ['📦 Pronto no fornecedor', 'verde'],
+// etiqueta curta de cada tipo de alerta (mesmos números do e-mail; 10 = site não lido) e a ordem de urgência
+const TAREFA_TIPOS = {
+  0: ['🔎 Código não achado', 'vermelho'], 1: ['🧾 Recusado/cancelado', 'vermelho'], 2: ['🚨 Prazo do cliente', 'vermelho'],
+  10: ['⚠️ Site não lido', 'vermelho'], 3: ['⏱️ Prazo não bate', 'ambar'], 4: ['🔄 Prazo mudou', 'ambar'],
+  5: ['📞 Cobrar fornecedor', 'ambar'], 8: ['📱 Confirmar', 'azul'], 6: ['📦 Pronto', 'verde'],
 };
-const TAREFA_ORDEM = [0, 1, 2, 10, 3, 4, 5, 8, 6];
+const TAREFA_PRIO = { 0: 0, 1: 1, 2: 2, 10: 3, 3: 4, 4: 5, 5: 6, 8: 7, 6: 8 };
+const prioTarefa = t => t.tipo === 'producao' ? (TAREFA_PRIO[t.k] ?? 9) : 10;
+const ddmm = v => v ? String(v).slice(8, 10) + '/' + String(v).slice(5, 7) : '—';
+const linkSeguro = u => /^https:\/\/[^\s"'<>]+$/.test(String(u || '')) ? u : '';
 const TF = { dados: null, aberto: false, soMinhas: false, mapa: {}, carregando: false, deNovo: false };
 
 function iniciarBalaoTarefas() {
@@ -433,15 +436,20 @@ function iniciarBalaoTarefas() {
     b.onclick = () => abrirPainelTarefas(!TF.aberto);
     const p = document.createElement('div');
     p.id = 'tarefas-painel'; p.hidden = true; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Tarefas');
-    p.innerHTML = `<div class="tf-cab"><b>Tarefas</b><button type="button" class="fechar" aria-label="Fechar">×</button></div>
+    p.innerHTML = `<div class="tf-cab"><b>Tarefas</b>
+        <div class="tf-filtro" hidden role="group" aria-label="Filtro"><button type="button" data-tf-f="0" class="ativo">Todas</button><button type="button" data-tf-f="1">Minhas</button></div>
+        <button type="button" class="tf-fechar" aria-label="Fechar">×</button></div>
       <form class="tf-nova"><input name="texto" maxlength="500" placeholder="Nova anotação…" autocomplete="off">
-        <select name="compartilhada" hidden><option value="1">Produção</option><option value="0">Só eu</option></select>
-        <button class="btn peq prim" type="submit">Adicionar</button></form>
-      <label class="tf-filtro small" hidden><input type="checkbox"> Só as minhas</label>
+        <select name="compartilhada" hidden aria-label="Quem vê"><option value="1">Produção</option><option value="0">Só eu</option></select>
+        <button type="submit" aria-label="Adicionar">+</button></form>
       <div class="tf-lista"></div>`;
-    p.querySelector('.fechar').onclick = () => abrirPainelTarefas(false);
+    p.querySelector('.tf-fechar').onclick = () => abrirPainelTarefas(false);
     p.querySelector('.tf-nova').onsubmit = salvarNovaTarefa;
-    p.querySelector('.tf-filtro input').onchange = e => { TF.soMinhas = e.target.checked; desenharTarefas(); };
+    p.querySelectorAll('[data-tf-f]').forEach(bt => bt.onclick = () => {
+      TF.soMinhas = bt.dataset.tfF === '1';
+      p.querySelectorAll('[data-tf-f]').forEach(x => x.classList.toggle('ativo', x === bt));
+      desenharTarefas();
+    });
     p.addEventListener('keydown', e => { if (e.key === 'Escape') abrirPainelTarefas(false); });
     document.body.append(b, p);
     document.body.classList.add('com-tarefas');
@@ -482,50 +490,73 @@ function desenharTarefas() {
   b.title = n ? `${n} tarefa${n > 1 ? 's' : ''} em aberto` : 'Tarefas';
   p.querySelector('.tf-nova select').hidden = !d.producao;
   p.querySelector('.tf-filtro').hidden = !d.producao;
+  p.querySelector('.tf-nova').classList.toggle('com-sel', !!d.producao);
   if (!TF.aberto) return;
 
   const visiveis = abertas.filter(t => !TF.soMinhas || !t.compartilhada || t.responsavel_id === meu);
-  const blocos = [];
-  TAREFA_ORDEM.forEach(k => {
-    const l = visiveis.filter(t => t.tipo === 'producao' && t.k === k);
-    if (l.length) blocos.push(secaoTarefas(TAREFA_SECOES[k][0], TAREFA_SECOES[k][1], l, d));
+  const cartoes = [];
+  // um cartão por pedido (o mais urgente em cima); tarefas sem pedido e anotações vêm depois
+  const porPedido = new Map();
+  visiveis.filter(t => t.tipo === 'producao' && t.pedido_id).forEach(t => {
+    if (!porPedido.has(t.pedido_id)) porPedido.set(t.pedido_id, []);
+    porPedido.get(t.pedido_id).push(t);
   });
+  [...porPedido.values()]
+    .map(l => l.sort((a, b) => prioTarefa(a) - prioTarefa(b)))
+    .sort((a, b) => prioTarefa(a[0]) - prioTarefa(b[0]) || String(a[0].dados?.numero).localeCompare(String(b[0].dados?.numero), 'pt', { numeric: true }))
+    .forEach(l => {
+      const x = l[0].dados || {};
+      const variosItens = new Set(l.map(t => t.dados?.item || '')).size > 1;
+      cartoes.push(cartaoTarefas(
+        `<a class="tf-ped" href="#/pedido/${esc(l[0].pedido_id)}" data-tf-ir>#${esc(x.numero)}</a><span class="tf-cli">${esc(x.cliente || '')}</span>`,
+        l, d, variosItens, TAREFA_TIPOS[l[0].k]?.[1]));
+    });
+  const semPedido = visiveis.filter(t => t.tipo === 'producao' && !t.pedido_id);
+  if (semPedido.length) cartoes.push(cartaoTarefas('<span class="tf-ped">Fornecedores</span>', semPedido, d, false, 'vermelho'));
   const notasProd = visiveis.filter(t => t.tipo === 'nota' && t.compartilhada);
-  if (notasProd.length) blocos.push(secaoTarefas('📝 Anotações da produção', 'cinza', notasProd, d));
+  if (notasProd.length) cartoes.push(cartaoTarefas('<span class="tf-ped">📝 Anotações da produção</span>', notasProd, d));
   const pessoais = visiveis.filter(t => t.tipo === 'nota' && !t.compartilhada);
-  if (pessoais.length) blocos.push(secaoTarefas(d.producao ? '🔒 Só minhas' : '📝 Minhas anotações', 'cinza', pessoais, d));
-  if (!blocos.length) blocos.push(`<p class="small muted tf-vazio">${TF.soMinhas ? 'Nada em aberto com você.' : 'Nada em aberto.'}</p>`);
-  if (feitas.length) blocos.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`, feitas.map(t => linhaTarefa(t, d)).join(''), false, 'leve'));
+  if (pessoais.length) cartoes.push(cartaoTarefas(`<span class="tf-ped">${d.producao ? '🔒 Só minhas' : '📝 Minhas anotações'}</span>`, pessoais, d));
+  if (!cartoes.length) cartoes.push(`<p class="tf-vazio">${TF.soMinhas ? 'Nada em aberto com você. 🎉' : 'Nada em aberto. 🎉'}</p>`);
+  if (feitas.length) cartoes.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`,
+    `<div class="tf-card tf-feitas">${feitas.map(t => linhaTarefa(t, d, true)).join('')}</div>`, false, 'leve'));
 
   const lista = p.querySelector('.tf-lista');
-  lista.innerHTML = blocos.join('');
+  lista.innerHTML = cartoes.join('');
   ligarTarefas(lista);
 }
-function secaoTarefas(titulo, cor, lista, d) {
-  return `<div class="tf-secao tf-${cor}"><div class="tf-titulo">${esc(titulo)} <span class="muted">${lista.length}</span></div>${lista.map(t => linhaTarefa(t, d)).join('')}</div>`;
+function cartaoTarefas(cab, lista, d, variosItens, cor) {
+  return `<div class="tf-card ${cor ? 'tf-' + cor : ''}"><div class="tf-card-cab">${cab}</div>${lista.map(t => linhaTarefa(t, d, false, variosItens)).join('')}</div>`;
 }
-function linhaTarefa(t, d) {
-  const x = t.dados || {}, feita = !!t.feita_em;
-  let det = '';
-  if (t.tipo === 'producao' && t.k !== 10) {
-    det = `<div class="tf-det small"><a href="#/pedido/${esc(t.pedido_id)}" data-tf-ir>#${esc(x.numero)}</a> ${esc(x.cliente || '')}`
-      + ` · ${esc(x.forn || '—')}${x.codigo ? ' ' + esc(x.codigo) : ''}`
-      + `<br>Forn.: ${esc(data(x.prev))}${x.prev && !x.prev_site ? ' <span class="muted">(anotado)</span>' : ''} · Cliente: ${esc(data(x.cli))}</div>`;
-  } else if (t.tipo === 'nota' && t.compartilhada && t.autor) {
-    det = `<div class="tf-det small muted">Anotado por ${esc(t.autor)}</div>`;
-  }
+function linhaTarefa(t, d, comPedido, comItem) {
+  const x = t.dados || {}, feita = !!t.feita_em, tp = TAREFA_TIPOS[t.k];
+  const etiqueta = t.tipo === 'producao' && tp ? `<span class="tf-tag tf-${tp[1]}">${esc(tp[0])}</span>` : '';
   const resp = t.compartilhada && !feita && d.producao
-    ? `<select class="tf-resp" data-tf-resp="${esc(t.id)}" aria-label="Responsável">${(d.responsaveis || []).map(r =>
-        `<option value="${esc(r.id)}" ${r.id === t.responsavel_id ? 'selected' : ''}>${esc(r.nome)}</option>`).join('')}</select>`
-    : (t.compartilhada && t.responsavel ? `<span class="tf-resp-txt small muted">${esc(t.responsavel)}</span>` : '');
+    ? `<select class="tf-pill" data-tf-resp="${esc(t.id)}" aria-label="Responsável" title="Responsável">${(d.responsaveis || []).map(r =>
+        `<option value="${esc(r.id)}" ${r.id === t.responsavel_id ? 'selected' : ''}>${esc(String(r.nome).split(' ')[0])}</option>`).join('')}</select>`
+    : (t.compartilhada && t.responsavel ? `<span class="tf-pill fixa">${esc(String(t.responsavel).split(' ')[0])}</span>` : '');
+  const linhas = [];
+  if (comPedido && t.pedido_id) linhas.push(`<a href="#/pedido/${esc(t.pedido_id)}" data-tf-ir>#${esc(x.numero)}</a> ${esc(x.cliente || '')}`);
+  if (comItem && x.item) linhas.push(`<span class="tf-item-nome">${esc(x.item)}</span>`);
+  if (t.tipo === 'producao' && t.k !== 10) {
+    const lk = linkSeguro(x.link);
+    const forn = lk ? `<a href="${esc(lk)}" target="_blank" rel="noopener noreferrer" title="Abrir no site do fornecedor">${esc(x.forn || 'Fornecedor')} ↗</a>` : esc(x.forn || '—');
+    linhas.push(`${forn}${x.codigo ? ` <span class="tf-cod">${esc(x.codigo)}</span>` : ''}`
+      + ` · Forn. ${esc(ddmm(x.prev))}${x.prev && !x.prev_site ? '<span class="muted" title="Data anotada no sistema (não veio do site do fornecedor)">*</span>' : ''} · Cliente ${esc(ddmm(x.cli))}`);
+  } else if (t.k === 10 && linkSeguro(x.link)) {
+    linhas.push(`<a href="${esc(linkSeguro(x.link))}" target="_blank" rel="noopener noreferrer">Abrir o site da ${esc(x.forn || 'fornecedora')} ↗</a>`);
+  } else if (t.tipo === 'nota' && t.compartilhada && t.autor) {
+    linhas.push(`Anotado por ${esc(t.autor)}`);
+  }
   const info = feita
     ? `<button type="button" class="tf-info" data-tf-info="${esc(t.id)}" aria-label="Por que foi finalizada" title="Informação">i</button>` : '';
   const apagar = t.tipo === 'nota' && !feita
     ? `<button type="button" class="tf-x" data-tf-x="${esc(t.id)}" aria-label="Excluir anotação" title="Excluir">×</button>` : '';
   return `<div class="tf-item ${feita ? 'feita' : ''}" data-tf="${esc(t.id)}">
       <input type="checkbox" data-tf-ok="${esc(t.id)}" ${feita ? 'checked' : ''} ${feita && t.feita_sistema ? 'disabled' : ''} aria-label="Feito">
-      <div class="tf-corpo">${resp ? `<div class="tf-topo">${resp}</div>` : ''}<div class="tf-txt">${esc(t.texto)}</div>${det}
-        <div class="tf-motivo small" hidden></div></div>${info}${apagar}</div>`;
+      <div class="tf-corpo">${etiqueta || resp ? `<div class="tf-topo">${etiqueta}${resp}</div>` : ''}
+        <div class="tf-txt">${esc(t.texto)}</div>${linhas.length ? `<div class="tf-det">${linhas.join('<br>')}</div>` : ''}
+        <div class="tf-motivo" hidden></div></div>${info}${apagar}</div>`;
 }
 function ligarTarefas(el) {
   el.querySelectorAll('[data-tf-ok]').forEach(c => c.onchange = async () => {
