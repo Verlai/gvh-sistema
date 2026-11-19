@@ -26,13 +26,12 @@ rota('producao', async (_p, el) => {
     prod.forEach(i => (grupos[i.fornecedor_nome || 'Sem fornecedor'] ||= []).push(i));
     corpo = `<div class="linha-form filtros" style="margin-bottom:12px">
         <label class="campo" style="max-width:280px">Fornecedor<select id="f-forn"><option value="">Todos</option>${S.base.fornecedores.map(f => `<option value="${f.id}" ${f.id === fForn ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></label>
-        <span class="small muted" style="padding-bottom:9px;flex:2">Confira item por item com cada fornecedor. A previsão de produção é só referência (atrasados aparecem primeiro). Marque o que vai chegar no balcão e clique em "Marcar como despachado".</span>
-        ${despacha ? `<button class="btn prim" id="btn-despachar" style="flex:0;white-space:nowrap" disabled>Marcar como despachado</button>` : ''}</div>`
+        <div style="flex:2;padding-bottom:6px">${blocoExp('como-producao', 'Como funciona', '<p class="small muted" style="margin:0">Confira item por item com cada fornecedor. A previsão de produção é só referência (atrasados aparecem primeiro). Marque o que já está pronto e vindo para o balcão: a barra de baixo aparece com "Marcar como despachado". Itens prontos no site do fornecedor já passam sozinhos para Despachado.</p>', false, 'leve')}</div></div>`
       + (prod.length ? Object.entries(grupos).map(([nome, lista]) => `<div class="grupo-forn">
-        <h3>${esc(nome)} <span class="badge b-cinza">${lista.length}</span> <span class="small" style="font-weight:400">${linkAcessoFornecedor(lista[0].fornecedor_id)}</span></h3>
+        <h3>${despacha ? `<input type="checkbox" class="sel-forn" title="Marcar todos de ${esc(nome)}" aria-label="Marcar todos de ${esc(nome)}">` : ''}${esc(nome)} <span class="badge b-cinza">${lista.length}</span> <span class="small" style="font-weight:400">${linkAcessoFornecedor(lista[0].fornecedor_id)}</span></h3>
         <div class="tabela-wrap"><table><thead><tr>${despacha ? '<th style="width:28px"></th>' : ''}<th>Pedido</th><th>Item</th><th>Código do fornecedor</th><th>Previsão de produção</th><th>Previsão de entrega</th><th>Em produção há</th><th></th></tr></thead><tbody>
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
-          ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
+          ${despacha ? `<td><input type="checkbox" class="sel-item sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
           <td>${esc(i.descricao)}${linkArte(i)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
@@ -40,7 +39,9 @@ rota('producao', async (_p, el) => {
           <td class="num">${data(i.data_prevista_entrega)}</td>
           <td class="num">${i.dias_no_status} ${i.dias_no_status == 1 ? 'dia' : 'dias'}</td>
           <td class="dir" style="white-space:nowrap"><button class="btn peq" onclick="modalItemProd('${i.id}')">Ajustar</button></td>
-        </tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="vazio">Nenhum item em produção.</div>');
+        </tr>`).join('')}</tbody></table></div></div>`).join('') : '<div class="vazio">Nenhum item em produção.</div>')
+      + (despacha && prod.length ? `<div class="barra-acao" id="barra-desp" hidden><b id="n-desp"></b><span class="small" style="opacity:.8;flex:1">Pronto e vindo para o balcão?</span>
+          <button class="btn peq" id="btn-limpar-desp" type="button">Limpar</button><button class="btn prim peq" id="btn-despachar" type="button">Marcar como despachado</button></div>` : '');
   }
   el.innerHTML = `
     <div class="chips" style="margin-bottom:14px">
@@ -57,13 +58,24 @@ rota('producao', async (_p, el) => {
   $$('input[data-c="prazo_producao"]').forEach(inp => { avisarPrev(inp); inp.addEventListener('change', () => avisarPrev(inp)); });
   $$('select[data-c="fornecedor_id"]').forEach(sel => sel.addEventListener('change', () => {
     const tr = sel.closest('tr'); const box = tr && tr.querySelector('[data-acesso]'); if (box) box.innerHTML = linkAcessoFornecedor(sel.value); }));
-  const bd = $('#btn-despachar');
+  // (19/11) barra fixa embaixo: aparece só com item marcado; "marcar todos" por fornecedor
+  const bd = $('#btn-despachar', el);
   if (bd) {
-    const marcados = () => $$('.sel-desp:checked').map(x => x.value);
-    $$('.sel-desp').forEach(c => c.onchange = () => { const n = marcados().length; bd.disabled = !n; bd.textContent = n ? `Marcar como despachado (${n})` : 'Marcar como despachado'; });
-    bd.onclick = async () => { const ids = marcados(); if (!ids.length) return;
+    const barra = $('#barra-desp', el);
+    const marcados = () => $$('.sel-desp:checked', el).map(x => x.value);
+    const atualizar = () => {
+      const n = marcados().length;
+      barra.hidden = !n;
+      $('#n-desp', el).textContent = `${n} ${n > 1 ? 'itens selecionados' : 'item selecionado'}`;
+      $$('.grupo-forn', el).forEach(g => { const cs = $$('.sel-desp', g), t = g.querySelector('.sel-forn'); if (!t) return;
+        const m = cs.filter(c => c.checked).length; t.checked = m > 0 && m === cs.length; t.indeterminate = m > 0 && m < cs.length; });
+    };
+    $$('.sel-desp', el).forEach(c => c.onchange = atualizar);
+    $$('.sel-forn', el).forEach(t => t.onchange = () => { $$('.sel-desp', t.closest('.grupo-forn')).forEach(c => { c.checked = t.checked; }); atualizar(); });
+    $('#btn-limpar-desp', el).onclick = () => { $$('.sel-desp, .sel-forn', el).forEach(c => { c.checked = false; }); atualizar(); };
+    bd.onclick = () => ocupado(bd, async () => { const ids = marcados(); if (!ids.length) return;
       await api('mudar_status_itens', { itens: ids, status: 'despachado' });
-      toast(`${ids.length} ${ids.length > 1 ? 'itens marcados' : 'item marcado'} como despachado.`); recarregar(); };
+      toast(`${ids.length} ${ids.length > 1 ? 'itens marcados' : 'item marcado'} como despachado.`); recarregar(); });
   }
 });
 /* ---------- PRÉ-IMPRESSÃO (27/10): lista enxuta + item que abre ---------- */
@@ -445,56 +457,147 @@ function modalItemProd(id) {
     if (!lerAcabamento($('#f-ip', m.el), d)) return; await api('salvar_item', { id, ...d }); m.fechar(); toast('Item atualizado.'); recarregar(); };
 }
 
-/* ---------- EXPEDIÇÃO E ENTREGA ---------- */
+/* ---------- EXPEDIÇÃO E ENTREGA (19/11: lista no lugar do kanban) ----------
+   Uma linha por pedido, com os itens, a forma de entrega, o pagamento e os botões da etapa.
+   Regras no banco: "Chegou" em pedido de retirada vai direto para Aguardando retirada; retirada sem pagamento não é entregue. */
+const ETAPAS_EXP = [
+  ['despachado', '🚚 Despachados', 'Saiu do fornecedor e está vindo para o balcão'],
+  ['expedicao', '📦 Expedição', 'No balcão, para sair para entrega'],
+  ['em_transporte', '🚗 Em transporte', 'Saiu para o endereço do cliente'],
+  ['aguardando_retirada', '🏪 Aguardando retirada', 'No balcão, o cliente vem buscar']
+];
 rota('expedicao', async (_p, el) => {
   definirTopoEm(el, 'Expedição e entrega', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
-  const r = await api('listar_itens', { status: ['despachado','expedicao','em_transporte','aguardando_retirada'] });
+  const r = await api('listar_itens', { status: ETAPAS_EXP.map(e => e[0]) });
+  vistaDoEl(el).dados = r.itens;
   const peds = {};
-  r.itens.forEach(i => (peds[i.pedido_id] ||= { id: i.pedido_id, numero: i.pedido_numero, cliente: i.cliente_nome, obs: i.cliente_obs, forma: i.forma_entrega, itens: [] }).itens.push(i));
-  const colunas = [
-    ['despachado', 'Despachados', 'Saiu do fornecedor e está vindo para o balcão.'],
-    ['expedicao', 'No balcão', 'Material chegou da produção.'],
-    ['em_transporte', 'Em transporte', 'Saiu para o endereço do cliente.'],
-    ['aguardando_retirada', 'Aguardando retirada', 'Cliente vem buscar no balcão.']
-  ];
-  const cartaoDespachado = p => {
-    const its = p.itens.filter(i => i.status === 'despachado');
-    const pode = podeStatus('expedicao');
-    const acabPendente = i => i.precisa_acabamento && !i.acabamento_iniciado_em;
-    const normais = its.filter(i => !acabPendente(i));
-    return `<div class="painel" style="padding:14px;margin:0 0 10px">
-      <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
-      <div>${esc(p.cliente)}</div>
-      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li style="margin-bottom:6px">${esc(i.descricao)} · ${num(i.quantidade)} un${linkArte(i)}
-        ${acabPendente(i) ? `<div>${badge('Precisa de acabamento', 'b-azul')} ${esc(i.acabamento_por || '')}</div>
-          ${pode ? `<button class="btn prim peq" style="margin-top:4px" onclick="moverItensPedido('${i.id}','em_producao')">Chegou · vai para acabamento</button>` : ''}` : ''}</li>`).join('')}</ul>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${pode && normais.length ? `<button class="btn prim peq" onclick="moverItensPedido('${normais.map(i => i.id).join(',')}','expedicao')">Chegou no balcão${its.length > normais.length ? ` (${normais.length})` : ''}</button>` : ''}
-      ${podeStatus('despachado') ? `<button class="btn peq" onclick="naoChegou('${its.map(i => i.id).join(',')}')">Não chegou</button>` : ''}</div>
-    </div>`;
+  r.itens.forEach(i => (peds[i.pedido_id] ||= { id: i.pedido_id, numero: i.pedido_numero, cliente: i.cliente_nome, obs: i.cliente_obs,
+    forma: i.forma_entrega, entrega: i.data_prevista_entrega, fin: i, itens: [] }).itens.push(i));
+  const todos = Object.values(peds).sort((a, b) => String(a.entrega || '9999').localeCompare(String(b.entrega || '9999'))
+    || String(a.numero).localeCompare(String(b.numero), 'pt', { numeric: true }));
+  const qtd = k => todos.filter(p => p.itens.some(i => i.status === k)).length;
+  const filtro = S.cache.expFiltro || '';
+  el.innerHTML = `<div class="linha-form filtros" style="margin-bottom:12px;align-items:center">
+      <div class="chips" style="flex:3">
+        <button class="chip ${!filtro ? 'ativo' : ''}" data-exp-f="">Todos (${todos.length})</button>
+        ${ETAPAS_EXP.map(([k, t, d]) => `<button class="chip ${filtro === k ? 'ativo' : ''}" data-exp-f="${k}" title="${esc(d)}">${t} (${qtd(k)})</button>`).join('')}
+      </div>
+      <label class="campo" style="max-width:240px;margin:0"><input type="search" id="exp-busca" placeholder="Buscar nº ou cliente" value="${esc(S.cache.expBusca || '')}" aria-label="Buscar pedido"></label>
+    </div>
+    <div class="painel" id="exp-lista"></div>`;
+  const desenhar = () => {
+    const busca = (S.cache.expBusca || '').trim().toLowerCase();
+    const lista = todos.filter(p => (!filtro || p.itens.some(i => i.status === filtro))
+      && (!busca || String(p.numero).toLowerCase().includes(busca) || String(p.cliente || '').toLowerCase().includes(busca)));
+    const lim = limLista('exp');
+    const box = $('#exp-lista', el);
+    box.innerHTML = lista.length ? `<div class="tabela-wrap"><table class="tab-exp"><thead><tr><th>Pedido</th><th>Itens</th><th>Entrega</th><th>Pagamento</th><th></th></tr></thead><tbody>
+      ${lista.slice(0, lim).map(linhaExpedicao).join('')}</tbody></table></div>${rodapeLista('exp', Math.min(lim, lista.length), lista.length, 'pedidos')}`
+      : `<div class="vazio">${busca || filtro ? 'Nenhum pedido com esse filtro.' : 'Nada na expedição agora.'}</div>`;
+    ligarMais(box, 'exp', desenhar);
   };
-  const cartao = (p, etapa) => {
-    if (etapa === 'despachado') return cartaoDespachado(p);
-    const its = p.itens.filter(i => i.status === etapa);
-    const prox = etapa === 'expedicao' ? (p.forma === 'entrega' ? ['em_transporte', 'Saiu para entrega'] : ['aguardando_retirada', 'Avisar retirada']) : ['entregue', 'Marcar como entregue'];
-    return `<div class="painel" style="padding:14px;margin:0 0 10px">
-      <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
-      <div>${esc(p.cliente)}</div>
-      ${p.obs ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px">${esc(p.obs)}</div>` : ''}
-      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li>${esc(i.descricao)} · ${num(i.quantidade)} un${linkArte(i)}</li>`).join('')}</ul>
-      ${podeStatus(prox[0]) ? `<button class="btn ${prox[0] === 'entregue' ? 'prim' : ''} peq" onclick="moverItensPedido('${its.map(i => i.id).join(',')}','${prox[0]}')">${prox[1]}</button>` : ''}
-    </div>`;
-  };
-  el.innerHTML = `<div class="grade g4">${colunas.map(([k, t, d]) => {
-    const lista = Object.values(peds).filter(p => p.itens.some(i => i.status === k));
-    return `<div><h2 style="margin-bottom:2px">${t} <span class="badge b-cinza">${lista.length}</span></h2><p class="small muted" style="margin:0 0 10px">${d}</p>
-      ${lista.map(p => cartao(p, k)).join('') || '<div class="vazio painel">Nada aqui.</div>'}</div>`;
-  }).join('')}</div>`;
+  $$('[data-exp-f]', el).forEach(b => b.onclick = () => { S.cache.expFiltro = b.dataset.expF; zerarLista('exp'); recarregar(); });
+  let tBusca = null;
+  $('#exp-busca', el).oninput = e => { clearTimeout(tBusca); tBusca = setTimeout(() => { S.cache.expBusca = e.target.value; zerarLista('exp'); desenhar(); }, 250); };
+  desenhar();
 });
+function pagamentoExp(f) {
+  if (!f || f.status_financeiro == null) return '<span class="muted">—</span>';
+  if (f.status_financeiro === 'pago') return badge('Pago', 'b-verde');
+  if (f.falta_pagamento) return badge('Falta ' + brl(f.valor_em_aberto), 'b-vermelho');
+  if (f.tem_boleto) return badge(f.status_financeiro === 'atrasado' ? 'Boleto atrasado' : 'Boleto', f.status_financeiro === 'atrasado' ? 'b-ambar' : 'b-azul');
+  return badge(f.status_financeiro_nome || '—', COR_FIN[f.status_financeiro]);
+}
+function linhaExpedicao(p) {
+  const de = st => p.itens.filter(i => i.status === st);
+  const ids = l => l.map(i => i.id).join(',');
+  const acabPendente = i => i.precisa_acabamento && !i.acabamento_iniciado_em;
+  const desp = de('despachado'), normais = desp.filter(i => !acabPendente(i)), exped = de('expedicao'), transp = de('em_transporte'), ret = de('aguardando_retirada');
+  const qt = (l, total) => l.length < total ? ` (${l.length})` : '';
+  const total = p.itens.length;
+  const bt = [];
+  if (normais.length && podeStatus('expedicao'))
+    bt.push(`<button class="btn prim peq" title="${p.forma === 'retirada' ? 'Vai para Aguardando retirada' : 'Vai para Expedição'}" onclick="moverItensPedido('${ids(normais)}','expedicao')">Chegou${qt(normais, total)}</button>`);
+  desp.filter(acabPendente).forEach(i => { if (podeStatus('expedicao')) bt.push(`<button class="btn peq" onclick="moverItensPedido('${i.id}','em_producao')">Chegou · vai para acabamento</button>`); });
+  if (desp.length && podeStatus('despachado')) bt.push(`<button class="btn peq" onclick="naoChegou('${ids(desp)}')">Não chegou</button>`);
+  if (exped.length) {
+    const prox = p.forma === 'entrega' ? ['em_transporte', 'Saiu para entrega'] : ['aguardando_retirada', 'Avisar retirada'];
+    if (podeStatus(prox[0])) bt.push(`<button class="btn prim peq" onclick="moverItensPedido('${ids(exped)}','${prox[0]}')">${prox[1]}${qt(exped, total)}</button>`);
+  }
+  if (transp.length && podeStatus('entregue')) bt.push(`<button class="btn prim peq" onclick="moverItensPedido('${ids(transp)}','entregue')">Entregue${qt(transp, total)}</button>`);
+  if (ret.length && podeStatus('entregue')) {
+    if (p.fin.falta_pagamento) {
+      bt.push(`<button class="btn prim peq" onclick="receberNaRetirada('${p.id}')">Receber ${esc(brl(p.fin.valor_em_aberto))}</button>`);
+      bt.push(`<button class="btn peq" disabled title="Falta pagamento: receba antes de entregar">Entregue</button>`);
+    } else bt.push(`<button class="btn prim peq" onclick="moverItensPedido('${ids(ret)}','entregue')">Entregue${qt(ret, total)}</button>`);
+  }
+  return `<tr>
+    <td><a href="#/pedido/${esc(p.id)}"><b>#${esc(p.numero)}</b></a><div class="small muted">${esc(p.cliente || '')}</div>
+      ${p.obs ? `<div class="alerta small" style="margin-top:4px;padding:4px 8px">${esc(p.obs)}</div>` : ''}</td>
+    <td>${p.itens.map(i => `<div class="exp-it">${badgeItem(i.status)} <span>${esc(i.descricao)} <span class="muted small">· ${num(i.quantidade)} un</span>${linkArte(i)}</span>
+      ${acabPendente(i) && i.status === 'despachado' ? `<div class="small">${badge('Precisa de acabamento', 'b-azul')} ${esc(i.acabamento_por || '')}</div>` : ''}</div>`).join('')}</td>
+    <td>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}<div class="small muted" style="margin-top:4px">${p.entrega ? 'Prevista ' + esc(data(p.entrega)) : ''}</div></td>
+    <td>${pagamentoExp(p.fin)}</td>
+    <td class="dir"><div class="exp-acoes">${bt.join('') || '<span class="muted small">—</span>'}</div></td>
+  </tr>`;
+}
+// pagamento na retirada: uma ou mais formas (Maquininha, Pix, Dinheiro); pode ser menos do que falta (o pedido continua travado).
+// O banco confere tudo e deixa cada parte "a conferir" para o financeiro.
+const FORMAS_RETIRADA = [['maquininha', 'Maquininha'], ['pix', 'Pix'], ['dinheiro', 'Dinheiro']];
+function receberNaRetirada(pedidoId) {
+  const it = ((S.vistaAtual && S.vistaAtual.dados) || []).find(i => i.pedido_id === pedidoId) || {};
+  const aberto = Number(it.valor_em_aberto || 0);
+  const linha = (valor = '') => `<div class="rec-linha"><select name="forma" aria-label="Forma de pagamento"><option value="">Forma…</option>${FORMAS_RETIRADA.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
+      <input name="valor" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Valor" value="${valor}" aria-label="Valor recebido">
+      <button type="button" class="tf-x" data-rec-x aria-label="Tirar esta forma" title="Tirar">×</button></div>`;
+  abrirModal({ titulo: `Receber na retirada · pedido #${it.pedido_numero || ''}`,
+    corpo: `<p style="margin:0">Falta pagar: <b>${esc(brl(aberto))}</b></p>
+      <div class="rec-linhas">${linha(aberto ? aberto.toFixed(2) : '')}</div>
+      <button type="button" class="btn link peq" data-rec-mais style="justify-self:start">+ outra forma de pagamento</button>
+      <div class="rec-total small"></div>
+      <label class="campo">Observação (opcional)<input name="obs" maxlength="200" placeholder="Ex.: pagou parte no Pix e parte em dinheiro"></label>
+      <p class="small muted" style="margin:0">Cada parte entra "a conferir" para o financeiro. O "Entregue" só libera quando não faltar nada.</p>`,
+    rodape: '<button class="btn" data-n>Voltar</button><button class="btn prim" data-s>Registrar pagamento</button>',
+    aoAbrir: (f, fechar) => {
+      const linhas = f.querySelector('.rec-linhas');
+      const partes = () => [...linhas.querySelectorAll('.rec-linha')].map(l => ({ forma_pagamento: l.querySelector('select').value, valor: l.querySelector('input').value.trim() }));
+      const total = () => partes().reduce((s, p) => s + (Number(p.valor) || 0), 0);
+      const atualizar = () => {
+        const t = Math.round(total() * 100) / 100, falta = Math.round((aberto - t) * 100) / 100;
+        const box = f.querySelector('.rec-total');
+        box.innerHTML = `Recebido <b>${esc(brl(t))}</b> · ${falta > 0.009 ? `Falta <b>${esc(brl(falta))}</b> — o pedido continua sem poder ser entregue.` : falta < -0.009 ? `<b style="color:var(--vermelho)">Passa ${esc(brl(-falta))} do que falta.</b>` : '<b style="color:#007a61">Quita o pedido.</b>'}`;
+        linhas.querySelectorAll('[data-rec-x]').forEach(b => { b.hidden = linhas.children.length < 2; });
+      };
+      linhas.addEventListener('input', atualizar); linhas.addEventListener('change', atualizar);
+      linhas.addEventListener('click', e => { const x = e.target.closest('[data-rec-x]'); if (x) { x.closest('.rec-linha').remove(); atualizar(); } });
+      f.querySelector('[data-rec-mais]').onclick = () => {
+        if (linhas.children.length >= 5) return;
+        const falta = Math.max(0, Math.round((aberto - total()) * 100) / 100);
+        linhas.insertAdjacentHTML('beforeend', linha(falta ? falta.toFixed(2) : '')); atualizar();
+      };
+      atualizar();
+      f.querySelector('[data-n]').onclick = fechar;
+      f.querySelector('[data-s]').onclick = e => ocupado(e.target, async () => {
+        const ps = partes();
+        if (ps.some(p => !p.forma_pagamento)) { toast('Escolha a forma de pagamento de cada valor.', true); return; }
+        if (ps.some(p => !(Number(p.valor) > 0))) { toast('Informe um valor maior que zero em cada forma.', true); return; }
+        try {
+          const r = await api('receber_na_retirada', { pedido_id: pedidoId, pagamentos: ps.map(p => ({ ...p, valor: Number(p.valor).toFixed(2) })), observacao: f.querySelector('[name=obs]').value });
+          fechar();
+          toast(Number(r.falta) > 0 ? `Pagamento registrado. Ainda falta ${brl(r.falta)}.` : 'Pagamento registrado. Agora é só marcar como entregue.');
+          recarregar();
+        } catch {}
+      });
+    } });
+}
 async function naoChegou(ids) {
   if (!confirm('Voltar estes itens para "Em produção"? Use quando o material não chegou no dia.')) return;
   await api('mudar_status_itens', { itens: ids.split(','), status: 'em_producao', nao_chegou: true });
   toast('Itens voltaram para Em produção.'); recarregar();
 }
-async function moverItensPedido(ids, status) { await api('mudar_status_itens', { itens: ids.split(','), status }); toast(`${nomeStatusItem(status)}.`); recarregar(); }
+async function moverItensPedido(ids, status) {
+  // "Chegou" vai para Expedição (entrega) ou direto para Aguardando retirada (retirada): a regra está no banco
+  try { await api('mudar_status_itens', { itens: ids.split(','), status }); toast(status === 'expedicao' ? 'Chegou no balcão.' : `${nomeStatusItem(status)}.`); } catch {}
+  recarregar();
+}
 

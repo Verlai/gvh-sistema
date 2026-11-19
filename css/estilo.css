@@ -383,3 +383,15 @@ body.com-tarefas .barra-acao{margin-right:58px}
 .tf-card.tf-recebidas{border-left-color:var(--azul)}
 .tf-de{font-weight:600;color:var(--azul)}
 #tarefas-painel .tf-nova select{max-width:110px}
+/* expedição em lista e barra de despachar (19/11) */
+.barra-acao[hidden]{display:none}
+.grupo-forn h3 .sel-forn{width:auto;margin:0 4px 0 0}
+.tab-exp td{vertical-align:top;padding:10px}
+.exp-it{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin:2px 0 6px}
+.exp-it .badge{font-size:11px;padding:2px 8px}
+.exp-acoes{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.exp-acoes .btn[disabled]{opacity:.45;cursor:not-allowed}
+.rec-linhas{display:grid;gap:8px}
+.rec-linha{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:center}
+.rec-linha .tf-x{opacity:1;font-size:20px}
+.rec-total{background:var(--linha-2);border-radius:8px;padding:8px 10px}
