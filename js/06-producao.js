@@ -34,7 +34,7 @@ rota('producao', async (_p, el) => {
         ${lista.sort((a, b) => (b.producao_atrasada - a.producao_atrasada) || String(a.prazo_producao).localeCompare(String(b.prazo_producao))).map(i => `<tr>
           ${despacha ? `<td><input type="checkbox" class="sel-desp" value="${i.id}" aria-label="Selecionar item"></td>` : ''}
           <td><a href="#/pedido/${i.pedido_id}"><b>${esc(i.pedido_numero)}</b></a><div class="small muted">${esc(i.cliente_nome)}</div></td>
-          <td>${esc(i.descricao)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
+          <td>${esc(i.descricao)}${linkArte(i)}${etqPag(i)}${seloDigital(i.digital)}${seloConferencia(i.conferencia, i.status)}<div class="small muted">${num(i.quantidade)} un</div><div data-arq-item="${i.id}"></div>${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}</td>
           <td>${esc(i.codigo_producao)}</td>
           <td class="num" style="${i.producao_atrasada ? 'color:var(--vermelho);font-weight:500' : ''}">${data(i.prazo_producao)}${i.producao_atrasada ? ' · atrasado' : ''}</td>
           <td class="num">${data(i.data_prevista_entrega)}</td>
@@ -465,7 +465,7 @@ rota('expedicao', async (_p, el) => {
     return `<div class="painel" style="padding:14px;margin:0 0 10px">
       <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
       <div>${esc(p.cliente)}</div>
-      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li style="margin-bottom:6px">${esc(i.descricao)} · ${num(i.quantidade)} un
+      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li style="margin-bottom:6px">${esc(i.descricao)} · ${num(i.quantidade)} un${linkArte(i)}
         ${acabPendente(i) ? `<div>${badge('Precisa de acabamento', 'b-azul')} ${esc(i.acabamento_por || '')}</div>
           ${pode ? `<button class="btn prim peq" style="margin-top:4px" onclick="moverItensPedido('${i.id}','em_producao')">Chegou · vai para acabamento</button>` : ''}` : ''}</li>`).join('')}</ul>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -481,7 +481,7 @@ rota('expedicao', async (_p, el) => {
       <div style="display:flex;justify-content:space-between;gap:8px"><a href="#/pedido/${p.id}"><b>${esc(p.numero)}</b></a>${badge(p.forma === 'entrega' ? 'Entrega' : 'Retirada', p.forma === 'entrega' ? 'b-azul' : 'b-cinza')}</div>
       <div>${esc(p.cliente)}</div>
       ${p.obs ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px">${esc(p.obs)}</div>` : ''}
-      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li>${esc(i.descricao)} · ${num(i.quantidade)} un</li>`).join('')}</ul>
+      <ul style="margin:8px 0;padding-left:18px" class="small">${its.map(i => `<li>${esc(i.descricao)} · ${num(i.quantidade)} un${linkArte(i)}</li>`).join('')}</ul>
       ${podeStatus(prox[0]) ? `<button class="btn ${prox[0] === 'entregue' ? 'prim' : ''} peq" onclick="moverItensPedido('${its.map(i => i.id).join(',')}','${prox[0]}')">${prox[1]}</button>` : ''}
     </div>`;
   };

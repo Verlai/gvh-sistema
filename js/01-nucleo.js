@@ -94,7 +94,7 @@ async function api(acao, dados = {}, silencioso = false, semBarra = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$|tarefas$|tarefa_salvar$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$|tarefas$|tarefa_salvar$|item_arte_previa$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -141,6 +141,64 @@ function confirmar(texto, rotulo = 'Confirmar', perigo = false, { html = false }
     m.el.querySelector('[data-n]').onclick = () => { m.fechar(); res(false); };
     m.el.querySelector('[data-s]').onclick = () => { m.fechar(); res(true); };
   });
+}
+
+/* ---------- "🖼 Ver arte": prova aprovada do item, de "Em produção" em diante (qualquer perfil) ---------- */
+// o banco diz se o item tem arte (tem_arte) e devolve o arquivo; o ID do Drive nunca sai do navegador
+const linkArte = i => i && i.tem_arte ? ` <a href="#" class="link-arte" data-ver-arte="${esc(i.id)}" title="Ver a arte aprovada">🖼 Ver arte</a>` : '';
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('[data-ver-arte]'); if (!a) return;
+  e.preventDefault(); e.stopPropagation(); verArteItem(a.dataset.verArte);
+});
+async function verArteItem(itemId) {
+  const m = abrirModal({ titulo: 'Arte do item', largo: true, corpo: '<div class="ver-arte"><p class="muted">Carregando a arte…</p></div>' });
+  const box = m.el.querySelector('.ver-arte');
+  try {
+    const provas = (await api('item_arte_previa', { item_id: itemId }, true)).provas || [];
+    if (!provas.length) { box.innerHTML = '<p class="muted">Este item não tem arte aprovada.</p>'; return; }
+    box.innerHTML = provas.map((p, k) => `<div class="va-modelo" data-va="${k}">
+        ${provas.length > 1 || p.modelo ? `<h3>${provas.length > 1 ? `Modelo ${k + 1} de ${provas.length}` : ''}${p.modelo ? (provas.length > 1 ? ' · ' : '') + esc(p.modelo) : ''}</h3>` : ''}
+        <div class="va-pags"><p class="muted small">Carregando…</p></div></div>`).join('');
+    for (const [k, p] of provas.entries()) {
+      const alvo = box.querySelector(`[data-va="${k}"] .va-pags`);
+      try {
+        const lados = p.formato === 'pdf' || !p.tem_verso ? ['frente'] : ['frente', 'verso'];
+        const imgs = [];
+        for (const lado of lados) {
+          const uri = (await api('item_arte_previa', { item_id: itemId, prova_id: p.id, lado }, true)).imagem || '';
+          if (/^data:application\/pdf/.test(uri)) imgs.push(...await paginasPdf(uri));
+          else if (/^data:image\//.test(uri)) imgs.push(uri);
+        }
+        alvo.innerHTML = imgs.length ? imgs.map((src, n) => `<figure><img src="${esc(src)}" alt="Arte, página ${n + 1}"><figcaption class="small muted">${imgs.length > 1 ? (n === 0 ? 'Frente' : n === 1 ? 'Verso' : 'Página ' + (n + 1)) : ''}</figcaption></figure>`).join('')
+          : '<p class="muted small">Não foi possível mostrar este arquivo.</p>';
+      } catch (er) { alvo.innerHTML = `<p class="alerta erro">${esc(er.message)}</p>`; }
+    }
+  } catch (er) { box.innerHTML = `<p class="alerta erro">${esc(er.message)}</p>`; }
+}
+// PDF (data URI) → uma imagem por página, com o leitor de PDF carregado só quando precisa
+let carregandoPdfJs = null;
+function carregarPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  return carregandoPdfJs || (carregandoPdfJs = new Promise((ok, falha) => {
+    const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; ok(); };
+    sc.onerror = () => { carregandoPdfJs = null; falha(new Error('Não foi possível abrir o leitor de PDF.')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function paginasPdf(uri) {
+  await carregarPdfJs();
+  const bin = atob(uri.slice(uri.indexOf(',') + 1)), dados = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) dados[i] = bin.charCodeAt(i);
+  const doc = await window.pdfjsLib.getDocument({ data: dados }).promise, pags = [];
+  for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
+    const pg = await doc.getPage(n), v0 = pg.getViewport({ scale: 1 });
+    const vp = pg.getViewport({ scale: 1400 / Math.max(v0.width, v0.height) });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    pags.push(c.toDataURL('image/jpeg', 0.88));
+  }
+  return pags;
 }
 
 /* ---------- status ---------- */
@@ -423,8 +481,9 @@ const TAREFA_TIPOS = {
   0: ['🔎 Código não achado', 'vermelho'], 1: ['🧾 Recusado/cancelado', 'vermelho'], 2: ['🚨 Prazo do cliente', 'vermelho'],
   10: ['⚠️ Site não lido', 'vermelho'], 3: ['⏱️ Prazo não bate', 'ambar'], 4: ['🔄 Prazo mudou', 'ambar'],
   5: ['📞 Cobrar fornecedor', 'ambar'], 8: ['📱 Confirmar', 'azul'], 6: ['📦 Pronto', 'verde'],
+  11: ['🚚 Buscar', 'verde'], 12: ['🏪 Chegam no balcão', 'azul'],
 };
-const TAREFA_PRIO = { 0: 0, 1: 1, 2: 2, 10: 3, 3: 4, 4: 5, 5: 6, 8: 7, 6: 8 };
+const TAREFA_PRIO = { 0: 0, 1: 1, 2: 2, 10: 3, 3: 4, 4: 5, 5: 6, 8: 7, 11: 8, 12: 9, 6: 10 };
 const prioTarefa = t => t.tipo === 'producao' ? (TAREFA_PRIO[t.k] ?? 9) : 10;
 const ddmm = v => v ? String(v).slice(8, 10) + '/' + String(v).slice(5, 7) : '—';
 const linkSeguro = u => /^https:\/\/[^\s"'<>]+$/.test(String(u || '')) ? u : '';
@@ -496,51 +555,63 @@ function desenharTarefas() {
   if (!TF.aberto) return;
 
   const visiveis = abertas.filter(t => !TF.soMinhas || !t.compartilhada || t.responsavel_id === meu);
-  const cartoes = [];
-  // um cartão por pedido (o mais urgente em cima); tarefas sem pedido e anotações vêm depois
-  const porPedido = new Map();
-  visiveis.filter(t => t.tipo === 'producao' && t.pedido_id).forEach(t => {
-    if (!porPedido.has(t.pedido_id)) porPedido.set(t.pedido_id, []);
-    porPedido.get(t.pedido_id).push(t);
+  // quantas tarefas cada pedido tem na lista: com mais de uma, a linha mostra também o item
+  const porPedido = {};
+  visiveis.forEach(t => { if (t.pedido_id) porPedido[t.pedido_id] = (porPedido[t.pedido_id] || 0) + 1; });
+  const ctx = { d, porPedido };
+  const blocos = [];
+  // 📌 fixadas: no topo, fora do grupo do tipo delas
+  const fixadas = visiveis.filter(t => t.fixada);
+  if (fixadas.length) blocos.push(`<div class="tf-card tf-fixadas"><div class="tf-card-cab"><span class="tf-ped">📌 Fixadas</span><span class="muted">${fixadas.length}</span></div>${fixadas.map(t => linhaTarefa(t, ctx, { comTipo: true })).join('')}</div>`);
+  // um grupo por tipo de alerta, do mais urgente para o menos; cada grupo abre a lista
+  const soltas = visiveis.filter(t => !t.fixada);
+  const tipos = [...new Set(soltas.filter(t => t.tipo === 'producao').map(t => t.k))].sort((a, b) => (TAREFA_PRIO[a] ?? 9) - (TAREFA_PRIO[b] ?? 9));
+  const grupos = tipos.map(k => [k, soltas.filter(t => t.tipo === 'producao' && t.k === k)
+    .sort((a, b) => String(a.dados?.numero || '').localeCompare(String(b.dados?.numero || ''), 'pt', { numeric: true }))]);
+  const umSo = grupos.length === 1;
+  grupos.forEach(([k, l]) => {
+    const tp = TAREFA_TIPOS[k] || ['Outros', 'cinza'];
+    blocos.push(blocoExp('tf-g-' + k,
+      `<span class="tf-tag tf-${tp[1]}">${esc(tp[0])}</span><span class="tf-qtd">${l.length}</span>`,
+      l.map(t => linhaTarefa(t, ctx)).join(''), umSo, 'tf-grupo tf-' + tp[1]));
   });
-  [...porPedido.values()]
-    .map(l => l.sort((a, b) => prioTarefa(a) - prioTarefa(b)))
-    .sort((a, b) => prioTarefa(a[0]) - prioTarefa(b[0]) || String(a[0].dados?.numero).localeCompare(String(b[0].dados?.numero), 'pt', { numeric: true }))
-    .forEach(l => {
-      const x = l[0].dados || {};
-      const variosItens = new Set(l.map(t => t.dados?.item || '')).size > 1;
-      cartoes.push(cartaoTarefas(
-        `<a class="tf-ped" href="#/pedido/${esc(l[0].pedido_id)}" data-tf-ir>#${esc(x.numero)}</a><span class="tf-cli">${esc(x.cliente || '')}</span>`,
-        l, d, variosItens, TAREFA_TIPOS[l[0].k]?.[1]));
-    });
-  const semPedido = visiveis.filter(t => t.tipo === 'producao' && !t.pedido_id);
-  if (semPedido.length) cartoes.push(cartaoTarefas('<span class="tf-ped">Fornecedores</span>', semPedido, d, false, 'vermelho'));
-  const notasProd = visiveis.filter(t => t.tipo === 'nota' && t.compartilhada);
-  if (notasProd.length) cartoes.push(cartaoTarefas('<span class="tf-ped">📝 Anotações da produção</span>', notasProd, d));
-  const pessoais = visiveis.filter(t => t.tipo === 'nota' && !t.compartilhada);
-  if (pessoais.length) cartoes.push(cartaoTarefas(`<span class="tf-ped">${d.producao ? '🔒 Só minhas' : '📝 Minhas anotações'}</span>`, pessoais, d));
-  if (!cartoes.length) cartoes.push(`<p class="tf-vazio">${TF.soMinhas ? 'Nada em aberto com você. 🎉' : 'Nada em aberto. 🎉'}</p>`);
-  if (feitas.length) cartoes.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`,
-    `<div class="tf-card tf-feitas">${feitas.map(t => linhaTarefa(t, d, true)).join('')}</div>`, false, 'leve'));
+  const notasComp = soltas.filter(t => t.tipo === 'nota' && t.compartilhada);
+  if (notasComp.length) blocos.push(blocoExp('tf-g-notas', `<span class="tf-tag">${d.producao ? '📝 Anotações da produção' : '📌 Enviadas para você'}</span><span class="tf-qtd">${notasComp.length}</span>`,
+    notasComp.map(t => linhaTarefa(t, ctx)).join(''), !d.producao || umSo, 'tf-grupo'));
+  const pessoais = soltas.filter(t => t.tipo === 'nota' && !t.compartilhada);
+  if (pessoais.length) blocos.push(`<div class="tf-card"><div class="tf-card-cab"><span class="tf-ped">${d.producao ? '🔒 Só minhas' : '📝 Minhas anotações'}</span></div>${pessoais.map(t => linhaTarefa(t, ctx)).join('')}</div>`);
+  if (!blocos.length) blocos.push(`<p class="tf-vazio">${TF.soMinhas ? 'Nada em aberto com você. 🎉' : 'Nada em aberto. 🎉'}</p>`);
+  if (feitas.length) blocos.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`,
+    `<div class="tf-card tf-feitas">${feitas.map(t => linhaTarefa(t, ctx, { comTipo: true })).join('')}</div>`, false, 'leve'));
 
   const lista = p.querySelector('.tf-lista');
-  lista.innerHTML = cartoes.join('');
+  lista.innerHTML = blocos.join('');
   ligarTarefas(lista);
 }
-function cartaoTarefas(cab, lista, d, variosItens, cor) {
-  return `<div class="tf-card ${cor ? 'tf-' + cor : ''}"><div class="tf-card-cab">${cab}</div>${lista.map(t => linhaTarefa(t, d, false, variosItens)).join('')}</div>`;
-}
-function linhaTarefa(t, d, comPedido, comItem) {
-  const x = t.dados || {}, feita = !!t.feita_em, tp = TAREFA_TIPOS[t.k];
-  const etiqueta = t.tipo === 'producao' && tp ? `<span class="tf-tag tf-${tp[1]}">${esc(tp[0])}</span>` : '';
+// uma linha de tarefa: o número do pedido vem primeiro; comTipo = mostra a etiqueta do tipo (fixadas e feitas)
+function linhaTarefa(t, ctx, op = {}) {
+  const d = ctx.d, x = t.dados || {}, feita = !!t.feita_em, tp = TAREFA_TIPOS[t.k];
+  const etiqueta = op.comTipo && t.tipo === 'producao' && tp ? `<span class="tf-tag tf-${tp[1]}">${esc(tp[0])}</span>` : '';
+  const pedido = t.pedido_id ? `<a class="tf-ped" href="#/pedido/${esc(t.pedido_id)}" data-tf-ir>#${esc(x.numero)}</a><span class="tf-cli">${esc(x.cliente || '')}</span>` : '';
   const resp = t.compartilhada && !feita && d.producao
     ? `<select class="tf-pill" data-tf-resp="${esc(t.id)}" aria-label="Responsável" title="Responsável">${(d.responsaveis || []).map(r =>
         `<option value="${esc(r.id)}" ${r.id === t.responsavel_id ? 'selected' : ''}>${esc(String(r.nome).split(' ')[0])}</option>`).join('')}</select>`
-    : (t.compartilhada && t.responsavel ? `<span class="tf-pill fixa">${esc(String(t.responsavel).split(' ')[0])}</span>` : '');
+    : (t.compartilhada && t.responsavel && d.producao ? `<span class="tf-pill fixa">${esc(String(t.responsavel).split(' ')[0])}</span>` : '');
+  const fixar = !feita ? `<button type="button" class="tf-pin ${t.fixada ? 'ativo' : ''}" data-tf-pin="${esc(t.id)}" aria-label="${t.fixada ? 'Desafixar' : 'Fixar no topo'}" title="${t.fixada ? 'Desafixar' : 'Fixar no topo'}">📌</button>` : '';
   const linhas = [];
-  if (comPedido && t.pedido_id) linhas.push(`<a href="#/pedido/${esc(t.pedido_id)}" data-tf-ir>#${esc(x.numero)}</a> ${esc(x.cliente || '')}`);
-  if (comItem && x.item) linhas.push(`<span class="tf-item-nome">${esc(x.item)}</span>`);
-  if (t.tipo === 'producao' && t.k !== 10) {
+  if (t.pedido_id && x.item && (ctx.porPedido[t.pedido_id] > 1 || op.comTipo)) linhas.push(`<span class="tf-item-nome">${esc(x.item)}</span>`);
+  if (t.k === 11 || t.k === 12) {
+    // logística: a lista dos pedidos (nosso número, item, fornecedor e o número do pedido no fornecedor)
+    const ps = Array.isArray(x.pedidos) ? x.pedidos : [];
+    const itens = ps.map(q => {
+      const lk = linkSeguro(q.link);
+      const forn = lk ? `<a href="${esc(lk)}" target="_blank" rel="noopener noreferrer">${esc(q.forn || '')} ↗</a>` : esc(q.forn || '');
+      return `<div class="tf-sub"><a class="tf-ped" href="#/pedido/${esc(q.pedido_id)}" data-tf-ir>#${esc(q.numero)}</a> <span class="tf-cli">${esc(q.cliente || '')}</span>`
+        + `<br><span class="tf-item-nome">${esc(q.item || '')}</span><br>${forn}${q.codigo ? ` <span class="tf-cod">${esc(q.codigo)}</span>` : ''}</div>`;
+    });
+    if (itens.length) linhas.push(blocoExp('tf-l-' + t.id, `Ver ${itens.length} ${itens.length === 1 ? 'item' : 'itens'}`, itens.join(''), itens.length <= 2, 'leve'));
+    if (t.k === 11 && linkSeguro(x.link)) linhas.push(`<a href="${esc(linkSeguro(x.link))}" target="_blank" rel="noopener noreferrer">Abrir o site da ${esc(x.forn || 'fornecedora')} ↗</a>`);
+  } else if (t.tipo === 'producao' && t.k !== 10) {
     const lk = linkSeguro(x.link);
     const forn = lk ? `<a href="${esc(lk)}" target="_blank" rel="noopener noreferrer" title="Abrir no site do fornecedor">${esc(x.forn || 'Fornecedor')} ↗</a>` : esc(x.forn || '—');
     linhas.push(`${forn}${x.codigo ? ` <span class="tf-cod">${esc(x.codigo)}</span>` : ''}`
@@ -552,11 +623,12 @@ function linhaTarefa(t, d, comPedido, comItem) {
   }
   const info = feita
     ? `<button type="button" class="tf-info" data-tf-info="${esc(t.id)}" aria-label="Por que foi finalizada" title="Informação">i</button>` : '';
-  const apagar = t.tipo === 'nota' && !feita
+  const apagar = t.tipo === 'nota' && !feita && (!t.compartilhada || d.producao)
     ? `<button type="button" class="tf-x" data-tf-x="${esc(t.id)}" aria-label="Excluir anotação" title="Excluir">×</button>` : '';
+  const topo = etiqueta || pedido || resp || fixar;
   return `<div class="tf-item ${feita ? 'feita' : ''}" data-tf="${esc(t.id)}">
       <input type="checkbox" data-tf-ok="${esc(t.id)}" ${feita ? 'checked' : ''} ${feita && t.feita_sistema ? 'disabled' : ''} aria-label="Feito">
-      <div class="tf-corpo">${etiqueta || resp ? `<div class="tf-topo">${etiqueta}${resp}</div>` : ''}
+      <div class="tf-corpo">${topo ? `<div class="tf-topo">${etiqueta}${pedido}<span class="tf-acoes">${resp}${fixar}</span></div>` : ''}
         <div class="tf-txt">${esc(t.texto)}</div>${linhas.length ? `<div class="tf-det">${linhas.join('<br>')}</div>` : ''}
         <div class="tf-motivo" hidden></div></div>${info}${apagar}</div>`;
 }
@@ -571,6 +643,11 @@ function ligarTarefas(el) {
   el.querySelectorAll('[data-tf-resp]').forEach(s => s.onchange = async () => {
     try { await api('tarefa_salvar', { id: s.dataset.tfResp, responsavel_id: s.value }); }
     finally { carregarTarefas(); }
+  });
+  el.querySelectorAll('[data-tf-pin]').forEach(bt => bt.onclick = async () => {
+    const t = TF.mapa[bt.dataset.tfPin]; if (!t) return;
+    bt.disabled = true;
+    try { await api('tarefa_salvar', { id: t.id, fixar: !t.fixada }); } finally { carregarTarefas(); }
   });
   el.querySelectorAll('[data-tf-x]').forEach(bt => bt.onclick = async () => {
     if (!await confirmar('Excluir esta anotação?', 'Excluir', true)) return;

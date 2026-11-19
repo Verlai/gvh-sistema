@@ -322,6 +322,28 @@ a.tf-ped:hover{color:var(--verde)}
 .tf-x:hover{color:var(--vermelho)}
 @media (hover:none){ .tf-x{opacity:1} }
 .tf-lista>details.exp{margin:4px 2px 0}
+/* grupos por tipo de alerta (um por tipo, abrem a lista) e área de fixadas */
+.tf-lista>details.tf-grupo{margin:0;background:#fff;border-radius:12px;box-shadow:0 1px 2px rgba(29,38,45,.06);border-left:3px solid var(--linha)}
+.tf-lista>details.tf-grupo.tf-vermelho{border-left-color:var(--vermelho)}
+.tf-lista>details.tf-grupo.tf-ambar{border-left-color:var(--ambar)}
+.tf-lista>details.tf-grupo.tf-azul{border-left-color:var(--azul)}
+.tf-lista>details.tf-grupo.tf-verde{border-left-color:var(--verde)}
+.tf-lista>details.tf-grupo>summary{padding:10px 12px;border-radius:12px;gap:8px}
+.tf-lista>details.tf-grupo>summary:hover{background:#fafbfb}
+.tf-lista>details.tf-grupo>.exp-corpo{padding:0 12px 4px}
+.tf-lista>details.tf-grupo>.exp-corpo>.tf-item:first-child{border-top:1px solid var(--linha-2)}
+.tf-grupo .tf-tag{font-size:12px;padding:2px 9px}
+.tf-qtd{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--linha-2);color:var(--grafite);font-size:11px;font-weight:600;display:inline-grid;place-content:center}
+.tf-card.tf-fixadas{border-left-color:var(--verde-2)}
+.tf-topo{flex-wrap:wrap}
+.tf-topo .tf-ped{font-size:13px}
+.tf-topo .tf-cli{font-size:12px}
+.tf-acoes{margin-left:auto;display:inline-flex;align-items:center;gap:2px}
+#tarefas-painel .tf-acoes .tf-pill{margin-left:0}
+.tf-pin{border:0;background:none;padding:0 3px;font-size:12px;line-height:1;cursor:pointer;opacity:.25;filter:grayscale(1);transition:opacity .15s}
+.tf-item:hover .tf-pin,.tf-pin:focus{opacity:.7}
+.tf-pin.ativo{opacity:1;filter:none}
+@media (hover:none){ .tf-pin{opacity:.6} }
 .tf-feitas{margin-top:6px}
 body.com-tarefas #toasts{bottom:76px}
 @media (min-width:760px){ body.tf-aberto #toasts{right:396px} }
@@ -342,3 +364,15 @@ body.com-tarefas .barra-acao{margin-right:58px}
 @media (max-width:560px){ .g2,.g3,.g4{grid-template-columns:1fr} .trilho-grande small{display:none} }
 @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
 @media print{ .lateral,.topo .acoes,.btn,.barra-acao,#tarefas-bolha,#tarefas-painel{display:none!important} #app{display:block} body{background:#fff} .painel{border:0;padding:0} }
+.tf-sub{padding:6px 0;border-top:1px dashed var(--linha-2);font-size:12px;line-height:1.5}
+.tf-sub:first-child{border-top:0}
+.tf-det details.exp.leve>summary{font-size:12px}
+/* "🖼 Ver arte" (19/11) */
+.link-arte{font-size:12px;font-weight:500;color:var(--azul);text-decoration:none;white-space:nowrap;margin-left:4px}
+.link-arte:hover{text-decoration:underline}
+.ver-arte{display:grid;gap:18px}
+.va-modelo h3{margin:0 0 8px;font-size:14px}
+.va-pags{display:flex;flex-wrap:wrap;gap:12px}
+.va-pags figure{margin:0;flex:1 1 260px;max-width:100%}
+.va-pags img{display:block;max-width:100%;max-height:70vh;margin:0 auto;border:1px solid var(--linha);border-radius:8px;background:#fff}
+.va-pags figcaption{text-align:center;margin-top:4px}

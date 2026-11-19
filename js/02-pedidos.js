@@ -152,7 +152,7 @@ rota('pedido', async (id, el) => {
         <tbody>${p.itens.map(i => `
           <tr>
             <td><input type="checkbox" class="sel-item" value="${i.id}" ${i.status === 'cancelado' ? 'disabled' : ''} aria-label="Selecionar item"></td>
-            <td><b>${esc(i.descricao)}</b><div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · <span title="' + esc(i.categoria_nome) + '">' + esc(catCurta(i.categoria_nome)) + '</span>' : ''}</div>
+            <td><b>${esc(i.descricao)}</b>${linkArte(i)}<div class="small muted">${num(i.quantidade)} un${i.especificacao ? ' · ' + esc(i.especificacao) : ''}${i.categoria_nome ? ' · <span title="' + esc(i.categoria_nome) + '">' + esc(catCurta(i.categoria_nome)) + '</span>' : ''}</div>
                 ${i.observacao ? `<div class="small" style="margin-top:4px"><span class="muted">Obs. interna:</span> ${esc(i.observacao)}</div>` : ''}${infoAcabamento(i)}
                 ${i.status === 'cancelado' && i.cancel_motivo ? `<div class="small" style="margin-top:4px;color:var(--vermelho)">Cancelado: ${esc(i.cancel_motivo)}</div>` : ''}
                 ${i.cancel_solicitado_em && i.status !== 'cancelado' ? `<div class="alerta small" style="margin-top:6px;padding:6px 10px"><b>Pedido de cancelamento</b> por ${esc(i.cancel_solicitado_por_nome || '')}: ${esc(i.cancel_motivo || '')}
