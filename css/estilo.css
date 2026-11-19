@@ -376,3 +376,10 @@ body.com-tarefas .barra-acao{margin-right:58px}
 .va-pags figure{margin:0;flex:1 1 260px;max-width:100%}
 .va-pags img{display:block;max-width:100%;max-height:70vh;margin:0 auto;border:1px solid var(--linha);border-radius:8px;background:#fff}
 .va-pags figcaption{text-align:center;margin-top:4px}
+/* tarefas enviadas entre pessoas (19/11) */
+.tf-env{border:0;background:none;padding:0 3px;font-size:12px;line-height:1;cursor:pointer;color:var(--azul);opacity:.45;transition:opacity .15s}
+.tf-item:hover .tf-env,.tf-env:focus{opacity:1}
+@media (hover:none){ .tf-env{opacity:.8} }
+.tf-card.tf-recebidas{border-left-color:var(--azul)}
+.tf-de{font-weight:600;color:var(--azul)}
+#tarefas-painel .tf-nova select{max-width:110px}

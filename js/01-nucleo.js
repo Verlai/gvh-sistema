@@ -501,7 +501,7 @@ function iniciarBalaoTarefas() {
         <div class="tf-filtro" hidden role="group" aria-label="Filtro"><button type="button" data-tf-f="0" class="ativo">Todas</button><button type="button" data-tf-f="1">Minhas</button></div>
         <button type="button" class="tf-fechar" aria-label="Fechar">×</button></div>
       <form class="tf-nova"><input name="texto" maxlength="500" placeholder="Nova anotação…" autocomplete="off">
-        <select name="compartilhada" hidden aria-label="Quem vê"><option value="1">Produção</option><option value="0">Só eu</option></select>
+        <select name="para" aria-label="Para quem"><option value="eu">Só eu</option></select>
         <button type="submit" aria-label="Adicionar">+</button></form>
       <div class="tf-lista"></div>`;
     p.querySelector('.tf-fechar').onclick = () => abrirPainelTarefas(false);
@@ -520,7 +520,7 @@ function iniciarBalaoTarefas() {
 function removerBalaoTarefas() {
   ['#tarefas-bolha', '#tarefas-painel'].forEach(s => { const e = $(s, document); if (e) e.remove(); });
   document.body.classList.remove('com-tarefas', 'tf-aberto');
-  Object.assign(TF, { dados: null, aberto: false, soMinhas: false, mapa: {} });
+  Object.assign(TF, { dados: null, aberto: false, soMinhas: false, mapa: {}, para: null });
 }
 function abrirPainelTarefas(abrir) {
   const p = $('#tarefas-painel', document); if (!p) return;
@@ -549,7 +549,12 @@ function desenharTarefas() {
   const i = b.querySelector('i'); i.hidden = !n; i.textContent = n > 99 ? '99+' : n;
   b.classList.toggle('urgente', minhas.some(t => [0, 1, 2, 10].includes(t.k)));
   b.title = n ? `${n} tarefa${n > 1 ? 's' : ''} em aberto` : 'Tarefas';
-  p.querySelector('.tf-nova select').hidden = !d.producao;
+  // "Para:": só eu, a lista da produção (quem vê a produção) ou qualquer pessoa (a tarefa passa para ela)
+  const sel = p.querySelector('.tf-nova select'), atual = TF.para;   // só o que a pessoa escolheu fica guardado
+  sel.onchange = () => { TF.para = sel.value; };
+  sel.innerHTML = `<option value="eu">Só eu</option>${d.producao ? '<option value="producao">Produção</option>' : ''}`
+    + ((d.pessoas || []).length ? `<optgroup label="Enviar para">${d.pessoas.map(u => `<option value="${esc(u.id)}">${esc(String(u.nome).split(' ')[0])}</option>`).join('')}</optgroup>` : '');
+  sel.value = [...sel.options].some(o => o.value === atual) ? atual : (d.producao ? 'producao' : 'eu');
   p.querySelector('.tf-filtro').hidden = !d.producao;
   p.querySelector('.tf-nova').classList.toggle('com-sel', !!d.producao);
   if (!TF.aberto) return;
@@ -578,7 +583,9 @@ function desenharTarefas() {
   const notasComp = soltas.filter(t => t.tipo === 'nota' && t.compartilhada);
   if (notasComp.length) blocos.push(blocoExp('tf-g-notas', `<span class="tf-tag">${d.producao ? '📝 Anotações da produção' : '📌 Enviadas para você'}</span><span class="tf-qtd">${notasComp.length}</span>`,
     notasComp.map(t => linhaTarefa(t, ctx)).join(''), !d.producao || umSo, 'tf-grupo'));
-  const pessoais = soltas.filter(t => t.tipo === 'nota' && !t.compartilhada);
+  const recebidas = soltas.filter(t => t.tipo === 'nota' && !t.compartilhada && t.enviada_por);
+  if (recebidas.length) blocos.push(`<div class="tf-card tf-recebidas"><div class="tf-card-cab"><span class="tf-ped">📥 Recebidas</span><span class="muted">${recebidas.length}</span></div>${recebidas.map(t => linhaTarefa(t, ctx)).join('')}</div>`);
+  const pessoais = soltas.filter(t => t.tipo === 'nota' && !t.compartilhada && !t.enviada_por);
   if (pessoais.length) blocos.push(`<div class="tf-card"><div class="tf-card-cab"><span class="tf-ped">${d.producao ? '🔒 Só minhas' : '📝 Minhas anotações'}</span></div>${pessoais.map(t => linhaTarefa(t, ctx)).join('')}</div>`);
   if (!blocos.length) blocos.push(`<p class="tf-vazio">${TF.soMinhas ? 'Nada em aberto com você. 🎉' : 'Nada em aberto. 🎉'}</p>`);
   if (feitas.length) blocos.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`,
@@ -620,15 +627,19 @@ function linhaTarefa(t, ctx, op = {}) {
     linhas.push(`<a href="${esc(linkSeguro(x.link))}" target="_blank" rel="noopener noreferrer">Abrir o site da ${esc(x.forn || 'fornecedora')} ↗</a>`);
   } else if (t.tipo === 'nota' && t.compartilhada && t.autor) {
     linhas.push(`Anotado por ${esc(t.autor)}`);
+  } else if (t.tipo === 'nota' && !t.compartilhada && t.enviada_por) {
+    linhas.push(`<span class="tf-de">De: ${esc(t.enviada_por)}</span> · ${esc(dataHora(t.enviada_em))}`);
   }
+  const enviar = t.tipo === 'nota' && !t.compartilhada && !feita && (d.pessoas || []).length
+    ? `<button type="button" class="tf-env" data-tf-env="${esc(t.id)}" aria-label="Enviar para outra pessoa" title="Enviar para outra pessoa">➤</button>` : '';
   const info = feita
     ? `<button type="button" class="tf-info" data-tf-info="${esc(t.id)}" aria-label="Por que foi finalizada" title="Informação">i</button>` : '';
   const apagar = t.tipo === 'nota' && !feita && (!t.compartilhada || d.producao)
     ? `<button type="button" class="tf-x" data-tf-x="${esc(t.id)}" aria-label="Excluir anotação" title="Excluir">×</button>` : '';
-  const topo = etiqueta || pedido || resp || fixar;
+  const topo = etiqueta || pedido || resp || fixar || enviar;
   return `<div class="tf-item ${feita ? 'feita' : ''}" data-tf="${esc(t.id)}">
       <input type="checkbox" data-tf-ok="${esc(t.id)}" ${feita ? 'checked' : ''} ${feita && t.feita_sistema ? 'disabled' : ''} aria-label="Feito">
-      <div class="tf-corpo">${topo ? `<div class="tf-topo">${etiqueta}${pedido}<span class="tf-acoes">${resp}${fixar}</span></div>` : ''}
+      <div class="tf-corpo">${topo ? `<div class="tf-topo">${etiqueta}${pedido}<span class="tf-acoes">${resp}${enviar}${fixar}</span></div>` : ''}
         <div class="tf-txt">${esc(t.texto)}</div>${linhas.length ? `<div class="tf-det">${linhas.join('<br>')}</div>` : ''}
         <div class="tf-motivo" hidden></div></div>${info}${apagar}</div>`;
 }
@@ -649,6 +660,25 @@ function ligarTarefas(el) {
     bt.disabled = true;
     try { await api('tarefa_salvar', { id: t.id, fixar: !t.fixada }); } finally { carregarTarefas(); }
   });
+  el.querySelectorAll('[data-tf-env]').forEach(bt => bt.onclick = () => {
+    const t = TF.mapa[bt.dataset.tfEnv], pessoas = (TF.dados && TF.dados.pessoas) || [];
+    if (!t || !pessoas.length) return;
+    abrirModal({ titulo: 'Enviar tarefa',
+      corpo: `<p style="margin:0" class="small muted">A tarefa sai da sua lista e fica só com quem receber.</p>
+        <div class="small" style="background:var(--linha-2);border-radius:8px;padding:8px 10px">${esc(t.texto)}</div>
+        <label class="campo">Para<select name="para">${pessoas.map(u => `<option value="${esc(u.id)}">${esc(u.nome)}</option>`).join('')}</select></label>`,
+      rodape: '<button class="btn" data-n>Voltar</button><button class="btn prim" data-s>Enviar</button>',
+      aoAbrir: (f, fechar) => {
+        f.querySelector('[data-n]').onclick = fechar;
+        f.querySelector('[data-s]').onclick = async e => {
+          const s = f.querySelector('select');
+          await ocupado(e.target, async () => {
+            try { await api('tarefa_salvar', { id: t.id, enviar_para: s.value }); toast('Tarefa enviada para ' + s.selectedOptions[0].textContent + '.'); fechar(); } catch {}
+          });
+          carregarTarefas();
+        };
+      } });
+  });
   el.querySelectorAll('[data-tf-x]').forEach(bt => bt.onclick = async () => {
     if (!await confirmar('Excluir esta anotação?', 'Excluir', true)) return;
     try { await api('tarefa_salvar', { id: bt.dataset.tfX, excluir: true }); } finally { carregarTarefas(); }
@@ -668,7 +698,9 @@ async function salvarNovaTarefa(e) {
   const btn = f.querySelector('button');
   await ocupado(btn, async () => {
     try {
-      await api('tarefa_salvar', { texto, compartilhada: !!(TF.dados && TF.dados.producao) && f.querySelector('select').value === '1' });
+      const para = f.querySelector('select').value || 'eu';
+      await api('tarefa_salvar', { texto, para });
+      if (/^[0-9a-f-]{36}$/.test(para)) { toast('Tarefa enviada para ' + (f.querySelector('select').selectedOptions[0]?.textContent || 'a pessoa') + '.'); TF.para = null; }
       inp.value = '';
     } catch {}
   });
