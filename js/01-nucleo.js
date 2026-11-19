@@ -92,7 +92,7 @@ async function api(acao, dados = {}, silencioso = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$|tarefas$|tarefa_salvar$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);
@@ -194,6 +194,7 @@ function sairLocal() {
   $('#app').classList.add('hidden'); $('#tela-login').classList.remove('hidden');
   $('#modais', document).innerHTML = '';
   VISTAS.forEach(v => v.el.remove()); VISTAS.clear(); S.vistaAtual = null;
+  removerBalaoTarefas();
 }
 async function carregarBase() { S.base = (await api('base')); atualizarListaSugestoes(); }
 // V2: lista de produtos sugeridos usada pelo campo Produto (datalist do navegador)
@@ -224,6 +225,7 @@ async function iniciarApp() {
   $('#u-perfil').textContent = S.perm.nome || S.usuario.perfil;
   montarMenu();
   iniciarAtualizacaoAutomatica();
+  iniciarBalaoTarefas();
   const inicial = S.perm.so_painel_arte ? '#/minhas-artes' : '#/inicio';
   if (!location.hash || (S.perm.so_painel_arte && !/^#\/(minhas-artes|artes-feitas|meus-pagamentos|arte-pedido|gabaritos)/.test(location.hash))) location.hash = inicial;
   else rotear();
@@ -390,7 +392,16 @@ function iniciarAtualizacaoAutomatica() {
   if (!canalRealtime && window.supabase) {
     try {
       const cli = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-      const aviso = () => { clearTimeout(timerRealtime); timerRealtime = setTimeout(() => { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); }, 800); };
+      // mudança só nas tarefas atualiza só o balão (as telas não mudam)
+      let soTarefas = true;
+      const aviso = m => {
+        if ((m && m.payload && m.payload.tabela) !== 'tarefas') soTarefas = false;
+        clearTimeout(timerRealtime);
+        timerRealtime = setTimeout(() => {
+          if (!soTarefas) { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); }
+          soTarefas = true; carregarTarefas();
+        }, 800);
+      };
       canalRealtime = cli.channel('gvh-mudancas', { config: { private: true } })
         .on('broadcast', { event: 'INSERT' }, aviso)
         .on('broadcast', { event: 'UPDATE' }, aviso)
@@ -399,5 +410,157 @@ function iniciarAtualizacaoAutomatica() {
     } catch (e) { console.warn('Realtime indisponível', e); }
   }
   clearInterval(timerSeguranca);
-  timerSeguranca = setInterval(() => { if (document.visibilityState === 'visible') { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); } }, INTERVALO_SEGURANCA_MS);
+  timerSeguranca = setInterval(() => { if (document.visibilityState === 'visible') { marcarTelasDesatualizadas(); tentarAtualizarTelaAtual(); carregarTarefas(); } }, INTERVALO_SEGURANCA_MS);
+}
+
+/* ---------- balão de tarefas (canto inferior direito, em todas as telas) ----------
+   JC e Fátima (config_sistema.tarefas_producao_usuarios): alertas da produção (mesma regra do e-mail, fn_producao_alertas)
+   + anotações da produção, com responsável. Os outros: só anotações pessoais. Regras e permissão ficam no banco. */
+const TAREFA_SECOES = {
+  0: ['🔎 Código não achado no site', 'vermelho'], 1: ['🧾 Recusado ou cancelado no fornecedor', 'vermelho'],
+  2: ['🚨 Prazo do cliente hoje ou vencido', 'vermelho'], 10: ['⚠️ Site do fornecedor não lido', 'vermelho'],
+  3: ['⏱️ Prazo do fornecedor não bate', 'ambar'], 4: ['🔄 Prazo mudou no fornecedor', 'ambar'],
+  5: ['📞 Cobrar fornecedor', 'ambar'], 8: ['📱 Confirmar com o fornecedor', 'azul'], 6: ['📦 Pronto no fornecedor', 'verde'],
+};
+const TAREFA_ORDEM = [0, 1, 2, 10, 3, 4, 5, 8, 6];
+const TF = { dados: null, aberto: false, soMinhas: false, mapa: {}, carregando: false, deNovo: false };
+
+function iniciarBalaoTarefas() {
+  if (!$('#tarefas-bolha', document)) {
+    const b = document.createElement('button');
+    b.id = 'tarefas-bolha'; b.type = 'button'; b.setAttribute('aria-label', 'Tarefas');
+    b.innerHTML = `<span aria-hidden="true">✓</span><i hidden></i>`;
+    b.onclick = () => abrirPainelTarefas(!TF.aberto);
+    const p = document.createElement('div');
+    p.id = 'tarefas-painel'; p.hidden = true; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Tarefas');
+    p.innerHTML = `<div class="tf-cab"><b>Tarefas</b><button type="button" class="fechar" aria-label="Fechar">×</button></div>
+      <form class="tf-nova"><input name="texto" maxlength="500" placeholder="Nova anotação…" autocomplete="off">
+        <select name="compartilhada" hidden><option value="1">Produção</option><option value="0">Só eu</option></select>
+        <button class="btn peq prim" type="submit">Adicionar</button></form>
+      <label class="tf-filtro small" hidden><input type="checkbox"> Só as minhas</label>
+      <div class="tf-lista"></div>`;
+    p.querySelector('.fechar').onclick = () => abrirPainelTarefas(false);
+    p.querySelector('.tf-nova').onsubmit = salvarNovaTarefa;
+    p.querySelector('.tf-filtro input').onchange = e => { TF.soMinhas = e.target.checked; desenharTarefas(); };
+    p.addEventListener('keydown', e => { if (e.key === 'Escape') abrirPainelTarefas(false); });
+    document.body.append(b, p);
+    document.body.classList.add('com-tarefas');
+  }
+  carregarTarefas();
+}
+function removerBalaoTarefas() {
+  ['#tarefas-bolha', '#tarefas-painel'].forEach(s => { const e = $(s, document); if (e) e.remove(); });
+  document.body.classList.remove('com-tarefas', 'tf-aberto');
+  Object.assign(TF, { dados: null, aberto: false, soMinhas: false, mapa: {} });
+}
+function abrirPainelTarefas(abrir) {
+  const p = $('#tarefas-painel', document); if (!p) return;
+  TF.aberto = abrir; p.hidden = !abrir; document.body.classList.toggle('tf-aberto', abrir);
+  if (abrir) { desenharTarefas(); carregarTarefas(); p.querySelector('.tf-nova input').focus(); }
+}
+async function carregarTarefas() {
+  if (!S.token || !$('#tarefas-bolha', document)) return;
+  if (TF.carregando) { TF.deNovo = true; return; }
+  TF.carregando = true;
+  try {
+    do { TF.deNovo = false; TF.dados = await api('tarefas', {}, true); desenharTarefas(); } while (TF.deNovo);
+  } catch (e) { console.warn('Tarefas indisponíveis', e); }
+  finally { TF.carregando = false; }
+}
+function desenharTarefas() {
+  const b = $('#tarefas-bolha', document), p = $('#tarefas-painel', document), d = TF.dados;
+  if (!b || !p || !d) return;
+  const meu = S.usuario && S.usuario.id;
+  const todas = d.tarefas || [];
+  TF.mapa = Object.fromEntries(todas.map(t => [t.id, t]));
+  const abertas = todas.filter(t => !t.feita_em), feitas = todas.filter(t => t.feita_em);
+  // número no balão: o que está aberto e é da pessoa (alertas e anotações da produção com ela de responsável + as pessoais)
+  const minhas = abertas.filter(t => !t.compartilhada || t.responsavel_id === meu);
+  const n = d.producao ? minhas.length : abertas.length;
+  const i = b.querySelector('i'); i.hidden = !n; i.textContent = n > 99 ? '99+' : n;
+  b.classList.toggle('urgente', minhas.some(t => [0, 1, 2, 10].includes(t.k)));
+  b.title = n ? `${n} tarefa${n > 1 ? 's' : ''} em aberto` : 'Tarefas';
+  p.querySelector('.tf-nova select').hidden = !d.producao;
+  p.querySelector('.tf-filtro').hidden = !d.producao;
+  if (!TF.aberto) return;
+
+  const visiveis = abertas.filter(t => !TF.soMinhas || !t.compartilhada || t.responsavel_id === meu);
+  const blocos = [];
+  TAREFA_ORDEM.forEach(k => {
+    const l = visiveis.filter(t => t.tipo === 'producao' && t.k === k);
+    if (l.length) blocos.push(secaoTarefas(TAREFA_SECOES[k][0], TAREFA_SECOES[k][1], l, d));
+  });
+  const notasProd = visiveis.filter(t => t.tipo === 'nota' && t.compartilhada);
+  if (notasProd.length) blocos.push(secaoTarefas('📝 Anotações da produção', 'cinza', notasProd, d));
+  const pessoais = visiveis.filter(t => t.tipo === 'nota' && !t.compartilhada);
+  if (pessoais.length) blocos.push(secaoTarefas(d.producao ? '🔒 Só minhas' : '📝 Minhas anotações', 'cinza', pessoais, d));
+  if (!blocos.length) blocos.push(`<p class="small muted tf-vazio">${TF.soMinhas ? 'Nada em aberto com você.' : 'Nada em aberto.'}</p>`);
+  if (feitas.length) blocos.push(blocoExp('tarefas-feitas', `Feitas hoje (${feitas.length})`, feitas.map(t => linhaTarefa(t, d)).join(''), false, 'leve'));
+
+  const lista = p.querySelector('.tf-lista');
+  lista.innerHTML = blocos.join('');
+  ligarTarefas(lista);
+}
+function secaoTarefas(titulo, cor, lista, d) {
+  return `<div class="tf-secao tf-${cor}"><div class="tf-titulo">${esc(titulo)} <span class="muted">${lista.length}</span></div>${lista.map(t => linhaTarefa(t, d)).join('')}</div>`;
+}
+function linhaTarefa(t, d) {
+  const x = t.dados || {}, feita = !!t.feita_em;
+  let det = '';
+  if (t.tipo === 'producao' && t.k !== 10) {
+    det = `<div class="tf-det small"><a href="#/pedido/${esc(t.pedido_id)}" data-tf-ir>#${esc(x.numero)}</a> ${esc(x.cliente || '')}`
+      + ` · ${esc(x.forn || '—')}${x.codigo ? ' ' + esc(x.codigo) : ''}`
+      + `<br>Forn.: ${esc(data(x.prev))}${x.prev && !x.prev_site ? ' <span class="muted">(anotado)</span>' : ''} · Cliente: ${esc(data(x.cli))}</div>`;
+  } else if (t.tipo === 'nota' && t.compartilhada && t.autor) {
+    det = `<div class="tf-det small muted">Anotado por ${esc(t.autor)}</div>`;
+  }
+  const resp = t.compartilhada && !feita && d.producao
+    ? `<select class="tf-resp" data-tf-resp="${esc(t.id)}" aria-label="Responsável">${(d.responsaveis || []).map(r =>
+        `<option value="${esc(r.id)}" ${r.id === t.responsavel_id ? 'selected' : ''}>${esc(r.nome)}</option>`).join('')}</select>`
+    : (t.compartilhada && t.responsavel ? `<span class="tf-resp-txt small muted">${esc(t.responsavel)}</span>` : '');
+  const info = feita
+    ? `<button type="button" class="tf-info" data-tf-info="${esc(t.id)}" aria-label="Por que foi finalizada" title="Informação">i</button>` : '';
+  const apagar = t.tipo === 'nota' && !feita
+    ? `<button type="button" class="tf-x" data-tf-x="${esc(t.id)}" aria-label="Excluir anotação" title="Excluir">×</button>` : '';
+  return `<div class="tf-item ${feita ? 'feita' : ''}" data-tf="${esc(t.id)}">
+      <input type="checkbox" data-tf-ok="${esc(t.id)}" ${feita ? 'checked' : ''} ${feita && t.feita_sistema ? 'disabled' : ''} aria-label="Feito">
+      <div class="tf-corpo">${resp ? `<div class="tf-topo">${resp}</div>` : ''}<div class="tf-txt">${esc(t.texto)}</div>${det}
+        <div class="tf-motivo small" hidden></div></div>${info}${apagar}</div>`;
+}
+function ligarTarefas(el) {
+  el.querySelectorAll('[data-tf-ok]').forEach(c => c.onchange = async () => {
+    const id = c.dataset.tfOk, linha = c.closest('.tf-item');
+    linha.classList.toggle('feita', c.checked); c.disabled = true;
+    try { await api('tarefa_salvar', { id, feita: c.checked }); }
+    catch { c.checked = !c.checked; linha.classList.toggle('feita', c.checked); }
+    setTimeout(carregarTarefas, c.checked ? 600 : 0);
+  });
+  el.querySelectorAll('[data-tf-resp]').forEach(s => s.onchange = async () => {
+    try { await api('tarefa_salvar', { id: s.dataset.tfResp, responsavel_id: s.value }); }
+    finally { carregarTarefas(); }
+  });
+  el.querySelectorAll('[data-tf-x]').forEach(bt => bt.onclick = async () => {
+    if (!await confirmar('Excluir esta anotação?', 'Excluir', true)) return;
+    try { await api('tarefa_salvar', { id: bt.dataset.tfX, excluir: true }); } finally { carregarTarefas(); }
+  });
+  el.querySelectorAll('[data-tf-info]').forEach(bt => bt.onclick = () => {
+    const t = TF.mapa[bt.dataset.tfInfo], m = bt.closest('.tf-item').querySelector('.tf-motivo');
+    if (!t || !m) return;
+    m.textContent = t.feita_sistema ? (t.motivo || 'Finalizada pelo sistema.') : `Feita por ${t.feita_por || '—'} em ${dataHora(t.feita_em)}.`;
+    m.hidden = !m.hidden;
+  });
+  el.querySelectorAll('[data-tf-ir]').forEach(a => a.addEventListener('click', () => abrirPainelTarefas(false)));
+}
+async function salvarNovaTarefa(e) {
+  e.preventDefault();
+  const f = e.target, inp = f.querySelector('input'), texto = inp.value.trim();
+  if (!texto) { inp.focus(); return; }
+  const btn = f.querySelector('button');
+  await ocupado(btn, async () => {
+    try {
+      await api('tarefa_salvar', { texto, compartilhada: !!(TF.dados && TF.dados.producao) && f.querySelector('select').value === '1' });
+      inp.value = '';
+    } catch {}
+  });
+  carregarTarefas(); inp.focus();
 }
