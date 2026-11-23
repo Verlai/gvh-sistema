@@ -395,3 +395,7 @@ body.com-tarefas .barra-acao{margin-right:58px}
 .rec-linha{display:grid;grid-template-columns:1fr 130px auto;gap:8px;align-items:center}
 .rec-linha .tf-x{opacity:1;font-size:20px}
 .rec-total{background:var(--linha-2);border-radius:8px;padding:8px 10px}
+/* correções do passo 110 (23/11) */
+.barra-acao .btn:not(.prim){color:var(--grafite)}
+.pre-acab{border-top:1px dashed var(--linha);padding-top:8px;margin-top:4px;display:grid;gap:8px}
+.pre-acab [hidden]{display:none}

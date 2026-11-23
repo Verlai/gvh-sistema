@@ -55,9 +55,19 @@ function ligarCatLinhas(raiz) {
 
 /* acabamento do item */
 
-const infoAcabamento = i => !i.precisa_acabamento ? '' : `<div class="small" style="margin-top:4px">${badge(i.acabamento_iniciado_em ? 'Em acabamento' : 'Precisa de acabamento', i.acabamento_iniciado_em ? 'b-ambar' : 'b-azul')} ${esc(i.acabamento_por || '')}</div>`;
+const infoAcabamento = i => !i.precisa_acabamento ? '' : `<div class="small" style="margin-top:4px">${badge(i.acabamento_iniciado_em ? 'Em acabamento' : '✂️ Precisa de acabamento', i.acabamento_iniciado_em ? 'b-ambar' : 'b-azul')} ${esc(i.acabamento_por || '')}</div>`;
+// (23/11) quem vê fornecedor escolhe quem faz o acabamento (fornecedor ou interno) e qual é; os demais escrevem em texto livre
+const quemAcabamento = i => i.acabamento_fornecedor_nome || (i.acabamento_tipo ? 'Interno' : '');
+function opcoesAcabamento(sel) {
+  const lista = (S.base.fornecedores || []).filter(f => f.ativo || f.id === sel);
+  return `<option value="" ${!sel ? 'selected' : ''}>Interno (GVH)</option>` + lista.map(f => `<option value="${esc(f.id)}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+}
 const camposAcabamento = i => `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="precisa_acabamento" data-acab ${i.precisa_acabamento ? 'checked' : ''}> Precisa de acabamento depois que chegar do fornecedor?</label>
-  <label class="campo ${i.precisa_acabamento ? '' : 'hidden'}" style="grid-column:1/-1" data-acab-box>Quem vai fazer o acabamento *<input type="text" name="acabamento_por" value="${esc(i.acabamento_por || '')}" placeholder="Ex.: Interno — dobrar e grampear"></label>`;
+  ${veFornecedor()
+    ? `<div class="grade g2 ${i.precisa_acabamento ? '' : 'hidden'}" style="grid-column:1/-1;gap:10px" data-acab-box>
+        <label class="campo">Quem faz o acabamento *<select name="acabamento_fornecedor_id">${opcoesAcabamento(i.acabamento_fornecedor_id)}</select></label>
+        <label class="campo">Qual acabamento *<input type="text" name="acabamento_tipo" maxlength="120" value="${esc(i.acabamento_tipo || (i.acabamento_fornecedor_id ? '' : i.acabamento_por) || '')}" placeholder="Ex.: laminação fosca, dobra e grampo"></label></div>`
+    : `<label class="campo ${i.precisa_acabamento ? '' : 'hidden'}" style="grid-column:1/-1" data-acab-box>Quem vai fazer o acabamento *<input type="text" name="acabamento_por" value="${esc(i.acabamento_por || '')}" placeholder="Ex.: Interno — dobrar e grampear"></label>`}`;
 function ligarAcabamento(form) {
   const ck = form.querySelector('[data-acab]'); if (!ck) return;
   ck.onchange = () => form.querySelector('[data-acab-box]').classList.toggle('hidden', !ck.checked);
@@ -65,8 +75,15 @@ function ligarAcabamento(form) {
 function lerAcabamento(form, d) {
   const ck = form.querySelector('[data-acab]'); if (!ck) return true;
   d.precisa_acabamento = ck.checked;
-  if (!ck.checked) delete d.acabamento_por;
-  else if (!String(d.acabamento_por || '').trim()) { toast('Informe quem vai fazer o acabamento.', true); return false; }
+  const comForn = !!form.querySelector('[name=acabamento_tipo]');
+  if (!ck.checked) { delete d.acabamento_por; delete d.acabamento_tipo; delete d.acabamento_fornecedor_id; return true; }
+  if (comForn) {
+    d.acabamento_tipo = String(d.acabamento_tipo || '').trim();
+    if (!d.acabamento_tipo) { toast('Informe qual é o acabamento.', true); return false; }
+    // item novo ainda grava só o texto (o banco monta o mesmo texto ao salvar um item que já existe)
+    const sel = form.querySelector('[name=acabamento_fornecedor_id]');
+    d.acabamento_por = (sel && sel.value ? sel.selectedOptions[0].textContent : 'Interno (GVH)') + ' — ' + d.acabamento_tipo;
+  } else if (!String(d.acabamento_por || '').trim()) { toast('Informe quem vai fazer o acabamento.', true); return false; }
   return true;
 }
 

@@ -118,7 +118,7 @@ function htmlPreImpressao(pre, { criaForn, podeDevolverArte }) {
       i.pedido_sem_pagamento ? '<span class="mk mk-amb">Falta pagamento</span>' : '',
       i.digital && i.digital.digital ? '<span class="mk mk-dig">Digital</span>' : '',
       i.refile ? '<span class="mk mk-cinza" title="Pedir formato maior e refilar">Refile</span>' : '',
-      i.precisa_acabamento ? '<span class="mk mk-cinza">Acabamento</span>' : '',
+      i.precisa_acabamento ? `<span class="mk mk-amb" title="${esc(i.acabamento_por || '')}">✂️ Acabamento${quemAcabamento(i) ? ' · ' + esc(quemAcabamento(i)) : ''}</span>` : '',
       alerta ? `<span class="mk mk-verm">${esc(alerta)}</span>` : ''].filter(Boolean).join(' ');
     const filtros = [pr.p < 4 ? 'prio' : '', pronto ? 'pronto' : '', i.pedido_sem_pagamento ? 'pag' : '', alerta ? 'alerta' : ''].join(' ');
     const busca = normTxt([i.pedido_numero, i.cliente_nome, i.descricao].join(' '));
@@ -173,6 +173,13 @@ function detalhePre(i, pr, { criaForn, podeDevolverArte, custo }) {
         <label class="campo">Previsão de produção<input type="date" data-c="prazo_producao" value="${esc(i.prazo_producao || '')}" data-entrega="${esc(i.data_prevista_entrega || '')}"><span class="small aviso-prev" style="color:var(--vermelho)"></span></label>
         <label class="campo">Código do fornecedor<input type="text" data-c="codigo_producao" value="${esc(i.codigo_producao || '')}"></label>
         ${custo ? `<label class="campo">Custo (R$)<input type="number" step="0.01" min="0" data-c="custo" value="${esc(i.custo ?? '')}"></label>` : ''}
+      </div>
+      <div class="pre-acab">
+        <label class="check"><input type="checkbox" data-acab-pre ${i.precisa_acabamento ? 'checked' : ''}> ✂️ Falta acabamento depois que chegar do fornecedor</label>
+        <div class="grade g2" style="gap:10px" data-acab-box-pre ${i.precisa_acabamento ? '' : 'hidden'}>
+          <label class="campo">Quem faz<select data-acab-forn>${opcoesAcabamento(i.acabamento_fornecedor_id)}</select></label>
+          <label class="campo">Qual acabamento<input type="text" data-acab-tipo maxlength="120" value="${esc(i.acabamento_tipo || (i.acabamento_fornecedor_id ? '' : i.acabamento_por) || '')}" placeholder="Ex.: laminação fosca, dobra e grampo"></label>
+        </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
         <button class="btn prim peq" onclick="salvarLinhaProd('${i.id}',true)">Enviar para produção</button>
@@ -399,6 +406,11 @@ function ligarPreImpressao(el) {
     const id = tr.dataset.preAbrir, det = tr.nextElementSibling;
     abertos[id] = det.hidden; det.hidden = !det.hidden; tr.classList.toggle('aberta', !det.hidden);
   });
+  tab.addEventListener('change', e => {
+    if (!e.target.matches('[data-acab-pre]')) return;
+    const box = e.target.closest('.pre-acab').querySelector('[data-acab-box-pre]'); box.hidden = !e.target.checked;
+    if (e.target.checked) box.querySelector('[data-acab-tipo]').focus();
+  });
   const filtrar = () => {
     const f = S.cache.filtroPre || 'todos', q = normTxt(S.cache.buscaPre || ''); let n = 0;
     tab.querySelectorAll('[data-pre-grupo]').forEach(g => {
@@ -431,6 +443,16 @@ async function salvarLinhaProd(id, enviar) {
   const tr = $(`[data-form-item="${id}"]`); const d = { id };
   $$('[data-c]', tr).forEach(el => d[el.dataset.c] = el.value);
   if (d.custo === '') delete d.custo;
+  // (23/11) acabamento: quem faz (fornecedor ou interno) e qual
+  const ckAcab = tr.querySelector('[data-acab-pre]');
+  if (ckAcab) {
+    d.precisa_acabamento = ckAcab.checked;
+    if (ckAcab.checked) {
+      d.acabamento_fornecedor_id = tr.querySelector('[data-acab-forn]').value;
+      d.acabamento_tipo = tr.querySelector('[data-acab-tipo]').value.trim();
+      if (!d.acabamento_tipo) return toast('Informe qual é o acabamento.', true);
+    }
+  }
   if (enviar && (!d.fornecedor_id || !d.prazo_producao || !d.codigo_producao.trim())) return toast('Preencha fornecedor, previsão de produção e código do fornecedor.', true);
   const it = (S.cache.preItens || []).find(x => x.id === id);
   if (enviar && it && it.sugestao && it.sugestao.fornecedor_id && d.fornecedor_id !== it.sugestao.fornecedor_id) {
@@ -529,6 +551,7 @@ function linhaExpedicao(p) {
     if (p.fin.falta_pagamento) {
       bt.push(`<button class="btn prim peq" onclick="receberNaRetirada('${p.id}')">Receber ${esc(brl(p.fin.valor_em_aberto))}</button>`);
       bt.push(`<button class="btn peq" disabled title="Falta pagamento: receba antes de entregar">Entregue</button>`);
+      bt.push(`<button class="btn link peq" onclick="retirouSemPagar('${p.id}')" title="O cliente levou sem pagar tudo, com autorização">Retirou sem pagar</button>`);
     } else bt.push(`<button class="btn prim peq" onclick="moverItensPedido('${ids(ret)}','entregue')">Entregue${qt(ret, total)}</button>`);
   }
   return `<tr>
@@ -586,6 +609,30 @@ function receberNaRetirada(pedidoId) {
           fechar();
           toast(Number(r.falta) > 0 ? `Pagamento registrado. Ainda falta ${brl(r.falta)}.` : 'Pagamento registrado. Agora é só marcar como entregue.');
           recarregar();
+        } catch {}
+      });
+    } });
+}
+// (23/11) saída para quando o cliente leva sem pagar tudo, com autorização: anota quem retirou (nome + RG) e quem autorizou,
+// entrega o pedido e manda a cobrança para o financeiro. O banco confere tudo.
+async function retirouSemPagar(pedidoId) {
+  let info;
+  try { info = await api('retirar_sem_pagamento', { pedido_id: pedidoId, listar: true }); } catch { return; }
+  const it = ((S.vistaAtual && S.vistaAtual.dados) || []).find(i => i.pedido_id === pedidoId) || {};
+  abrirModal({ titulo: `Retirou sem pagar · pedido #${it.pedido_numero || ''}`,
+    corpo: `<div class="alerta" style="margin:0">Faltam <b>${esc(brl(info.falta))}</b>. O pedido vai para <b>Entregue</b> e a cobrança vai para o financeiro.</div>
+      <label class="campo">Nome de quem retirou *<input name="nome" maxlength="120" autocomplete="off"></label>
+      <label class="campo">RG de quem retirou *<input name="doc" maxlength="20" autocomplete="off" inputmode="text"></label>
+      <label class="campo">Quem autorizou *<select name="aut"><option value="">Escolha…</option>${(info.autorizadores || []).map(a => `<option value="${esc(a.id)}">${esc(a.nome)}</option>`).join('')}</select></label>`,
+    rodape: '<button class="btn" data-n>Voltar</button><button class="btn prim" data-s>Confirmar retirada</button>',
+    aoAbrir: (f, fechar) => {
+      f.querySelector('[data-n]').onclick = fechar;
+      f.querySelector('[data-s]').onclick = e => ocupado(e.target, async () => {
+        const nome = f.querySelector('[name=nome]').value.trim(), doc = f.querySelector('[name=doc]').value.trim(), aut = f.querySelector('[name=aut]').value;
+        if (!nome || !doc || !aut) { toast('Preencha o nome, o RG e quem autorizou.', true); return; }
+        try {
+          await api('retirar_sem_pagamento', { pedido_id: pedidoId, retirado_por: nome, documento: doc, autorizado_por: aut });
+          fechar(); toast('Retirada registrada. A cobrança foi para o financeiro.'); recarregar();
         } catch {}
       });
     } });

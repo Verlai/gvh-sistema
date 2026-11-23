@@ -481,9 +481,9 @@ const TAREFA_TIPOS = {
   0: ['🔎 Código não achado', 'vermelho'], 1: ['🧾 Recusado/cancelado', 'vermelho'], 2: ['🚨 Prazo do cliente', 'vermelho'],
   10: ['⚠️ Site não lido', 'vermelho'], 3: ['⏱️ Prazo não bate', 'ambar'], 4: ['🔄 Prazo mudou', 'ambar'],
   5: ['📞 Cobrar fornecedor', 'ambar'], 8: ['📱 Confirmar', 'azul'], 6: ['📦 Pronto', 'verde'],
-  11: ['🚚 Buscar', 'verde'], 12: ['🏪 Chegam no balcão', 'azul'],
+  11: ['🚚 Buscar', 'verde'], 12: ['🏪 Chegam no balcão', 'azul'], 13: ['✂️ Acabamento', 'ambar'],
 };
-const TAREFA_PRIO = { 0: 0, 1: 1, 2: 2, 10: 3, 3: 4, 4: 5, 5: 6, 8: 7, 11: 8, 12: 9, 6: 10 };
+const TAREFA_PRIO = { 0: 0, 1: 1, 2: 2, 10: 3, 3: 4, 4: 5, 5: 6, 8: 7, 11: 8, 12: 9, 13: 10, 6: 11 };
 const prioTarefa = t => t.tipo === 'producao' ? (TAREFA_PRIO[t.k] ?? 9) : 10;
 const ddmm = v => v ? String(v).slice(8, 10) + '/' + String(v).slice(5, 7) : '—';
 const linkSeguro = u => /^https:\/\/[^\s"'<>]+$/.test(String(u || '')) ? u : '';
@@ -607,17 +607,18 @@ function linhaTarefa(t, ctx, op = {}) {
   const fixar = !feita ? `<button type="button" class="tf-pin ${t.fixada ? 'ativo' : ''}" data-tf-pin="${esc(t.id)}" aria-label="${t.fixada ? 'Desafixar' : 'Fixar no topo'}" title="${t.fixada ? 'Desafixar' : 'Fixar no topo'}">📌</button>` : '';
   const linhas = [];
   if (t.pedido_id && x.item && (ctx.porPedido[t.pedido_id] > 1 || op.comTipo)) linhas.push(`<span class="tf-item-nome">${esc(x.item)}</span>`);
-  if (t.k === 11 || t.k === 12) {
+  if (t.k === 11 || t.k === 12 || t.k === 13) {
     // logística: a lista dos pedidos (nosso número, item, fornecedor e o número do pedido no fornecedor)
     const ps = Array.isArray(x.pedidos) ? x.pedidos : [];
     const itens = ps.map(q => {
       const lk = linkSeguro(q.link);
       const forn = lk ? `<a href="${esc(lk)}" target="_blank" rel="noopener noreferrer">${esc(q.forn || '')} ↗</a>` : esc(q.forn || '');
       return `<div class="tf-sub"><a class="tf-ped" href="#/pedido/${esc(q.pedido_id)}" data-tf-ir>#${esc(q.numero)}</a> <span class="tf-cli">${esc(q.cliente || '')}</span>`
-        + `<br><span class="tf-item-nome">${esc(q.item || '')}</span><br>${forn}${q.codigo ? ` <span class="tf-cod">${esc(q.codigo)}</span>` : ''}</div>`;
+        + `<br><span class="tf-item-nome">${esc(q.item || '')}</span><br>${forn}${q.codigo ? ` <span class="tf-cod">${esc(q.codigo)}</span>` : ''}`
+        + `${q.acab ? `<br><span class="mk mk-amb">✂️ ${t.k === 13 ? '' : 'vai para acabamento: '}${esc(q.acab)}</span>` : ''}</div>`;
     });
     if (itens.length) linhas.push(blocoExp('tf-l-' + t.id, `Ver ${itens.length} ${itens.length === 1 ? 'item' : 'itens'}`, itens.join(''), itens.length <= 2, 'leve'));
-    if (t.k === 11 && linkSeguro(x.link)) linhas.push(`<a href="${esc(linkSeguro(x.link))}" target="_blank" rel="noopener noreferrer">Abrir o site da ${esc(x.forn || 'fornecedora')} ↗</a>`);
+    if ((t.k === 11 || t.k === 13) && linkSeguro(x.link)) linhas.push(`<a href="${esc(linkSeguro(x.link))}" target="_blank" rel="noopener noreferrer">Abrir o site da ${esc(x.forn || 'fornecedora')} ↗</a>`);
   } else if (t.tipo === 'producao' && t.k !== 10) {
     const lk = linkSeguro(x.link);
     const forn = lk ? `<a href="${esc(lk)}" target="_blank" rel="noopener noreferrer" title="Abrir no site do fornecedor">${esc(x.forn || 'Fornecedor')} ↗</a>` : esc(x.forn || '—');
