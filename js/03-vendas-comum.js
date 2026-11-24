@@ -168,23 +168,30 @@ function modalNovosItens() {
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bs = m.el.querySelector('[data-s]');
   bs.onclick = async () => {
-    const itens = pegar();
+    const itensTela = pegar(), itens = pegar.semTela(itensTela);
     if (pegar.incompletos()) return toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true);
     if (!itens.length) return toast('Escreva o produto do item.', true);
-    bs.disabled = true; let ok = 0;
+    bs.disabled = true; let ok = 0; const testar = [];
+    // itens com "Arte do cliente (testar agora)": o teste abre quando a tela do pedido recarregar (filaArteCliente)
+    const fila = () => { if (testar.length) S.cache.testarArte = { pedido_id: p.id, itens: testar }; };
     try {
-      for (const it of itens) { await api('salvar_item', { ...it, pedido_id: p.id }); ok++; }
-      m.fechar(); toast(ok > 1 ? `${ok} itens adicionados.` : 'Item adicionado.'); recarregar();
+      for (const [k, it] of itens.entries()) { const r = await api('salvar_item', { ...it, pedido_id: p.id }); ok++; if (itensTela[k]._testar && r.id) testar.push(r.id); }
+      fila(); m.fechar(); toast(ok > 1 ? `${ok} itens adicionados.` : 'Item adicionado.'); recarregar();
     } catch (e) {
       bs.disabled = false;
-      if (ok) { toast(`${ok} de ${itens.length} itens foram adicionados; o próximo deu erro. Confira o pedido.`, true); m.fechar(); recarregar(); }
+      if (ok) { fila(); toast(`${ok} de ${itens.length} itens foram adicionados; o próximo deu erro. Confira o pedido.`, true); m.fechar(); recarregar(); }
     }
   };
 }
-function opcoesStatusInicial(sel = 'arte_a_fazer') {
+// extras (só no editor de itens, 23/11): "__copiar" = arte final do pedido repetido; "__cliente" = testar a arte do cliente logo depois de criar
+function opcoesStatusInicial(sel = 'arte_a_fazer', { origNum = null, cliente = false } = {}) {
   const lista = ['arte_a_fazer', ...(S.perm.status_item_permitidos || []).filter(s => ['arte_a_fazer','arte_em_aprovacao','pre_impressao'].includes(s))];
-  return [...new Set(lista)].map(s => `<option value="${s}" ${s === sel ? 'selected' : ''}>${esc(nomeStatusItem(s))}</option>`).join('');
+  const op = (v, n) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${esc(n)}</option>`;
+  return (origNum ? op('__copiar', `Arte do pedido ${origNum}`) : '')
+    + [...new Set(lista)].map(s => op(s, nomeStatusItem(s))).join('')
+    + (cliente ? op('__cliente', 'Arte do cliente (testar agora)') : '');
 }
+const STATUS_ARTE_PRONTA = ['__copiar', '__cliente'];   // item com 1 modelo só (a arte já existe)
 
 const unitario = (total, qtd) => Number(qtd) > 0 ? (Number(total || 0) / Number(qtd)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—';
 
@@ -773,8 +780,8 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
         <td><input type="text" placeholder="Só a equipe vê" value="${esc(it.observacao || '')}" data-k="${k}" data-f="observacao"></td>
         <td><input type="number" step="any" min="0" value="${esc(it.quantidade)}" data-k="${k}" data-f="quantidade"></td>
         <td><input type="number" step="0.01" min="0" value="${esc(it.valor_total)}" data-k="${k}" data-f="valor_total"><div class="unit-calc" data-u="${k}">Unit. ${unitario(it.valor_total, it.quantidade)}</div></td>
-        <td data-col="status">${comStatus ? `<input type="number" min="1" max="20" step="1" value="${esc(it.qtd_artes || 1)}" data-k="${k}" data-f="qtd_artes" title="Ex.: cartão com 2 modelos de 200 cada = 2">` : ''}</td>
-        <td data-col="status">${comStatus ? `<select data-k="${k}" data-f="status">${opcoesStatusInicial(it.status)}</select>` : ''}</td>
+        <td data-col="status">${comStatus ? `<input type="number" min="1" max="20" step="1" value="${esc(STATUS_ARTE_PRONTA.includes(it.status) ? 1 : it.qtd_artes || 1)}" data-k="${k}" data-f="qtd_artes" title="Ex.: cartão com 2 modelos de 200 cada = 2" ${STATUS_ARTE_PRONTA.includes(it.status) ? 'disabled' : ''}>` : ''}</td>
+        <td data-col="status">${comStatus ? `<select data-k="${k}" data-f="status">${opcoesStatusInicial(it.status, { origNum: it._orig ? it._origNum : null, cliente: !pode('so_painel_arte') })}</select>` : ''}</td>
         <td>${itens.length > 1 ? `<button type="button" class="btn link peq" data-rm="${k}">Remover</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>
       <button type="button" class="btn peq" id="add-item" style="margin-top:8px">Adicionar outro item</button>`;
@@ -797,6 +804,11 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
       }
       it[f] = el.value;
       if (f === 'qtd_artes') { it._modManual = true; aoMudar && aoMudar(itens); return; }
+      if (f === 'status') {   // arte que já existe (pedido repetido ou arquivo do cliente) = 1 modelo
+        const cm = $(`[data-k="${k}"][data-f=qtd_artes]`, alvo), fixo = STATUS_ARTE_PRONTA.includes(el.value);
+        if (cm) { cm.disabled = fixo; cm.value = fixo ? 1 : it.qtd_artes || 1; }
+        aoMudar && aoMudar(itens); return;
+      }
       // "2 modelos" no texto já preenche a coluna Modelos (o vendedor pode corrigir)
       if (f === 'descricao' && !it._modManual) {
         const n = qtdModelosTexto(el.value); it.qtd_artes = n || 1;
@@ -826,7 +838,8 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
     });
     $$('[data-rm]', alvo).forEach(b => b.onclick = () => { itens.splice(b.dataset.rm, 1); desenhar(); });
     itens.forEach((_, k) => ligarDigital(k));
-    $('#add-item', alvo).onclick = () => { itens.push({ ...novo(), status: itens[itens.length - 1]?.status || 'arte_a_fazer' }); desenhar(); };
+    $('#add-item', alvo).onclick = () => { const ult = itens[itens.length - 1]?.status;
+      itens.push({ ...novo(), status: ult && ult !== '__copiar' ? ult : 'arte_a_fazer' }); desenhar(); };
     ligarCatLinhas(alvo); atualizarCatLinhas(alvo);
     aoMudar && aoMudar(itens);
   };
@@ -841,10 +854,16 @@ function editorItens(alvo, itensIniciais, { comStatus = false, aoMudar, comDigit
   }
   desenhar();
   const usado = i => (i.descricao || '').trim() || i.categoria_id || Number(i.valor_total);
-  const pegar = () => itens.filter(usado).map(i => ({ categoria_id: i.categoria_id, descricao: (i.descricao || '').trim(), observacao: i.observacao || '',
-    especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: i.status,
-    ...(comStatus ? { qtd_artes: Math.min(20, Math.max(1, parseInt(i.qtd_artes, 10) || 1)) } : {}),
-    ...(comDigital && i.digital_manual != null ? { digital_manual: i.digital_manual } : {}) }));
+  // _orig / _testar são só da tela (quem chama tira antes de mandar ao banco)
+  const pegar = () => itens.filter(usado).map(i => {
+    const esp = !comStatus ? {} : i.status === '__copiar' && i._orig ? { _orig: i._orig } : i.status === '__cliente' ? { _testar: true } : {};
+    const fixo = STATUS_ARTE_PRONTA.includes(i.status);
+    return { categoria_id: i.categoria_id, descricao: (i.descricao || '').trim(), observacao: i.observacao || '',
+      especificacao: i.especificacao || '', quantidade: i.quantidade, valor_total: i.valor_total, status: fixo ? 'arte_a_fazer' : i.status,
+      ...(comStatus ? { qtd_artes: fixo ? 1 : Math.min(20, Math.max(1, parseInt(i.qtd_artes, 10) || 1)) } : {}),
+      ...(comDigital && i.digital_manual != null ? { digital_manual: i.digital_manual } : {}), ...esp };
+  });
+  pegar.semTela = l => l.map(({ _orig, _testar, ...x }) => x);
   pegar.definirStatus = v => { comStatus = v; alvo.classList.toggle('ocultar-status', !v); };
   pegar.incompletos = () => itens.filter(usado).filter(i => !(i.descricao || '').trim() || !i.categoria_id
     || !(Number(i.quantidade) > 0) || i.valor_total === '' || i.valor_total == null).length;

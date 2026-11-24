@@ -102,7 +102,7 @@ rota('pedido', async (id, el) => {
   definirTopoEm(el, `Pedido ${p.numero}${excluido ? ' (excluído)' : ''}`, `
     <a class="btn" href="#/pedidos">Voltar</a>
     ${!excluido ? `<button class="btn" onclick="imprimirResumoPedido()">Imprimir resumo</button>` : ''}
-    ${pode('cria_pedidos') ? `<button class="btn" onclick="repetirPedido()">Repetir pedido</button>` : ''}
+    ${pode('cria_pedidos') ? `<button class="btn" onclick="escolherRepeticao()">Repetir pedido</button>` : ''}
     ${pode('cria_pedidos') && !cancelado ? `<button class="btn" onclick="modalEditarPedido()">Editar dados</button>` : ''}
     ${!pode('cria_pedidos') && pode('edita_financeiro') && !cancelado && !saiuParaEntrega(p) ? `<button class="btn" onclick="modalAlterarEntrega()">Alterar entrega</button>` : ''}
     ${podeStatus('cancelado') && !excluido ? (cancelado
@@ -303,12 +303,13 @@ async function carregarArquivosPedido(p, el) {
   el.querySelectorAll('[data-trocar-arq]').forEach(bx => bx.onclick = () => trocarArquivo(p, todos.find(a => a.id === bx.dataset.trocarArq)));
   el.querySelectorAll('[data-troca-dec]').forEach(bx => bx.onclick = () => decidirTrocaArte(todos.find(a => a.id === bx.dataset.trocaDec), bx.dataset.aceitar === '1'));
   const bt = alvo.querySelector('[data-trazer-arte]'); if (bt) bt.onclick = () => modalTrazerArte(p);
-  // pedido recém-criado pelo "Repetir pedido": oferece trazer as artes finais do pedido original
-  const rp = S.cache.trazerArtes;
-  if (rp && rp.pedido_id === p.id && bt) {
-    S.cache.trazerArtes = null;
-    try { const o = await api('listar_artes_pedido', { numero: rp.numero }, true); if ((o.arquivos || []).length) modalTrazerArte(p, o); } catch {}
-  }
+}
+// arte trazida de outro pedido resolve a arte do item: os itens prontos seguem para a pré-impressão se houver pagamento (ou autorização)
+async function liberarItensProntos(pedidoId) {
+  try { const r = await api('liberar_itens_prontos', { pedido_id: pedidoId }, true);
+    return r.liberados ? ` ${r.liberados > 1 ? `${r.liberados} itens foram` : 'O item foi'} para a pré-impressão.`
+      : r.aguardando ? ' O item vai para a pré-impressão sozinho quando o pagamento entrar (ou o pedido for autorizado).' : ''; }
+  catch { return ''; }
 }
 // AR0: copia artes finais de outro pedido (ou de um link do Drive) para a pasta deste pedido
 function modalTrazerArte(p, origemPronta = null) {
@@ -378,7 +379,8 @@ function modalTrazerArte(p, origemPronta = null) {
       try { const rc = await api('arquivo_copiar', dados, true); ok++; if (rc.troca_pendente) pend++; } catch (e) { toast(`${_nome || 'Arquivo'}: ${e.message}`, true); }
     }
     bt.disabled = false; bt.classList.remove('ocupado'); prog.textContent = '';
-    if (ok) { toast((ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.') + (pend ? ' Material já na pré-impressão/produção: a arte vai para a confirmação da pré-impressão.' : '')); m.fechar(); recarregar(); }
+    if (ok) { const lib = await liberarItensProntos(p.id);
+      toast((ok > 1 ? `${ok} artes copiadas para este pedido.` : 'Arte copiada para este pedido.') + (pend ? ' Material já na pré-impressão/produção: a arte vai para a confirmação da pré-impressão.' : '') + lib); m.fechar(); recarregar(); }
   };
 }
 // troca: envia o arquivo novo com o mesmo tipo, material e identificação, e tira o antigo da pasta
@@ -579,14 +581,58 @@ async function reativarPedido() {
 }
 
 // V10: abre o Novo pedido já preenchido (sem previsão e sem forma de pagamento, que o vendedor confere)
-function repetirPedido(pedido) {
+// comArtes (23/11): cada item leva o item de origem; ao criar, a arte final dele é copiada para o item novo
+function repetirPedido(pedido, comArtes = false) {
   const p = pedido || S.vistaAtual.dados;
-  S.cache.repetir = { numero: p.numero, cliente: p.cliente, forma_entrega: p.forma_entrega, endereco_entrega: p.endereco_entrega,
+  S.cache.repetir = { numero: p.numero, comArtes, cliente: p.cliente, forma_entrega: p.forma_entrega, endereco_entrega: p.endereco_entrega,
     observacoes: p.observacoes, observacao_geral: p.observacao_geral, desconto: p.desconto, desconto_percentual: p.desconto_percentual, frete: p.frete,
     itens: (p.itens || []).filter(i => i.status !== 'cancelado').map(i => ({ descricao: i.descricao, categoria_id: i.categoria_id, observacao: i.observacao, quantidade: i.quantidade,
-      valor_total: i.valor_total, status: 'arte_a_fazer', precisa_acabamento: i.precisa_acabamento, acabamento_por: i.acabamento_por })) };
+      valor_total: i.valor_total, status: comArtes ? '__copiar' : 'arte_a_fazer', precisa_acabamento: i.precisa_acabamento, acabamento_por: i.acabamento_por,
+      ...(comArtes ? { _orig: i.id, _origNum: p.numero, qtd_artes: 1, _modManual: true } : {}) })) };
   descartarVista('novo');
   if (chaveRota() === 'novo') rotear(); else location.hash = '#/novo';
+}
+const TXT_REPETIR = n => `<p class="small muted" style="margin:0"><b>Apenas copiar os produtos:</b> itens, valores, entrega e observações. A arte é feita de novo pela designer.<br>
+  <b>Repetir tudo, inclusive as artes:</b> o mesmo, e ao criar o pedido as artes finais do pedido ${esc(n)} são copiadas para os itens novos. Os itens seguem para a pré-impressão quando houver pagamento (ou autorização).</p>`;
+// botão "Repetir pedido" na tela do pedido: escolhe se leva as artes
+function escolherRepeticao(pedido) {
+  const p = pedido || S.vistaAtual.dados;
+  const m = abrirModal({ titulo: `Repetir o pedido ${p.numero}`, corpo: TXT_REPETIR(p.numero),
+    rodape: `<button class="btn" data-v style="margin-right:auto">Voltar</button><button class="btn" data-p>Apenas copiar os produtos</button><button class="btn prim" data-t>Repetir tudo, inclusive as artes</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-p]').onclick = () => { m.fechar(); repetirPedido(p, false); };
+  m.el.querySelector('[data-t]').onclick = () => { m.fechar(); repetirPedido(p, true); };
+}
+// Repetir tudo: depois de criar o pedido, copia a arte final de cada item do pedido antigo para o item novo e libera os prontos
+async function copiarArtesRepetidas(pedidoId, numeroOrigem, origens) {
+  if (!origens.some(Boolean)) return;
+  let origem, novo;
+  try { [origem, novo] = await Promise.all([api('listar_artes_pedido', { numero: numeroOrigem }, true), api('obter_pedido', { id: pedidoId }, true)]); }
+  catch (e) { toast(`Pedido criado, mas não consegui buscar as artes do ${numeroOrigem} (${e.message}). Use "Trazer arte de outro pedido".`, true); return; }
+  const itensNovos = (novo.pedido && novo.pedido.itens) || [], arqs = origem.arquivos || [];
+  const copias = [], semArte = [], erros = [];
+  origens.forEach((o, k) => {
+    const alvo = itensNovos[k]; if (!o || !alvo) return;
+    const doItem = arqs.filter(a => a.item_id === o);
+    if (!doItem.length) semArte.push(alvo.descricao);
+    doItem.forEach(a => copias.push({ pedido_id: pedidoId, item_id: alvo.id, arquivo_id: a.id, _nome: a.rotulo || a.nome }));
+  });
+  let ok = 0, lib = '';
+  if (copias.length) await aguarde(`Copiando as artes do pedido ${numeroOrigem}…`, async () => {
+    for (const { _nome, ...d } of copias) {
+      try { await api('arquivo_copiar', d, true); ok++; } catch (e) { erros.push(`${_nome || 'Arquivo'}: ${e.message}`); }
+    }
+    if (ok) lib = await liberarItensProntos(pedidoId);
+  });
+  const msg = ok ? (ok > 1 ? `${ok} artes copiadas do pedido ${numeroOrigem}.` : `Arte copiada do pedido ${numeroOrigem}.`) + lib : '';
+  if (!semArte.length && !erros.length) { if (msg) toast(msg); return; }
+  const m = abrirModal({ titulo: `Artes do pedido ${numeroOrigem}`, corpo: `
+    ${msg ? `<p style="margin:0 0 10px">${esc(msg)}</p>` : ''}
+    ${semArte.length ? `<p style="margin:0 0 6px"><b>Sem arte final no pedido ${esc(numeroOrigem)}</b> (a arte segue com a designer):</p><ul style="margin:0 0 10px">${semArte.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+    ${erros.length ? `<p style="margin:0 0 6px;color:var(--vermelho)"><b>Não foi possível copiar:</b></p><ul style="margin:0 0 10px">${erros.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+      <p class="small muted" style="margin:0">Use "Trazer arte de outro pedido" no bloco Arquivos de arte para tentar de novo.</p>` : ''}`,
+    rodape: '<button class="btn prim" data-v>Entendi</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
 }
 // V22: pedidos antigos do cliente escolhido no Novo pedido (com Repetir pedido)
 async function modalPedidosCliente(c) {
@@ -603,12 +649,14 @@ async function modalPedidosCliente(c) {
       <td class="small">${(p.itens || []).filter(i => i.status !== 'cancelado').map(i => `${esc(i.descricao)} <span class="muted">· ${num(i.quantidade)} un${pode('ve_valores') && i.valor_total != null ? ' · ' + brl(i.valor_total) : ''}</span>`).join('<br>') || '<span class="muted">—</span>'}</td>
       ${pode('ve_valores') ? `<td class="dir num">${brl(p.valor_total)}</td>` : ''}
       <td>${badgePed(p.status, p.status_nome)}</td>
-      <td class="dir" style="white-space:nowrap"><a class="btn peq" href="#/pedido/${p.id}" target="_blank" rel="noopener">Abrir</a>${(p.itens || []).some(i => i.status !== 'cancelado') ? ` <button class="btn peq prim" data-rep="${p.id}">Repetir</button>` : ''}</td></tr>`).join('')}
-    </tbody></table></div>`;
+      <td class="dir" style="white-space:nowrap"><a class="btn peq" href="#/pedido/${p.id}" target="_blank" rel="noopener">Abrir</a>${(p.itens || []).some(i => i.status !== 'cancelado') ? ` <button class="btn peq" data-rep="${p.id}" title="Itens, valores, entrega e observações; a arte é feita de novo">Copiar produtos</button> <button class="btn peq prim" data-rep="${p.id}" data-com-artes title="Tudo, inclusive as artes finais">Repetir com artes</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div style="margin-top:10px">${blocoExp('ajuda-repetir', 'Como funciona', TXT_REPETIR('escolhido'), false, 'leve')}</div>`;
   m.el.querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
-    if (!await confirmar('Repetir este pedido? O que já foi preenchido no Novo pedido será substituído.', 'Repetir pedido')) return;
+    const comArtes = b.hasAttribute('data-com-artes');
+    if (!await confirmar(`${comArtes ? 'Repetir este pedido com as artes?' : 'Copiar os produtos deste pedido?'} O que já foi preenchido no Novo pedido será substituído.`, comArtes ? 'Repetir com artes' : 'Copiar produtos')) return;
     const p = (await ocupado(b, () => api('obter_pedido', { id: b.dataset.rep }))).pedido;
-    m.fechar(); repetirPedido(p);
+    m.fechar(); repetirPedido(p, comArtes);
   });
 }
 function modalEditarPedido() {

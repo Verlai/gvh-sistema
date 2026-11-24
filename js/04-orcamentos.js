@@ -6,7 +6,7 @@ rota('novo', async (_p, el) => {
   const gestor = ['diretor','administrador'].includes(S.usuario.perfil);
   let cliente = null, pegarItens, coletarPagamento;
   el.innerHTML = `
-    ${rep ? `<div class="alerta" style="margin-bottom:12px">Repetindo o pedido <b>${esc(rep.numero)}</b>: cliente, itens, valores, entrega e observações foram copiados. <b>Confira os valores</b> e preencha a previsão de entrega e a forma de pagamento.</div>` : ''}
+    ${rep ? `<div class="alerta" style="margin-bottom:12px">Repetindo o pedido <b>${esc(rep.numero)}</b>: cliente, itens, valores, entrega e observações foram copiados. <b>Confira os valores</b> e preencha a previsão de entrega e a forma de pagamento.${rep.comArtes ? ` Os itens com "Arte do pedido ${esc(rep.numero)}" recebem a arte final de lá ao criar o pedido.` : ''}</div>` : ''}
     <div class="painel" style="padding:12px 16px"><label class="check"><input type="checkbox" id="np-orc"> <b>Salvar como orçamento</b> <span class="muted small">(aceita nome do cliente sem cadastro; não exige previsão de entrega)</span></label></div>
     <div class="painel"><div class="painel-cab"><h2>Cliente</h2></div>
       <div class="linha-form">
@@ -99,7 +99,7 @@ rota('novo', async (_p, el) => {
     descartarVista('novo'); location.hash = '#/pedidos';
   };
   $('#np-salvar').onclick = async () => {
-    const itens = pegarItens();
+    const itensTela = pegarItens(), itens = pegarItens.semTela(itensTela);
     if (pegarItens.incompletos()) return toast('Há item sem categoria, produto, quantidade ou total. Complete ou remova a linha.', true);
     if (!itens.length) return toast('Inclua ao menos um item.', true);
     try { descNP.validar(); } catch (e) { return toast(e.message, true); }
@@ -126,8 +126,12 @@ rota('novo', async (_p, el) => {
       recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
       autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
     try { const r = await api('criar_pedido', d); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`);
-      if (rep) S.cache.trazerArtes = { pedido_id: r.id, numero: rep.numero };
-      descartarVista('novo'); location.hash = '#/pedido/' + r.id; }
+      descartarVista('novo');
+      // repetir com artes: copia as artes finais do pedido antigo; "Arte do cliente": o teste abre na tela do pedido (filaArteCliente)
+      if (rep && rep.comArtes) await copiarArtesRepetidas(r.id, rep.numero, itensTela.map(i => i._orig || null));
+      const testar = itensTela.map((i, k) => i._testar ? k : -1).filter(k => k >= 0);
+      if (testar.length) S.cache.testarArte = { pedido_id: r.id, ordens: testar };
+      location.hash = '#/pedido/' + r.id; }
     finally { $('#np-salvar').disabled = false; }
   };
 });

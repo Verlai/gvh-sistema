@@ -729,6 +729,29 @@ async function preencherArtesPedido(el, p) {
   };
   ligarSelectsGabarito(alvo);
   // quantidade e nome dos modelos: ouvinte único (ver podeNomearModelo)
+  filaArteCliente(p);
+}
+// Itens criados com "Arte do cliente (testar agora)" (23/11): abre o teste do arquivo do cliente logo depois de criar.
+// Um item: abre o teste direto. Vários: uma lista com "Testar arquivo"; a cada arquivo usado a tela recarrega e a lista volta sem ele.
+function filaArteCliente(p) {
+  const f = S.cache.testarArte; if (!f || f.pedido_id !== p.id) return;
+  if (f.modal && !f.modal.el.isConnected) { S.cache.testarArte = null; return; }   // a pessoa fechou a lista: para de oferecer
+  if (!f.itens) f.itens = (f.ordens || []).map(k => (p.itens[k] || {}).id).filter(Boolean);
+  const pend = p.itens.filter(i => f.itens.includes(i.id) && ITEM_NA_ARTE.includes(i.status) && i.status !== 'arte_aprovada');
+  const chave = pend.map(i => i.id).join();
+  if (f.modal && f.chave === chave) return;   // nada mudou: não reabre (o teste pode estar aberto por cima)
+  f.chave = chave;
+  if (f.modal) f.modal.fechar();
+  if (!pend.length) { S.cache.testarArte = null; return; }
+  if (pend.length === 1 && !f.modal) { S.cache.testarArte = null; testarArquivo(pend[0].id); return; }
+  f.modal = abrirModal({ titulo: 'Testar a arte do cliente', corpo: `
+    <p class="small muted" style="margin:0 0 10px">Teste o arquivo de cada item contra o gabarito. Ao usar o arquivo, o item segue para a pré-impressão (se o pedido tiver pagamento ou autorização).</p>
+    <div class="lista-exp">${pend.map(i => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0">
+      <span><b>${esc(i.descricao)}</b> <span class="small muted">${num(i.quantidade)} un</span></span>
+      <button class="btn peq prim" data-tac="${i.id}">Testar arquivo</button></div>`).join('')}</div>`,
+    rodape: '<button class="btn" data-v>Fechar</button>' });
+  f.modal.el.querySelector('[data-v]').onclick = () => { S.cache.testarArte = null; f.modal.fechar(); };
+  f.modal.el.querySelectorAll('[data-tac]').forEach(b => b.onclick = () => testarArquivo(b.dataset.tac));
 }
 async function alternarSemArte(itemId, valor) {
   if (valor && !confirm('Marcar que este item não precisa de arte? Ele não aparece para a designer e não gera pagamento.')) return;
