@@ -227,13 +227,13 @@ function tabelaParcelas(lista, comPedido) {
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
       <td class="num">${data(r.vencimento)}</td>
       <td class="dir num">${brl(r.valor)}</td>
-      <td>${esc(FORMAS[r.forma_pagamento] || '—')}${urlSegura(r.link_pagamento) ? `<div><a class="small" href="${esc(urlSegura(r.link_pagamento))}" target="_blank" rel="noopener">Link de pagamento</a></div>` : ''}
+      <td>${esc(FORMAS[r.forma_pagamento] || '—')}${htmlLinkPagamento(r)}
         ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${acoes ? `<td class="dir" style="white-space:nowrap">
         ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
-        ${r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? `<button class="btn link peq" onclick="modalLinkPagamento('${r.id}')">${r.link_pagamento ? 'Trocar link' : 'Colar link'}</button>` : ''}
+        ${r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? botoesLinkCielo(r) : ''}
         ${r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
       </td>` : ''}
@@ -359,7 +359,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       h += simNao('pago', 'O cliente já pagou?');
       if (st.pago === true) h += arquivo('comp', 'Anexar comprovante');
     } else if (f === 'cartao_credito') {
-      h += campo('Link de pagamento (Cielo) <span class="muted small">— opcional</span>', 'link', 'url', 'placeholder="https://"');
+      h += campo('Link de pagamento (Cielo) <span class="muted small">— opcional; deixe em branco para criar depois, no pedido, com "Criar link de pagamento"</span>', 'link', 'url', 'placeholder="https://"');
       h += simNao('pago', 'O cliente já pagou?');
     } else if (f === 'boleto') {
       h += pergunta('Quantos boletos?', chips('qtd', [1, 2, 3, 4, 5, 6].map(n => [n, n + 'x']).concat([['outro', 'Outro']]), st.outraQtd ? 'outro' : st.qtd));
@@ -560,6 +560,49 @@ function modalLinkPagamento(id) {
     await api('receb_anexo', { id, link_pagamento: v }); m.fechar(); toast('Link salvo.'); recarregar();
   };
 }
+/* ---------- LINK DE PAGAMENTO DA CIELO (Módulo 6, Fase 3) — criado pelo n8n ([GVH] Cielo); o valor vem do banco ---------- */
+// coluna Forma: link da Cielo (com validade) ou link colado à mão
+function htmlLinkPagamento(r) {
+  const u = urlSegura(r.link_pagamento);
+  if (r.situacao === 'aberto' && r.cielo_situacao === 'ativo' && u) return `<div class="small"><a href="${esc(u)}" target="_blank" rel="noopener">Link da Cielo</a>
+    · até ${esc(r.cielo_parcelas_max || 3)}x · vale até ${esc(dataHora(r.cielo_expira_em))}
+    <button class="btn link peq" onclick="copiarLinkPagamento('${r.id}')">Copiar</button></div>`;
+  if (r.situacao === 'aberto' && r.cielo_situacao === 'vencido') return `<div>${badge('Link da Cielo vencido', 'b-ambar')}</div>`;
+  return u ? `<div><a class="small" href="${esc(u)}" target="_blank" rel="noopener">Link de pagamento</a></div>` : '';
+}
+// botões do pagamento em cartão em aberto
+function botoesLinkCielo(r) {
+  const ativo = r.cielo_situacao === 'ativo';
+  return (ativo ? `<button class="btn link peq" onclick="criarLinkCielo('${r.id}', true)">Trocar link</button>`
+               : `<button class="btn peq" onclick="criarLinkCielo('${r.id}', ${r.cielo_situacao === 'vencido'})">${r.cielo_situacao === 'vencido' ? 'Criar outro link' : 'Criar link de pagamento'}</button>`)
+    + (ativo ? '' : `<button class="btn link peq" onclick="modalLinkPagamento('${r.id}')" title="Para parcelado com juros, gerado no site da Cielo">${r.link_pagamento ? 'Trocar link manual' : 'Colar link manual'}</button>`);
+}
+async function criarLinkCielo(id, trocar) {
+  if (trocar && !await confirmar('Criar um link novo? O link atual deixa de funcionar na Cielo e o cliente precisa usar o novo.', 'Criar link novo')) return;
+  let r;
+  try { r = await aguarde('Criando o link na Cielo…', () => api('cielo_link', { id, trocar: !!trocar })); }
+  catch { return; }
+  recarregar();
+  mostrarLinkCielo(r.url, r.expira_em);
+}
+function mostrarLinkCielo(url, expira) {
+  const u = urlSegura(url); if (!u) return toast('Link criado. Ele aparece no pagamento.');
+  const m = abrirModal({ titulo: 'Link de pagamento criado', corpo: `
+    <p class="small" style="margin:0 0 10px">Mande este link ao cliente. Ele aceita cartão de crédito sem juros e vale até <b>${esc(dataHora(expira))}</b>. Quando o cliente pagar, marque o pagamento como pago (a baixa automática ainda vai ser ligada).</p>
+    <input type="text" readonly value="${esc(u)}" data-lk style="width:100%">`,
+    rodape: `<button class="btn" data-v>Fechar</button><button class="btn prim" data-c>Copiar link</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-lk]').onfocus = e => e.target.select();
+  m.el.querySelector('[data-c]').onclick = async () => { if (await copiarTexto(u)) { toast('Link copiado.'); m.fechar(); } };
+}
+async function copiarTexto(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch { toast('Não deu para copiar sozinho. Selecione o link e copie com Ctrl+C.', true); return false; }
+}
+async function copiarLinkPagamento(id) {
+  const u = urlSegura((S.parcelas[id] || {}).link_pagamento); if (u && await copiarTexto(u)) toast('Link copiado.');
+}
+
 const etqPag = i => i.pedido_sem_pagamento ? ' ' + badge('Falta pagamento', 'b-vermelho') : '';
 
 /* ---------- CLIENTE (seletor + cadastro rápido) ---------- */
