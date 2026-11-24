@@ -200,6 +200,7 @@ const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vist
 const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro', maquininha:'Maquininha' };
 const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 function badgeParcela(r) {
+  if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return badge('Pago no cartão em ' + data(r.pago_em) + ' · aguardando repasse', 'b-verde');
   if (r.situacao === 'pago') return r.conferencia === 'pendente'
     ? badge('Pago em ' + data(r.pago_em) + ' · a conferir', 'b-ambar')
     : badge('Pago em ' + data(r.pago_em), 'b-verde');
@@ -209,6 +210,7 @@ function badgeParcela(r) {
   return badge('Em aberto', 'b-cinza');
 }
 function detalheParcela(r) {
+  if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return `<div class="small muted">Pelo link da Cielo${r.cielo_bandeira ? ' · ' + esc(r.cielo_bandeira) : ''}${r.cielo_parcelas ? ' · ' + esc(r.cielo_parcelas) + 'x' : ''}</div>`;
   if (r.situacao === 'pago' && r.baixado_por_nome) return `<div class="small muted">Marcado por ${esc(r.baixado_por_nome)}${r.conferencia === 'conferido' && r.conferido_por_nome ? ` · conferido por ${esc(r.conferido_por_nome)}` : ''}</div>`;
   if (r.situacao === 'aberto' && r.conferencia === 'devolvido') return `<div class="small" style="color:var(--vermelho)">Devolvido pelo financeiro: ${esc(r.motivo_devolucao || '')}</div>`;
   return '';
@@ -570,6 +572,7 @@ function htmlLinkPagamento(r) {
     · até ${esc(r.cielo_parcelas_max || 3)}x · vale até ${esc(dataHora(r.cielo_expira_em))}
     <button class="btn link peq" onclick="copiarLinkPagamento('${r.id}')">Copiar</button></div>`;
   if (r.situacao === 'aberto' && r.cielo_situacao === 'vencido') return `<div>${badge('Link da Cielo vencido', 'b-ambar')}</div>`;
+  if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return '';
   return u ? `<div><a class="small" href="${esc(u)}" target="_blank" rel="noopener">Link de pagamento</a></div>` : '';
 }
 // botões do pagamento em cartão em aberto (o link manual continua só para o vendedor do pedido e o financeiro)
@@ -590,7 +593,7 @@ async function criarLinkCielo(id, trocar) {
 function mostrarLinkCielo(url, expira) {
   const u = urlSegura(url); if (!u) return toast('Link criado. Ele aparece no pagamento.');
   const m = abrirModal({ titulo: 'Link de pagamento criado', corpo: `
-    <p class="small" style="margin:0 0 10px">Mande este link ao cliente. Ele aceita cartão de crédito sem juros e vale até <b>${esc(dataHora(expira))}</b>. Quando o cliente pagar, marque o pagamento como pago (a baixa automática ainda vai ser ligada).</p>
+    <p class="small" style="margin:0 0 10px">Mande este link ao cliente. Ele aceita cartão de crédito sem juros e vale até <b>${esc(dataHora(expira))}</b>. Quando o cliente pagar, o pagamento é marcado sozinho (em poucos minutos; no máximo em meia hora).</p>
     <input type="text" readonly value="${esc(u)}" data-lk style="width:100%">`,
     rodape: `<button class="btn" data-v>Fechar</button><button class="btn prim" data-c>Copiar link</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
