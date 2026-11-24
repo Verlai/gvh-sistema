@@ -219,9 +219,11 @@ function tabelaParcelas(lista, comPedido) {
   const fin = pode('edita_financeiro');
   const vend = !fin && pode('cria_pedidos') && !comPedido;   // vendedor, na tela do pedido
   const acoes = fin || vend;
+  const linkCielo = pode('ve_financeiro');   // link da Cielo: qualquer pessoa que vê o financeiro (decisão do dono, 24/11)
+  const coluna = acoes || linkCielo;
   const conferir = fin && (comPedido || S.usuario.perfil === 'financeiro');
   return `<div class="tabela-wrap"><table>
-    <thead><tr>${comPedido ? '<th>Pedido</th><th>Cliente</th>' : ''}<th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th>Situação</th>${acoes ? '<th></th>' : ''}</tr></thead>
+    <thead><tr>${comPedido ? '<th>Pedido</th><th>Cliente</th>' : ''}<th>Parcela</th><th>Vencimento</th><th class="dir">Valor</th><th>Forma</th><th>Situação</th>${coluna ? '<th></th>' : ''}</tr></thead>
     <tbody>${lista.map(r => `<tr>
       ${comPedido ? `<td><a href="#/pedido/${r.pedido_id}"><b>${esc(r.pedido_numero)}</b></a></td><td>${esc(r.cliente_nome)}</td>` : ''}
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
@@ -230,12 +232,12 @@ function tabelaParcelas(lista, comPedido) {
       <td>${esc(FORMAS[r.forma_pagamento] || '—')}${htmlLinkPagamento(r)}
         ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
-      ${acoes ? `<td class="dir" style="white-space:nowrap">
-        ${r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
+      ${coluna ? `<td class="dir" style="white-space:nowrap">
+        ${acoes && r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
-        ${r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? botoesLinkCielo(r) : ''}
-        ${r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
-        ${r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
+        ${linkCielo && r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? botoesLinkCielo(r, acoes) : ''}
+        ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
+        ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -570,12 +572,12 @@ function htmlLinkPagamento(r) {
   if (r.situacao === 'aberto' && r.cielo_situacao === 'vencido') return `<div>${badge('Link da Cielo vencido', 'b-ambar')}</div>`;
   return u ? `<div><a class="small" href="${esc(u)}" target="_blank" rel="noopener">Link de pagamento</a></div>` : '';
 }
-// botões do pagamento em cartão em aberto
-function botoesLinkCielo(r) {
+// botões do pagamento em cartão em aberto (o link manual continua só para o vendedor do pedido e o financeiro)
+function botoesLinkCielo(r, manual) {
   const ativo = r.cielo_situacao === 'ativo';
   return (ativo ? `<button class="btn link peq" onclick="criarLinkCielo('${r.id}', true)">Trocar link</button>`
                : `<button class="btn peq" onclick="criarLinkCielo('${r.id}', ${r.cielo_situacao === 'vencido'})">${r.cielo_situacao === 'vencido' ? 'Criar outro link' : 'Criar link de pagamento'}</button>`)
-    + (ativo ? '' : `<button class="btn link peq" onclick="modalLinkPagamento('${r.id}')" title="Para parcelado com juros, gerado no site da Cielo">${r.link_pagamento ? 'Trocar link manual' : 'Colar link manual'}</button>`);
+    + (ativo || !manual ? '' : `<button class="btn link peq" onclick="modalLinkPagamento('${r.id}')" title="Para parcelado com juros, gerado no site da Cielo">${r.link_pagamento ? 'Trocar link manual' : 'Colar link manual'}</button>`);
 }
 async function criarLinkCielo(id, trocar) {
   if (trocar && !await confirmar('Criar um link novo? O link atual deixa de funcionar na Cielo e o cliente precisa usar o novo.', 'Criar link novo')) return;
