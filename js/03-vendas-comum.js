@@ -317,7 +317,7 @@ async function anexarComprovantes(pag, resp) {
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
 function htmlFormaPagamento(op = {}) {
   return `<div class="forma-pag" data-fp-raiz ${op.autorizar ? 'data-fp-autorizar' : ''} ${op.orcamento ? 'data-fp-orc' : ''}>
-    <div class="chips" data-fp="forma">${Object.entries(FORMAS_COMB).map(([k, v]) => `<button type="button" class="chip" data-v="${k}">${v}</button>`).join('')}</div>
+    <div class="chips" data-fp="forma">${Object.entries(FORMAS_COMB).map(([k, v]) => `<button type="button" class="chip" data-forma="${k}">${v}</button>`).join('')}</div>
     <div data-fp-corpo></div>
   </div>`;
 }
@@ -333,7 +333,8 @@ function ligarFormaPagamento(el, total, prev, inicial) {
   const enviados = new Map();
   const t2 = () => Math.round(total() * 100) / 100;
   const brlTxt = v => brl(v).replace(/\s/g, ' ');
-  const chips = (grupo, opcoes, valor) => `<div class="chips" data-g="${grupo}">${opcoes.map(([v, r]) => `<button type="button" class="chip ${String(valor) === String(v) ? 'ativo' : ''}" data-v="${v}">${r}</button>`).join('')}</div>`;
+  // os botões usam data-forma / data-op (e não data-v): data-v é o "Voltar" das janelas, procurado pelo primeiro [data-v]
+  const chips = (grupo, opcoes, valor) => `<div class="chips" data-g="${grupo}">${opcoes.map(([v, r]) => `<button type="button" class="chip ${String(valor) === String(v) ? 'ativo' : ''}" data-op="${v}">${r}</button>`).join('')}</div>`;
   const pergunta = (txt, html) => `<div style="margin-top:12px"><div class="small" style="margin-bottom:6px">${txt}</div>${html}</div>`;
   const campo = (rot, k, tipo = 'text', extra = '') => `<label class="campo" style="margin-top:12px;max-width:420px">${rot}<input type="${tipo}" data-k="${k}" value="${esc(st[k])}" ${extra}></label>`;
   const arquivo = (k, rot) => `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="btn peq" data-arq="${k}">${st[k] ? 'Trocar arquivo' : rot}</button>
@@ -360,7 +361,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     return '';
   };
   const render = () => {
-    raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === st.forma));
+    raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.forma === st.forma));
     const f = st.forma; let h = '';
     if (orc && f === 'boleto') {
       h += pergunta('Quantos boletos?', chips('qtd', [1, 2, 3, 4, 5, 6].map(n => [n, n + 'x']).concat([['outro', 'Outro']]), st.outraQtd ? 'outro' : st.qtd));
@@ -406,7 +407,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
   const atualizarResumo = () => { const r = corpo.querySelector('[data-fp-resumo] b'); if (r) r.textContent = resumo(); };
   const ligar = () => {
     corpo.querySelectorAll('[data-g]').forEach(g => g.querySelectorAll('.chip').forEach(b => b.onclick = () => {
-      const k = g.dataset.g, v = b.dataset.v;
+      const k = g.dataset.g, v = b.dataset.op;
       if (k === 'qtd') { if (v === 'outro') { st.outraQtd = true; } else { st.outraQtd = false; st.qtd = Number(v); gerarParc(); } }
       else st[k] = v === 'true' ? true : v === 'false' ? false : v;
       render();
@@ -425,7 +426,7 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     });
   };
   raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.onclick = () => {
-    st.forma = b.dataset.v; st.pago = null;
+    st.forma = b.dataset.forma; st.pago = null;
     if (st.forma === 'boleto' && !st.parcelas.length) gerarParc();
     if (st.forma === 'sinal_restante') sugerirSinal();
     render();
@@ -936,7 +937,7 @@ function htmlEntrega(v = {}) {
   const forma = v.forma_entrega || 'retirada';
   return `<div data-ent style="grid-column:1/-1">
     <input type="hidden" name="forma_entrega" value="${forma}"><input type="hidden" name="endereco_entrega" value="${esc(v.endereco_entrega || '')}">
-    <div class="chips" data-ent-forma><button type="button" class="chip" data-v="retirada">Retira no balcão</button><button type="button" class="chip" data-v="entrega">Entregar no cliente</button></div>
+    <div class="chips" data-ent-forma><button type="button" class="chip" data-ent="retirada">Retira no balcão</button><button type="button" class="chip" data-ent="entrega">Entregar no cliente</button></div>
     <div data-ent-corpo style="margin-top:10px"></div></div>`;
 }
 function ligarEntrega(el) {
@@ -946,7 +947,7 @@ function ligarEntrega(el) {
   let endEntrega = hForma.value === 'entrega' ? hEnd.value : '', manual = !!endEntrega, cepInfo = null;
   const render = () => {
     const f = hForma.value;
-    raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.v === f));
+    raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.classList.toggle('ativo', b.dataset.ent === f));
     if (f === 'retirada') { hEnd.value = EMPRESA.endereco; corpo.innerHTML = `<div class="small">Balcão: ${esc(EMPRESA.endereco)}</div>`; return; }
     hEnd.value = endEntrega;
     corpo.innerHTML = `<div class="grade g4">
@@ -973,7 +974,7 @@ function ligarEntrega(el) {
       } catch { cepInfo = null; q('dica').textContent = 'CEP não encontrado. Escreva o endereço completo.'; }
     };
   };
-  raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.onclick = () => { hForma.value = b.dataset.v; render(); });
+  raiz.querySelectorAll('[data-ent-forma] .chip').forEach(b => b.onclick = () => { hForma.value = b.dataset.ent; render(); });
   render();
   return {
     forma: () => hForma.value,
