@@ -199,8 +199,12 @@ const unitario = (total, qtd) => Number(qtd) > 0 ? (Number(total || 0) / Number(
 const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vista:'À vista', parcela:'Parcela' };
 const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro', maquininha:'Maquininha' };
 const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+// pagamento que pode ser confirmado pelo extrato do Inter (Módulo 6, Fase 2 Parte B)
+const TIPO_ENTRADA = { PIX: 'Pix', TRANSFERENCIA: 'Transferência', BOLETO_COBRANCA: 'Boleto' };
+const formaDoExtrato = r => !r.forma_pagamento || ['pix', 'transferencia', 'boleto'].includes(r.forma_pagamento);
 function badgeParcela(r) {
   if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return badge('Pago no cartão em ' + data(r.pago_em) + ' · aguardando repasse', 'b-verde');
+  if (r.situacao === 'pago' && r.extrato_origem) return badge('Pago em ' + data(r.pago_em) + ' · confirmado no extrato', 'b-verde');
   if (r.situacao === 'pago') return r.conferencia === 'pendente'
     ? badge('Pago em ' + data(r.pago_em) + ' · a conferir', 'b-ambar')
     : badge('Pago em ' + data(r.pago_em), 'b-verde');
@@ -211,6 +215,8 @@ function badgeParcela(r) {
 }
 function detalheParcela(r) {
   if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return `<div class="small muted">Pelo link da Cielo${r.cielo_bandeira ? ' · ' + esc(r.cielo_bandeira) : ''}${r.cielo_parcelas ? ' · ' + esc(r.cielo_parcelas) + 'x' : ''}</div>`;
+  if (r.situacao === 'pago' && r.extrato_origem) return `<div class="small muted">${esc(TIPO_ENTRADA[r.extrato_tipo] || 'Entrada')}${r.extrato_nome ? ' de ' + esc(r.extrato_nome) : ''}
+    · ${r.extrato_origem === 'automatico' ? 'baixa automática' : 'confirmado por ' + esc(r.baixado_por_nome || '—')}</div>`;
   if (r.situacao === 'pago' && r.baixado_por_nome) return `<div class="small muted">Marcado por ${esc(r.baixado_por_nome)}${r.conferencia === 'conferido' && r.conferido_por_nome ? ` · conferido por ${esc(r.conferido_por_nome)}` : ''}</div>`;
   if (r.situacao === 'aberto' && r.conferencia === 'devolvido') return `<div class="small" style="color:var(--vermelho)">Devolvido pelo financeiro: ${esc(r.motivo_devolucao || '')}</div>`;
   return '';
@@ -222,6 +228,7 @@ function tabelaParcelas(lista, comPedido) {
   const vend = !fin && pode('cria_pedidos') && !comPedido;   // vendedor, na tela do pedido
   const acoes = fin || vend;
   const linkCielo = pode('ve_financeiro');   // link da Cielo: qualquer pessoa que vê o financeiro (decisão do dono, 24/11)
+  const extrato = pode('ve_financeiro');     // "Confirmar pagamento" pelo extrato do Inter: todos menos o Designer (D158)
   const coluna = acoes || linkCielo;
   const conferir = fin && (comPedido || S.usuario.perfil === 'financeiro');
   return `<div class="tabela-wrap"><table>
@@ -235,7 +242,8 @@ function tabelaParcelas(lista, comPedido) {
         ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${coluna ? `<td class="dir" style="white-space:nowrap">
-        ${acoes && r.situacao === 'aberto' ? `<button class="btn prim peq" onclick="modalBaixa('${r.id}', ${conferir})">${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
+        ${extrato && r.situacao === 'aberto' && formaDoExtrato(r) ? `<button class="btn prim peq" onclick="confirmarPagamentoExtrato('${r.id}')">Confirmar pagamento</button>` : ''}
+        ${acoes && r.situacao === 'aberto' ? `<button class="btn ${extrato && formaDoExtrato(r) ? 'link' : 'prim'} peq" onclick="modalBaixa('${r.id}', ${conferir})"${extrato && formaDoExtrato(r) && !fin ? ' title="Só se o dinheiro não caiu no Inter: vai para a conferência do financeiro"' : ''}>${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
         ${linkCielo && r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? botoesLinkCielo(r, acoes) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}

@@ -106,8 +106,8 @@ function devolverPagamentos(ids) {
 /* ---------- EXTRATO DO INTER (aba da Conciliação; lido pelo fluxo [GVH] Inter) ---------- */
 const TIPOS_MOV = { PIX: 'Pix', TRANSFERENCIA: 'Transferência', BOLETO_COBRANCA: 'Boleto', PAGAMENTO: 'Pagamento', INVESTIMENTO: 'Investimento', ESTORNO: 'Estorno', CAMBIO: 'Câmbio', OUTROS: 'Outros' };
 async function extratoInter(el, chips) {
-  const g = S.cache.filtroExt || (S.cache.filtroExt = { operacao: 'C', busca: '', de: '', ate: '' });
-  const r = await api('banco_movimentos', { ...g, limite: limLista('ext') });
+  const g = S.cache.filtroExt || (S.cache.filtroExt = { operacao: 'C', busca: '', de: '', ate: '', sem_pedido: false });
+  const r = await api('banco_movimentos', { ...g, operacao: g.sem_pedido ? 'C' : g.operacao, limite: limLista('ext') });
   const u = r.ultima_leitura;
   const leitura = !u ? '<span class="muted">O extrato ainda não foi lido.</span>'
     : u.situacao === 'erro' ? `<span style="color:var(--vermelho)">Última leitura com erro (${esc(dataHora(u.concluida_em || u.criada_em))}): ${esc(u.erro || '')}</span>${r.ultima_ok ? ` · <span class="muted">última leitura certa: ${esc(dataHora(r.ultima_ok))}</span>` : ''}`
@@ -121,38 +121,163 @@ async function extratoInter(el, chips) {
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <button class="btn prim" id="ext-ler">Atualizar extrato</button><span class="small">${leitura}</span>
       </div>
-      <div class="chips" style="margin-bottom:12px">${ops.map(([k, n]) => `<button class="chip ${g.operacao === k ? 'ativo' : ''}" data-op="${k}">${n}</button>`).join('')}</div>
+      <div class="chips" style="margin-bottom:12px">${ops.map(([k, n]) => `<button class="chip ${!g.sem_pedido && g.operacao === k ? 'ativo' : ''}" data-op="${k}">${n}</button>`).join('')}
+        <button class="chip ${g.sem_pedido ? 'ativo' : ''}" data-sp title="Entradas que ainda não foram usadas em nenhum pagamento">Sem pedido</button></div>
       <div class="linha-form" style="margin-bottom:12px">
         <label class="campo" style="flex:2">Buscar<input type="search" id="ext-busca" value="${esc(g.busca)}" placeholder="Nome, descrição ou valor (ex.: 150,00)"></label>
         <label class="campo">De<input type="date" id="ext-de" value="${esc(g.de)}"></label>
         <label class="campo">Até<input type="date" id="ext-ate" value="${esc(g.ate)}"></label>
       </div>
-      ${blocoExp('ext-como', 'Como funciona', '<p class="small muted" style="margin:0">O sistema lê o extrato do Inter sozinho de 15 em 15 minutos (das 7h às 20h) e quando alguém clica em "Atualizar extrato". Sem datas, mostra os últimos 30 dias. O CPF de quem pagou aparece só em parte. Cada movimento é guardado uma vez só.</p>', false, 'leve')}
+      ${blocoExp('ext-como', 'Como funciona', '<p class="small muted" style="margin:0">O sistema lê o extrato do Inter sozinho de 15 em 15 minutos (das 7h às 20h) e quando alguém clica em "Atualizar extrato" ou "Confirmar pagamento". Sem datas, mostra os últimos 30 dias. O CPF de quem pagou aparece só em parte. Cada movimento é guardado uma vez só. Boleto pago com o número do pedido no "Seu número" dá baixa sozinho; se algo não bate, vira tarefa do financeiro. "Sem pedido" mostra as entradas que ainda não pagaram nenhuma parcela.</p>', false, 'leve')}
       ${!mov.length ? '<div class="vazio">Nenhum movimento neste filtro.</div>' : `
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Data</th><th>De / para</th><th>CPF/CNPJ</th><th>Tipo</th><th class="dir">Valor</th></tr></thead>
+        <thead><tr><th>Data</th><th>De / para</th><th>CPF/CNPJ</th><th>Tipo</th><th>Pedido</th><th class="dir">Valor</th></tr></thead>
         <tbody>${mov.map(m => `<tr>
           <td class="num">${data(m.data)}</td>
           <td>${esc(m.nome || m.titulo || '—')}${m.categoria === 'cielo' ? ' ' + badge('Repasse da Cielo', 'b-azul') : m.categoria === 'devolucao' ? ' ' + badge('Devolvido', 'b-cinza') : ''}
             <div class="small muted">${esc([m.nome ? m.titulo : '', m.descricao_pix || m.descricao, m.instituicao].filter(Boolean).join(' · '))}</div></td>
           <td class="num small">${esc(m.documento && m.documento.length === 14 ? fmtDoc(m.documento) : (m.documento || '—'))}</td>
           <td>${esc(TIPOS_MOV[m.tipo] || m.tipo || '—')}</td>
+          <td>${usoMovimento(m)}</td>
           <td class="dir num" style="color:var(${m.operacao === 'C' ? '--verde' : '--vermelho'})">${m.operacao === 'D' ? '− ' : ''}${brl(m.valor)}</td>
         </tr>`).join('')}</tbody></table></div>`}
       ${rodapeLista('ext', mov.length, r.total, 'movimento(s)', g.operacao === 'T' ? `Entradas − saídas: ${brl(r.saldo_periodo)}` : `Total: ${brl(Math.abs(Number(r.saldo_periodo)))}`)}
     </div>`;
   ligarMais(el, 'ext', recarregar);
   const filtrar = () => { zerarLista('ext'); recarregar(); };
-  $$('[data-op]').forEach(b => b.onclick = () => { g.operacao = b.dataset.op; filtrar(); });
+  $$('[data-op]').forEach(b => b.onclick = () => { g.operacao = b.dataset.op; g.sem_pedido = false; filtrar(); });
+  $('[data-sp]').onclick = () => { g.sem_pedido = !g.sem_pedido; filtrar(); };
   let t; $('#ext-busca').oninput = e => { g.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
   $('#ext-de').onchange = e => { g.de = e.target.value; filtrar(); };
   $('#ext-ate').onchange = e => { g.ate = e.target.value; filtrar(); };
   $('#ext-ler').onclick = e => atualizarExtratoInter(e.currentTarget);
 }
+// coluna "Pedido" do extrato: onde a entrada foi usada (e quanto sobra)
+function usoMovimento(m) {
+  const usos = (m.usos || []).map(u => `<a href="#/pedido/${esc(u.pedido_id)}">#${esc(u.numero)}</a>${(m.usos.length > 1 || Number(u.valor) !== Number(m.valor)) ? ` <span class="small muted">${brl(u.valor)}</span>` : ''}${u.origem === 'automatico' ? ' <span class="small muted">(automático)</span>' : ''}`);
+  const sobra = m.pode_usar && Number(m.saldo) > 0;
+  return usos.join('<br>') + (sobra ? `${usos.length ? `<div class="small muted">sobra ${brl(m.saldo)}</div>` : badge('Sem pedido', 'b-ambar')}` : '') || '—';
+}
 async function atualizarExtratoInter(btn) {
   let x; try { x = await ocupado(btn, () => api('inter_extrato_atualizar')); } catch { recarregar(); return; }
   toast(x.recente ? 'O extrato acabou de ser lido. Tente de novo em 1 minuto.' : `Extrato atualizado: ${x.novos || 0} movimento(s) novo(s).`);
   recarregar();
+}
+
+/* ---------- CONFIRMAR PAGAMENTO PELO EXTRATO DO INTER (Módulo 6, Fase 2 Parte B; D148, D154, D158) ----------
+   O banco escolhe as entradas que servem (até 5) e confere tudo de novo na hora de confirmar. */
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+// lê o Inter antes de buscar (no máximo 1 leitura por minuto no sistema inteiro); se outra pessoa está lendo, espera terminar
+async function lerExtratoAgora(id) {
+  let aviso = '';
+  try {
+    const x = await api('inter_extrato_atualizar', {}, true, true);
+    if (x.recente && x.situacao === 'lendo') {
+      for (let i = 0; i < 8; i++) {
+        await esperar(2500);
+        const c = await api('buscar_pix_extrato', { id }, true, true);
+        if (!c.ultima_leitura || c.ultima_leitura.situacao !== 'lendo') return { cab: c, aviso };
+      }
+      aviso = 'O extrato ainda está sendo lido; a lista pode não ter os últimos minutos.';
+    }
+  } catch { aviso = 'Não deu para ler o Inter agora; a lista usa a última leitura.'; }
+  return { cab: await api('buscar_pix_extrato', { id }), aviso };
+}
+async function confirmarPagamentoExtrato(id) {
+  const m = abrirModal({ titulo: 'Confirmar pagamento', corpo: '<div id="cp-corpo" class="cp-corpo"><p class="small muted" style="margin:0"><span class="roda"></span> Lendo o extrato do Inter…</p></div>',
+    rodape: '<button class="btn" data-v>Voltar</button><button class="btn prim" data-s disabled>Confirmar</button>' });
+  m.el.querySelector('.modal').classList.add('estreito');
+  const corpo = $('#cp-corpo', m.el), btnOk = m.el.querySelector('[data-s]');
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  let cab, aviso;
+  try { ({ cab, aviso } = await lerExtratoAgora(id)); } catch (e) { corpo.innerHTML = `<div class="vazio">${esc(e.message)}</div>`; return; }
+  if (!document.body.contains(m.el)) return;   // fechou enquanto lia
+  if (!cab.aberta) { corpo.innerHTML = '<div class="vazio">Esta parcela não está mais em aberto. Atualize a tela.</div>'; return; }
+
+  const st = { escolha: 'parcela', valor: Number(cab.parcela), mov: null, entradas: [], manual: false };
+  const opcoes = [['parcela', 'Esta parcela', cab.parcela]];
+  if (Number(cab.em_aberto) !== Number(cab.parcela)) opcoes.push(['tudo', 'Tudo em aberto', cab.em_aberto]);
+  if (![Number(cab.parcela), Number(cab.em_aberto)].includes(Number(cab.metade))) opcoes.push(['metade', 'Metade (sinal)', cab.metade]);
+  opcoes.push(['outro', 'Outro valor', null]);
+  const ultima = cab.ultima_ok ? `Extrato lido em ${esc(dataHora(cab.ultima_ok))}` : 'O extrato ainda não foi lido';
+  corpo.innerHTML = `
+    <p class="small" style="margin:0">Pedido <b>#${esc(cab.pedido_numero)}</b> · ${esc(cab.cliente)} · falta pagar <b>${brl(cab.em_aberto)}</b></p>
+    <div><div class="small muted" style="margin-bottom:6px">Quanto o cliente pagou?</div>
+      <div class="chips">${opcoes.map(([k, n, v]) => `<button class="chip ${k === st.escolha ? 'ativo' : ''}" data-val="${k}">${esc(n)}${v !== null ? ' · ' + brl(v) : ''}</button>`).join('')}</div>
+      <label class="campo hidden" id="cp-outro" style="margin-top:8px;max-width:200px">Valor (R$)<input type="number" step="0.01" min="0.01" max="${esc(cab.em_aberto)}"></label></div>
+    <div id="cp-lista"></div>
+    <div id="cp-nota" class="small muted"></div>
+    ${blocoExp('cp-manual', 'Não é nenhuma destas? Buscar manualmente', `
+      <div class="linha-form" style="flex-wrap:wrap">
+        <label class="campo">Valor (R$)<input type="number" step="0.01" min="0.01" data-m="valor"></label>
+        <label class="campo" style="flex:2">Nome<input type="search" data-m="nome" placeholder="Nome de quem pagou"></label>
+        <label class="campo">De<input type="date" data-m="de"></label>
+        <label class="campo">Até<input type="date" data-m="ate"></label>
+      </div><div><button class="btn peq" id="cp-buscar">Buscar</button></div>`, false, 'leve')}
+    <p class="small muted" style="margin:0">${aviso ? `<span style="color:var(--vermelho)">${esc(aviso)}</span> · ` : ''}${ultima} · <button class="btn link peq" id="cp-ler">Ler de novo</button></p>`;
+
+  const lista = $('#cp-lista', m.el), nota = $('#cp-nota', m.el), outro = $('#cp-outro', m.el);
+  const valorFinal = () => st.mov ? Math.min(st.valor, Number(st.mov.saldo)) : st.valor;
+  const atualizarBotao = () => {
+    const v = valorFinal(), ok = st.mov && v > 0;
+    btnOk.disabled = !ok; btnOk.textContent = ok ? `Confirmar ${brl(v)}` : 'Confirmar';
+    if (!ok) { nota.textContent = ''; return; }
+    const s = Number(st.mov.saldo), partes = [];
+    if (s < st.valor) partes.push(`A entrada é menor: confirma ${brl(s)} e o resto (${brl(st.valor - s)}) continua em aberto.`);
+    if (s > st.valor) partes.push(`Sobram ${brl(s - st.valor)} desta entrada no extrato, para outro pagamento.`);
+    if (v > Number(cab.parcela)) partes.push('Paga esta parcela e as próximas em aberto do pedido.');
+    nota.textContent = partes.join(' ');
+  };
+  const desenhar = (r, manual) => {
+    st.entradas = r.entradas; st.mov = null;
+    lista.innerHTML = !r.entradas.length
+      ? `<div class="vazio">${manual ? 'Nada encontrado com estes filtros.' : 'Nenhuma entrada do extrato com este valor ou com o nome do cliente.'} ${manual ? '' : 'Use a busca manual abaixo.'}</div>`
+      : `<div class="cp-lista">${r.entradas.map(e => `
+        <label class="cp-opcao"><input type="radio" name="cp-mov" value="${esc(e.id)}">
+          <div><b>${esc(e.nome || '—')}</b>${e.motivo ? ' ' + badge(e.motivo, e.motivo === 'Valor e nome batem' ? 'b-verde' : 'b-cinza') : ''}
+            <div class="small muted">${data(e.data)} · ${esc(TIPO_ENTRADA[e.tipo] || e.tipo)}${e.documento ? ' · ' + esc(e.documento.length === 14 ? fmtDoc(e.documento) : e.documento) : ''}${e.descricao ? ' · ' + esc(e.descricao) : ''}</div></div>
+          <div class="dir num"><b>${brl(e.valor)}</b>${Number(e.saldo) < Number(e.valor) ? `<div class="small muted">sobra ${brl(e.saldo)}</div>` : ''}</div>
+        </label>`).join('')}</div>${r.total > r.entradas.length ? `<p class="small muted" style="margin:6px 0 0">Há mais ${r.total - r.entradas.length}. Refine a busca.</p>` : ''}`;
+    lista.querySelectorAll('[name=cp-mov]').forEach(i => i.onchange = () => { st.mov = st.entradas.find(e => e.id === i.value); atualizarBotao(); });
+    atualizarBotao();
+  };
+  const buscar = async () => {
+    if (!(st.valor > 0)) { lista.innerHTML = ''; st.mov = null; atualizarBotao(); return; }
+    st.manual = false;
+    try { desenhar(await api('buscar_pix_extrato', { id, valor: st.valor }, false, true), false); } catch { /* erro já avisado */ }
+  };
+  const buscarManual = async () => {
+    const f = {}; m.el.querySelectorAll('[data-m]').forEach(i => { if (i.value.trim()) f[i.dataset.m] = i.value.trim(); });
+    if (!Object.keys(f).length) return toast('Informe o valor, o nome ou a data para buscar.', true);
+    st.manual = true;
+    try { desenhar(await ocupado($('#cp-buscar', m.el), () => api('buscar_pix_extrato', { id, manual: true, ...f })), true); } catch { /* erro já avisado */ }
+  };
+  m.el.querySelectorAll('[data-val]').forEach(b => b.onclick = () => {
+    m.el.querySelectorAll('[data-val]').forEach(x => x.classList.toggle('ativo', x === b));
+    st.escolha = b.dataset.val; outro.classList.toggle('hidden', st.escolha !== 'outro');
+    const o = opcoes.find(x => x[0] === st.escolha);
+    if (st.escolha === 'outro') { st.valor = Number(outro.querySelector('input').value) || 0; outro.querySelector('input').focus(); }
+    else st.valor = Number(o[2]);
+    if (st.manual) atualizarBotao(); else buscar();
+  });
+  let t; outro.querySelector('input').oninput = e => {
+    st.valor = Math.round(Number(e.target.value) * 100) / 100 || 0;
+    clearTimeout(t); t = setTimeout(() => { if (st.manual) atualizarBotao(); else buscar(); }, 450);
+  };
+  $('#cp-buscar', m.el).onclick = buscarManual;
+  m.el.querySelectorAll('[data-m]').forEach(i => i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); buscarManual(); } });
+  $('#cp-ler', m.el).onclick = async e => {
+    try { await ocupado(e.currentTarget, () => api('inter_extrato_atualizar', {}, true)); } catch { toast('Não deu para ler o Inter agora.', true); }
+    st.manual ? buscarManual() : buscar();
+  };
+  btnOk.onclick = async () => {
+    const v = valorFinal();
+    if (!st.mov || !(v > 0)) return;
+    try { await ocupado(btnOk, () => api('confirmar_pagamento_extrato', { id, movimento_id: st.mov.id, valor: v.toFixed(2) })); }
+    catch { buscar(); return; }
+    m.fechar(); toast(`Pagamento de ${brl(v)} confirmado.`); recarregar();
+  };
+  buscar();
 }
 
 /* ---------- COMISSÕES ---------- */

@@ -399,3 +399,11 @@ body.com-tarefas .barra-acao{margin-right:58px}
 .barra-acao .btn:not(.prim){color:var(--grafite)}
 .pre-acab{border-top:1px dashed var(--linha);padding-top:8px;margin-top:4px;display:grid;gap:8px}
 .pre-acab [hidden]{display:none}
+/* "Confirmar pagamento" pelo extrato do Inter (Módulo 6, Fase 2 Parte B, 26/11) */
+.modal.estreito{max-width:520px;margin-top:6vh}
+.cp-lista{display:grid;gap:6px}
+.cp-opcao{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;border:1px solid var(--linha);border-radius:8px;padding:8px 10px;cursor:pointer}
+.cp-opcao:has(input:checked){border-color:var(--verde);background:var(--linha-2)}
+.cp-corpo{display:grid;gap:14px}
+.cp-corpo .vazio{padding:16px 10px}
+.cp-corpo .roda{display:inline-block;width:12px;height:12px;vertical-align:-2px;border:2px solid #d8e2de;border-top-color:var(--verde);border-radius:50%;animation:gira .7s linear infinite}
