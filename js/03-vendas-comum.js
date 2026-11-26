@@ -238,14 +238,14 @@ function tabelaParcelas(lista, comPedido) {
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
       <td class="num">${data(r.vencimento)}</td>
       <td class="dir num">${brl(r.valor)}</td>
-      <td>${esc(FORMAS[r.forma_pagamento] || '—')}${htmlLinkPagamento(r)}
+      <td>${esc(r.forma_pagamento ? (FORMAS[r.forma_pagamento] || '—') : (r.situacao === 'aberto' ? 'A combinar' : '—'))}${htmlLinkPagamento(r)}
         ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${coluna ? `<td class="dir" style="white-space:nowrap">
         ${extrato && r.situacao === 'aberto' && formaDoExtrato(r) ? `<button class="btn prim peq" onclick="confirmarPagamentoExtrato('${r.id}')">Confirmar pagamento</button>` : ''}
         ${acoes && r.situacao === 'aberto' ? `<button class="btn ${extrato && formaDoExtrato(r) ? 'link' : 'prim'} peq" onclick="modalBaixa('${r.id}', ${conferir})"${extrato && formaDoExtrato(r) && !fin ? ' title="Só se o dinheiro não caiu no Inter: vai para a conferência do financeiro"' : ''}>${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
-        ${linkCielo && r.situacao === 'aberto' && r.forma_pagamento === 'cartao_credito' ? botoesLinkCielo(r, acoes) : ''}
+        ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
       </td>` : ''}
@@ -314,6 +314,19 @@ async function anexarComprovantes(pag, resp) {
   });
   if (falhas) toast(`${falhas > 1 ? falhas + ' comprovantes não foram anexados' : 'Um comprovante não foi anexado'}. Anexe pelo pagamento, no bloco Financeiro do pedido.`, true);
 }
+// depois de criar o pedido (ou trocar a forma / lançar a diferença): confirma pelo extrato o que já foi pago e cria o link da Cielo
+async function finalizarPagamento(pag, resp) {
+  await anexarComprovantes(pag, resp);
+  const ids = (resp && resp.recebimentos_ids) || {};
+  for (const e of (pag && pag.extrato) || []) {
+    try { await aguarde('Confirmando o pagamento no extrato…', () => api('confirmar_pagamento_extrato', { id: ids[e.chave], movimento_id: e.movimento_id, valor: e.valor }, true)); }
+    catch (err) { toast(`O pagamento não foi confirmado pelo extrato (${err.message}). Confirme depois pelo botão "Confirmar pagamento" no pedido.`, true); }
+  }
+  for (const chave of (pag && pag.links) || []) {
+    try { const r = await aguarde('Criando o link na Cielo…', () => api('cielo_link', { id: ids[chave] }, true)); mostrarLinkCielo(r.url, r.expira_em); }
+    catch (err) { toast(`O link da Cielo não foi criado (${err.message}). Crie no pedido, em "Criar link de pagamento".`, true); }
+  }
+}
 async function verComprovante(id) { const r = await api('comprovante_arquivo', { op: 'download', id }); window.open(r.url, '_blank', 'noopener'); }
 function htmlFormaPagamento(op = {}) {
   return `<div class="forma-pag" data-fp-raiz ${op.autorizar ? 'data-fp-autorizar' : ''} ${op.orcamento ? 'data-fp-orc' : ''}>
@@ -323,13 +336,15 @@ function htmlFormaPagamento(op = {}) {
 }
 /* Componente que evolui conforme os cliques. Devolve coletar() assíncrono → { forma_pagamento, forma_pagamento_obs, recebimentos, resumo, autoriza_sem_pagamento }.
    coletar.atualizar() recalcula boletos e sugestão do sinal quando o total ou a previsão mudam. */
-function ligarFormaPagamento(el, total, prev, inicial) {
+/* Pagamento já feito (Pix, transferência, sinal) é escolhido no extrato do Inter e confirmado logo depois de criar (finalizarPagamento);
+   cartão: o link da Cielo é criado logo depois de criar. clienteId() diz de quem buscar no extrato (Módulo 6, 26/11). */
+function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
   const raiz = el.matches('[data-fp-raiz]') ? el : el.querySelector('[data-fp-raiz]');
   const podeAutorizar = raiz.hasAttribute('data-fp-autorizar');
-  const orc = raiz.hasAttribute('data-fp-orc');   // orçamento: só o combinado, sem "já pagou", comprovante ou link
+  const orc = raiz.hasAttribute('data-fp-orc');   // orçamento: só o combinado, sem "já pagou", extrato ou link
   const corpo = raiz.querySelector('[data-fp-corpo]');
-  const st = { forma: '', pago: null, comp: null, link: '', qtd: 1, outraQtd: false, parcelas: [], parcManual: false,
-               sinal: '', sinalManual: false, sinalPago: null, formaSinal: 'pix', compSinal: null, restante: 'pix', linkRest: '', obs: '', autoriza: null };
+  const st = { forma: '', pago: null, mov: null, naoAchou: false, gerarLink: true, qtd: 1, outraQtd: false, parcelas: [], parcManual: false,
+               sinal: '', sinalManual: false, sinalPago: null, movSinal: null, naoAchouSinal: false, restante: 'pix', obs: '', autoriza: null };
   const enviados = new Map();
   const t2 = () => Math.round(total() * 100) / 100;
   const brlTxt = v => brl(v).replace(/\s/g, ' ');
@@ -337,9 +352,23 @@ function ligarFormaPagamento(el, total, prev, inicial) {
   const chips = (grupo, opcoes, valor) => `<div class="chips" data-g="${grupo}">${opcoes.map(([v, r]) => `<button type="button" class="chip ${String(valor) === String(v) ? 'ativo' : ''}" data-op="${v}">${r}</button>`).join('')}</div>`;
   const pergunta = (txt, html) => `<div style="margin-top:12px"><div class="small" style="margin-bottom:6px">${txt}</div>${html}</div>`;
   const campo = (rot, k, tipo = 'text', extra = '') => `<label class="campo" style="margin-top:12px;max-width:420px">${rot}<input type="${tipo}" data-k="${k}" value="${esc(st[k])}" ${extra}></label>`;
-  const arquivo = (k, rot) => `<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="btn peq" data-arq="${k}">${st[k] ? 'Trocar arquivo' : rot}</button>
-    ${st[k] ? `<span class="small">${esc(st[k].name)} ✓</span>` : '<span class="small muted">PDF ou imagem</span>'}</div>`;
   const simNao = (k, txt) => pergunta(txt, chips(k, [['true', 'Sim'], ['false', 'Ainda não']], st[k]));
+  // entrada do extrato escolhida (k = 'mov' ou 'movSinal'); "não achei" = cria em aberto e confirma depois
+  const extrato = (k, nao) => `<div style="margin-top:12px">${st[k]
+    ? `<div class="alerta" style="background:var(--verde-bg);color:var(--grafite);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="small">✓ ${esc(TIPO_ENTRADA[st[k].tipo] || 'Entrada')} de <b>${esc(st[k].nome || '—')}</b> · ${data(st[k].data)} · ${brl(st[k].saldo)}</span>
+        <button type="button" class="btn link peq" data-ext="${k}">Trocar</button></div>`
+    : st[nao] ? `<div class="alerta small" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span>Não achei o pagamento no extrato. O pedido será criado com o pagamento em aberto; confirme depois pelo botão <b>Confirmar pagamento</b>.</span>
+        <button type="button" class="btn link peq" data-ext="${k}">Buscar de novo</button></div>`
+    : `<button type="button" class="btn peq" data-ext="${k}">Buscar o pagamento no extrato</button>`}</div>`;
+  const buscarExtrato = async k => {
+    const nao = k === 'mov' ? 'naoAchou' : 'naoAchouSinal', valor = k === 'mov' ? t2() : Math.round(Number(st.sinal || 0) * 100) / 100;
+    if (!clienteId()) { toast('Escolha o cliente antes de buscar o pagamento no extrato.', true); return; }
+    if (!(valor > 0)) { toast(k === 'mov' ? 'O total precisa ser maior que zero.' : 'Informe o valor do sinal.', true); return; }
+    const r = await escolherEntradaExtrato(clienteId(), valor);
+    if (r === undefined) return;               // fechou a janela sem escolher: fica como estava
+    st[k] = r; st[nao] = r === null; render();
+  };
   const gerarParc = () => {
     const qtd = Math.min(24, Math.max(1, Number(st.qtd) || 1)), v1 = prev() || somaDias(hoje(), 30);
     const cents = Math.round(t2() * 100), base = Math.floor(cents / qtd);
@@ -349,14 +378,19 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     st.parcManual = false;
   };
   const sugerirSinal = () => { if (!st.sinalManual) { const s = Math.round(t2() * 50) / 100; st.sinal = s > 0 ? s.toFixed(2) : ''; } };
-  const nadaPago = () => (st.forma === 'sinal_restante' ? st.sinalPago === false : st.pago === false);
+  // nada confirmado no extrato na criação: cartão (link depois), "Ainda não" ou "não achei"
+  const nadaPago = () => st.forma === 'cartao_credito' ? true
+    : st.forma === 'sinal_restante' ? (st.sinalPago === false || (st.sinalPago === true && !st.movSinal))
+    : (st.pago === false || (st.pago === true && ['pix', 'transferencia'].includes(st.forma) && !st.mov));
   const mostraAut = () => !orc && podeAutorizar && st.forma && !FORMAS_LIBERAM.includes(st.forma) && nadaPago();
   const resumo = () => {
     const f = st.forma, pg = st.pago === true ? ' (pago)' : '';
-    if (f === 'pix' || f === 'transferencia' || f === 'cartao_credito') return FORMAS_COMB[f] + pg;
+    if (orc && f === 'sinal_restante') return `Sinal de ${brlTxt(Number(st.sinal || 0))} + restante na entrega (${FORMAS_COMB[st.restante]})`;
+    if (f === 'pix' || f === 'transferencia') return FORMAS_COMB[f] + (st.pago === true && st.mov ? ' (pago)' : '');
+    if (f === 'cartao_credito') return FORMAS_COMB[f] + (!orc && st.gerarLink ? ' (link da Cielo)' : '');
     if (f === 'boleto') return st.parcelas.length > 1 ? `Boleto em ${st.parcelas.length}x` : 'Boleto';
     if (f === 'retirada') return 'Paga na retirada';
-    if (f === 'sinal_restante') return `Sinal de ${brlTxt(Number(st.sinal || 0))}${st.sinalPago === true ? ' (pago)' : ''} + restante na entrega (${FORMAS_COMB[st.restante]})`;
+    if (f === 'sinal_restante') return `Sinal de ${brlTxt(Number(st.sinal || 0))}${st.sinalPago === true && st.movSinal ? ' (pago)' : ''} + restante a combinar`;
     if (f === 'outros') return 'Outros' + (st.obs ? ': ' + st.obs : '') + pg;
     return '';
   };
@@ -375,10 +409,10 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       // pix, transferência, cartão e retirada: no orçamento basta a forma
     } else if (f === 'pix' || f === 'transferencia') {
       h += simNao('pago', 'O cliente já pagou?');
-      if (st.pago === true) h += arquivo('comp', 'Anexar comprovante');
+      if (st.pago === true) h += extrato('mov', 'naoAchou');
     } else if (f === 'cartao_credito') {
-      h += campo('Link de pagamento (Cielo) <span class="muted small">— opcional; deixe em branco para criar depois, no pedido, com "Criar link de pagamento"</span>', 'link', 'url', 'placeholder="https://"');
-      h += simNao('pago', 'O cliente já pagou?');
+      h += `<label class="check" style="margin-top:12px;white-space:normal"><input type="checkbox" data-link ${st.gerarLink ? 'checked' : ''}> Criar o link de pagamento da Cielo agora (crédito, até 3x sem juros)</label>
+        <div class="small muted" style="margin-top:4px">${st.gerarLink ? 'Logo depois de salvar, o link aparece para copiar e mandar ao cliente.' : 'Crie depois, no pedido, com "Criar link de pagamento" (ou "Colar link manual" para parcelado com juros).'}</div>`;
     } else if (f === 'boleto') {
       h += pergunta('Quantos boletos?', chips('qtd', [1, 2, 3, 4, 5, 6].map(n => [n, n + 'x']).concat([['outro', 'Outro']]), st.outraQtd ? 'outro' : st.qtd));
       if (st.outraQtd) h += campo('Quantidade de boletos', 'qtd', 'number', 'min="1" max="24" style="max-width:120px"');
@@ -389,12 +423,8 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     } else if (f === 'sinal_restante') {
       h += campo(`Valor do sinal (R$) <span class="muted small">— sugestão: 50%</span>`, 'sinal', 'number', 'step="0.01" min="0.01" style="max-width:160px"');
       h += simNao('sinalPago', 'O sinal já foi pago?');
-      if (st.sinalPago === true) {
-        h += pergunta('Pago em', chips('formaSinal', [['pix', 'Pix'], ['transferencia', 'Transferência']], st.formaSinal));
-        h += arquivo('compSinal', 'Anexar comprovante do sinal');
-      }
-      h += pergunta('Restante, depois da entrega, em', chips('restante', [['pix', 'Pix'], ['cartao_credito', 'Cartão de crédito']], st.restante));
-      if (st.restante === 'cartao_credito') h += campo('Link do restante (Cielo) <span class="muted small">— opcional</span>', 'linkRest', 'url', 'placeholder="https://"');
+      if (st.sinalPago === true) h += extrato('movSinal', 'naoAchouSinal');
+      h += '<div class="small muted" style="margin-top:10px">O restante fica "a combinar": no pedido, use "Confirmar pagamento" (Pix) ou "Criar link de pagamento" (cartão).</div>';
     } else if (f === 'outros') {
       h += campo('Como será o pagamento? *', 'obs', 'text', 'placeholder="Ex.: permuta, crédito do cliente, a combinar"');
       h += simNao('pago', 'Já foi pago?');
@@ -410,8 +440,15 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       const k = g.dataset.g, v = b.dataset.op;
       if (k === 'qtd') { if (v === 'outro') { st.outraQtd = true; } else { st.outraQtd = false; st.qtd = Number(v); gerarParc(); } }
       else st[k] = v === 'true' ? true : v === 'false' ? false : v;
+      if (k === 'pago' && st.pago !== true) { st.mov = null; st.naoAchou = false; }
+      if (k === 'sinalPago' && st.sinalPago !== true) { st.movSinal = null; st.naoAchouSinal = false; }
       render();
+      // "Sim, já pagou": abre direto a busca no extrato
+      if (k === 'pago' && st.pago === true && ['pix', 'transferencia'].includes(st.forma) && !st.mov) buscarExtrato('mov');
+      if (k === 'sinalPago' && st.sinalPago === true && !st.movSinal) buscarExtrato('movSinal');
     }));
+    corpo.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => buscarExtrato(b.dataset.ext));
+    const lk = corpo.querySelector('[data-link]'); if (lk) lk.onchange = () => { st.gerarLink = lk.checked; render(); };
     corpo.querySelectorAll('[data-k]').forEach(i => i.oninput = () => {
       st[i.dataset.k] = i.value;
       if (i.dataset.k === 'sinal') st.sinalManual = true;
@@ -419,14 +456,9 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       atualizarResumo();
     });
     corpo.querySelectorAll('[data-pc]').forEach(i => i.onchange = () => { st.parcelas[i.dataset.pk][i.dataset.pc] = i.value; st.parcManual = true; });
-    corpo.querySelectorAll('[data-arq]').forEach(b => b.onclick = () => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = EXT_COMP;
-      inp.onchange = () => { if (inp.files[0]) { st[b.dataset.arq] = inp.files[0]; render(); } };
-      inp.click();
-    });
   };
   raiz.querySelectorAll('[data-fp="forma"] .chip').forEach(b => b.onclick = () => {
-    st.forma = b.dataset.forma; st.pago = null;
+    st.forma = b.dataset.forma; st.pago = null; st.mov = null; st.naoAchou = false;
     if (st.forma === 'boleto' && !st.parcelas.length) gerarParc();
     if (st.forma === 'sinal_restante') sugerirSinal();
     render();
@@ -453,12 +485,10 @@ function ligarFormaPagamento(el, total, prev, inicial) {
     let rec = [], obs = null;
     if (f === 'pix' || f === 'transferencia') {
       if (st.pago === null) throw new Error('Informe se o cliente já pagou.');
-      if (st.pago && !st.comp) throw new Error('Anexe o comprovante ou marque "Ainda não".');
-      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: f, _arq: st.pago ? st.comp : null }];
+      if (st.pago && !st.mov && !st.naoAchou) throw new Error('Escolha o pagamento no extrato (ou "Não achei") ou marque "Ainda não".');
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: f, _mov: st.pago ? st.mov : null }];
     } else if (f === 'cartao_credito') {
-      if (st.link && !urlSegura(st.link)) throw new Error('O link de pagamento precisa começar com https://');
-      if (st.pago === null) throw new Error('Informe se o cliente já pagou.');
-      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'cartao_credito', link_pagamento: st.link.trim() || null, pago: st.pago }];
+      rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'cartao_credito', _link: st.gerarLink }];
     } else if (f === 'boleto') {
       if (!st.parcelas.length) gerarParc();
       const soma = st.parcelas.reduce((s, x) => s + Number(x.valor), 0);
@@ -472,22 +502,23 @@ function ligarFormaPagamento(el, total, prev, inicial) {
       if (!(sinal > 0)) throw new Error('Informe o valor do sinal.');
       if (sinal >= t) throw new Error('O sinal precisa ser menor que o total. Se o cliente pagou tudo, escolha Pix ou Transferência.');
       if (st.sinalPago === null) throw new Error('Informe se o sinal já foi pago.');
-      if (st.sinalPago && !st.compSinal) throw new Error('Anexe o comprovante do sinal ou marque "Ainda não".');
-      const linkR = st.restante === 'cartao_credito' ? st.linkRest.trim() : '';
-      if (linkR && !urlSegura(linkR)) throw new Error('O link de pagamento precisa começar com https://');
-      rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: st.formaSinal, _arq: st.sinalPago ? st.compSinal : null },
-             { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: st.restante, link_pagamento: linkR || null }];
+      if (st.sinalPago && !st.movSinal && !st.naoAchouSinal) throw new Error('Escolha o sinal no extrato (ou "Não achei") ou marque "Ainda não".');
+      // o restante fica "a combinar" (sem forma): no pedido aceita "Confirmar pagamento" ou "Criar link de pagamento"
+      rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: 'pix', _mov: st.sinalPago ? st.movSinal : null },
+             { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: null }];
     } else {
       obs = st.obs.trim();
       if (!obs) throw new Error('Descreva como será o pagamento em "Outros".');
       if (st.pago === null) throw new Error('Informe se já foi pago.');
       rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago: st.pago }];
     }
-    const comprovantes = {};
+    // o que fazer depois de criar: confirmar pelo extrato (valor = o menor entre a parcela e o que sobra na entrada) e criar o link
+    const extratoUsar = [], links = [];
     rec.forEach((r, k) => { r._chave = 'c' + k;
-      if (r._arq) { if (r._arq.size > 10 * 1024 * 1024) throw new Error('O comprovante passa de 10 MB.'); comprovantes[r._chave] = r._arq; r.pago = true; }
-      delete r._arq; });
-    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes, resumo: resumo(),
+      if (r._mov) extratoUsar.push({ chave: r._chave, movimento_id: r._mov.id, valor: Math.min(Number(r.valor), Number(r._mov.saldo)).toFixed(2) });
+      if (r._link) links.push(r._chave);
+      delete r._mov; delete r._link; });
+    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes: {}, extrato: extratoUsar, links, resumo: resumo(),
              autoriza_sem_pagamento: !!(mostraAut() && st.autoriza === true) };
   };
   coletar.forma = () => st.forma;
@@ -517,12 +548,12 @@ function modalParcelas() {
   let coletar;
   const m = abrirModal({ titulo: 'Lançar pagamento da diferença', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Valor ainda sem pagamento lançado: <b>${brl(falta)}</b> (por exemplo, quando o pedido aumentou depois de criado).</p>${htmlFormaPagamento()}`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Salvar pagamento</button>`,
-    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => falta, () => p.data_prevista_entrega); } });
+    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => falta, () => p.data_prevista_entrega, null, () => p.cliente_id || p.cliente?.id); } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
     const resp = await api('salvar_recebimentos', { pedido_id: p.id, parcelas: r.recebimentos }); m.fechar();
-    await anexarComprovantes(r, resp); toast('Pagamento lançado.'); recarregar();
+    await finalizarPagamento(r, resp); toast('Pagamento lançado.'); recarregar();
   };
 }
 function modalTrocarForma() {
@@ -530,13 +561,13 @@ function modalTrocarForma() {
   let coletar;
   const m = abrirModal({ titulo: 'Trocar forma de pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Forma atual: <b>${esc(FORMAS_COMB[p.forma_pagamento] || '—')}</b>. Os pagamentos em aberto são substituídos pela nova forma, sobre o total de <b>${brl(p.valor_total)}</b>. A troca fica no histórico do pedido.</p>${avisoLinkCielo(p.recebimentos) ? `<p class="small" style="margin:0 0 12px;color:var(--vermelho)">${esc(avisoLinkCielo(p.recebimentos).trim())}</p>` : ''}${htmlFormaPagamento()}`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Trocar forma</button>`,
-    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => Number(p.valor_total), () => p.data_prevista_entrega); } });
+    aoAbrir: el => { coletar = ligarFormaPagamento(el, () => Number(p.valor_total), () => p.data_prevista_entrega, null, () => p.cliente_id || p.cliente?.id); } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   m.el.querySelector('[data-s]').onclick = async () => {
     let r; try { r = await coletar(); } catch (e) { if (e.message !== 'upload' && e.message !== 'tamanho') toast(e.message, true); return; }
     const resp = await api('trocar_forma_pagamento', { pedido_id: p.id, forma_pagamento: r.forma_pagamento, forma_pagamento_obs: r.forma_pagamento_obs,
       recebimentos: r.recebimentos, condicoes_pagamento: r.resumo });
-    m.fechar(); await anexarComprovantes(r, resp); toast('Forma de pagamento trocada.'); recarregar();
+    m.fechar(); await finalizarPagamento(r, resp); toast('Forma de pagamento trocada.'); recarregar();
   };
 }
 async function autorizarSemPagamento(autorizar) {

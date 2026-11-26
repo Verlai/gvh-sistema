@@ -168,41 +168,53 @@ async function atualizarExtratoInter(btn) {
    O banco escolhe as entradas que servem (até 5) e confere tudo de novo na hora de confirmar. */
 const esperar = ms => new Promise(r => setTimeout(r, ms));
 // lê o Inter antes de buscar (no máximo 1 leitura por minuto no sistema inteiro); se outra pessoa está lendo, espera terminar
-async function lerExtratoAgora(id) {
+async function lerExtratoAgora(params) {
   let aviso = '';
   try {
     const x = await api('inter_extrato_atualizar', {}, true, true);
     if (x.recente && x.situacao === 'lendo') {
       for (let i = 0; i < 8; i++) {
         await esperar(2500);
-        const c = await api('buscar_pix_extrato', { id }, true, true);
+        const c = await api('buscar_pix_extrato', params, true, true);
         if (!c.ultima_leitura || c.ultima_leitura.situacao !== 'lendo') return { cab: c, aviso };
       }
       aviso = 'O extrato ainda está sendo lido; a lista pode não ter os últimos minutos.';
     }
   } catch { aviso = 'Não deu para ler o Inter agora; a lista usa a última leitura.'; }
-  return { cab: await api('buscar_pix_extrato', { id }), aviso };
+  return { cab: await api('buscar_pix_extrato', params), aviso };
 }
-async function confirmarPagamentoExtrato(id) {
-  const m = abrirModal({ titulo: 'Confirmar pagamento', corpo: '<div id="cp-corpo" class="cp-corpo"><p class="small muted" style="margin:0"><span class="roda"></span> Lendo o extrato do Inter…</p></div>',
-    rodape: '<button class="btn" data-v>Voltar</button><button class="btn prim" data-s disabled>Confirmar</button>' });
+function confirmarPagamentoExtrato(id) { return janelaExtrato({ id }); }
+// na criação do pedido (ainda sem parcela): só escolhe a entrada. Devolve a entrada, null ("Não achei") ou undefined (fechou)
+function escolherEntradaExtrato(cliente_id, valor) { return new Promise(res => janelaExtrato({ cliente_id, valor: Number(valor), aoEscolher: res })); }
+async function janelaExtrato(o) {
+  const escolher = !!o.aoEscolher, id = o.id;
+  const base = escolher ? { cliente_id: o.cliente_id, valor_pedido: o.valor } : { id };
+  let devolvido = false; const devolver = x => { if (escolher && !devolvido) { devolvido = true; o.aoEscolher(x); } };
+  const m = abrirModal({ titulo: escolher ? 'Buscar o pagamento no extrato' : 'Confirmar pagamento', corpo: '<div id="cp-corpo" class="cp-corpo"><p class="small muted" style="margin:0"><span class="roda"></span> Lendo o extrato do Inter…</p></div>',
+    rodape: `<button class="btn" data-v>Voltar</button>${escolher ? '<button class="btn" data-nao>Não achei</button>' : ''}<button class="btn prim" data-s disabled>${escolher ? 'Usar esta entrada' : 'Confirmar'}</button>` });
   m.el.querySelector('.modal').classList.add('estreito');
   const corpo = $('#cp-corpo', m.el), btnOk = m.el.querySelector('[data-s]');
   m.el.querySelector('[data-v]').onclick = m.fechar;
+  if (escolher) {
+    m.el.querySelector('[data-nao]').onclick = () => { devolver(null); m.fechar(); };
+    // fechou pelo ×, Esc ou clique fora: nada escolhido
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.el)) { obs.disconnect(); devolver(undefined); } });
+    obs.observe($('#modais'), { childList: true });
+  }
   let cab, aviso;
-  try { ({ cab, aviso } = await lerExtratoAgora(id)); } catch (e) { corpo.innerHTML = `<div class="vazio">${esc(e.message)}</div>`; return; }
+  try { ({ cab, aviso } = await lerExtratoAgora(escolher ? { ...base, valor: o.valor } : base)); } catch (e) { corpo.innerHTML = `<div class="vazio">${esc(e.message)}</div>`; return; }
   if (!document.body.contains(m.el)) return;   // fechou enquanto lia
   if (!cab.aberta) { corpo.innerHTML = '<div class="vazio">Esta parcela não está mais em aberto. Atualize a tela.</div>'; return; }
 
   const st = { escolha: 'parcela', valor: Number(cab.parcela), mov: null, entradas: [], manual: false };
-  const opcoes = [['parcela', 'Esta parcela', cab.parcela]];
-  if (Number(cab.em_aberto) !== Number(cab.parcela)) opcoes.push(['tudo', 'Tudo em aberto', cab.em_aberto]);
-  if (![Number(cab.parcela), Number(cab.em_aberto)].includes(Number(cab.metade))) opcoes.push(['metade', 'Metade (sinal)', cab.metade]);
-  opcoes.push(['outro', 'Outro valor', null]);
+  const opcoes = [['parcela', escolher ? 'Valor' : 'Esta parcela', cab.parcela]];
+  if (!escolher && Number(cab.em_aberto) !== Number(cab.parcela)) opcoes.push(['tudo', 'Tudo em aberto', cab.em_aberto]);
+  if (!escolher && ![Number(cab.parcela), Number(cab.em_aberto)].includes(Number(cab.metade))) opcoes.push(['metade', 'Metade (sinal)', cab.metade]);
+  if (!escolher) opcoes.push(['outro', 'Outro valor', null]);
   const ultima = cab.ultima_ok ? `Extrato lido em ${esc(dataHora(cab.ultima_ok))}` : 'O extrato ainda não foi lido';
   corpo.innerHTML = `
-    <p class="small" style="margin:0">Pedido <b>#${esc(cab.pedido_numero)}</b> · ${esc(cab.cliente)} · falta pagar <b>${brl(cab.em_aberto)}</b></p>
-    <div><div class="small muted" style="margin-bottom:6px">Quanto o cliente pagou?</div>
+    <p class="small" style="margin:0">${escolher ? `Novo pagamento · ${esc(cab.cliente)} · <b>${brl(cab.parcela)}</b>` : `Pedido <b>#${esc(cab.pedido_numero)}</b> · ${esc(cab.cliente)} · falta pagar <b>${brl(cab.em_aberto)}</b>`}</p>
+    <div class="${escolher ? 'hidden' : ''}"><div class="small muted" style="margin-bottom:6px">Quanto o cliente pagou?</div>
       <div class="chips">${opcoes.map(([k, n, v]) => `<button class="chip ${k === st.escolha ? 'ativo' : ''}" data-val="${k}">${esc(n)}${v !== null ? ' · ' + brl(v) : ''}</button>`).join('')}</div>
       <label class="campo hidden" id="cp-outro" style="margin-top:8px;max-width:200px">Valor (R$)<input type="number" step="0.01" min="0.01" max="${esc(cab.em_aberto)}"></label></div>
     <div id="cp-lista"></div>
@@ -220,10 +232,10 @@ async function confirmarPagamentoExtrato(id) {
   const valorFinal = () => st.mov ? Math.min(st.valor, Number(st.mov.saldo)) : st.valor;
   const atualizarBotao = () => {
     const v = valorFinal(), ok = st.mov && v > 0;
-    btnOk.disabled = !ok; btnOk.textContent = ok ? `Confirmar ${brl(v)}` : 'Confirmar';
+    btnOk.disabled = !ok; btnOk.textContent = escolher ? 'Usar esta entrada' : ok ? `Confirmar ${brl(v)}` : 'Confirmar';
     if (!ok) { nota.textContent = ''; return; }
     const s = Number(st.mov.saldo), partes = [];
-    if (s < st.valor) partes.push(`A entrada é menor: confirma ${brl(s)} e o resto (${brl(st.valor - s)}) continua em aberto.`);
+    if (s < st.valor) partes.push(`A entrada é menor: ${escolher ? 'vai confirmar' : 'confirma'} ${brl(s)} e o resto (${brl(st.valor - s)}) continua em aberto.`);
     if (s > st.valor) partes.push(`Sobram ${brl(s - st.valor)} desta entrada no extrato, para outro pagamento.`);
     if (v > Number(cab.parcela)) partes.push('Paga esta parcela e as próximas em aberto do pedido.');
     nota.textContent = partes.join(' ');
@@ -244,13 +256,13 @@ async function confirmarPagamentoExtrato(id) {
   const buscar = async () => {
     if (!(st.valor > 0)) { lista.innerHTML = ''; st.mov = null; atualizarBotao(); return; }
     st.manual = false;
-    try { desenhar(await api('buscar_pix_extrato', { id, valor: st.valor }, false, true), false); } catch { /* erro já avisado */ }
+    try { desenhar(await api('buscar_pix_extrato', { ...base, valor: st.valor }, false, true), false); } catch { /* erro já avisado */ }
   };
   const buscarManual = async () => {
     const f = {}; m.el.querySelectorAll('[data-m]').forEach(i => { if (i.value.trim()) f[i.dataset.m] = i.value.trim(); });
     if (!Object.keys(f).length) return toast('Informe o valor, o nome ou a data para buscar.', true);
     st.manual = true;
-    try { desenhar(await ocupado($('#cp-buscar', m.el), () => api('buscar_pix_extrato', { id, manual: true, ...f })), true); } catch { /* erro já avisado */ }
+    try { desenhar(await ocupado($('#cp-buscar', m.el), () => api('buscar_pix_extrato', { ...base, manual: true, ...f })), true); } catch { /* erro já avisado */ }
   };
   m.el.querySelectorAll('[data-val]').forEach(b => b.onclick = () => {
     m.el.querySelectorAll('[data-val]').forEach(x => x.classList.toggle('ativo', x === b));
@@ -273,6 +285,7 @@ async function confirmarPagamentoExtrato(id) {
   btnOk.onclick = async () => {
     const v = valorFinal();
     if (!st.mov || !(v > 0)) return;
+    if (escolher) { devolver(st.mov); m.fechar(); return; }
     try { await ocupado(btnOk, () => api('confirmar_pagamento_extrato', { id, movimento_id: st.mov.id, valor: v.toFixed(2) })); }
     catch { buscar(); return; }
     m.fechar(); toast(`Pagamento de ${brl(v)} confirmado.`); recarregar();

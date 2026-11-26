@@ -73,7 +73,7 @@ rota('novo', async (_p, el) => {
   if ($('#novo-cli')) $('#novo-cli').onclick = () => modalCliente(null, escolher);
   if (rep && rep.cliente) escolher(rep.cliente);
   $('#np-pag').innerHTML = htmlFormaPagamento({ autorizar: true });
-  coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
+  coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value, null, () => cliente?.id);
   // 1º boleto e restante acompanham a previsão de entrega
   $('#np-prev').onchange = () => coletarPagamento.atualizar();
   atualizarTotal();   // pedido repetido já chega com itens: calcula o total na abertura
@@ -89,7 +89,7 @@ rota('novo', async (_p, el) => {
     $$('#f-np [name=numero], #f-np [name=vendedor_id]').forEach(i => i.closest('label').classList.toggle('hidden', o));
     $('#np-parc-painel h2').textContent = o ? 'Forma de Pagamento' : 'Forma de Pagamento *';
     $('#np-pag').innerHTML = htmlFormaPagamento(o ? { orcamento: true } : { autorizar: true });
-    coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value);
+    coletarPagamento = ligarFormaPagamento($('#np-pag'), total, () => $('#np-prev').value, null, () => cliente?.id);
     pegarItens.definirStatus(!o);
     $('#np-salvar').textContent = o ? 'Salvar orçamento' : 'Criar pedido';
     atualizarTotal();
@@ -125,7 +125,7 @@ rota('novo', async (_p, el) => {
     const d = { ...formDados($('#f-np')), observacao_geral: $('#np-obs-geral').value, cliente_id: cliente.id, itens, ...descNP.dados(), frete: $('#np-frete').value,
       recebimentos: pag.recebimentos, forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs,
       autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo };
-    try { const r = await api('criar_pedido', d); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`);
+    try { const r = await api('criar_pedido', d); await finalizarPagamento(pag, r); toast(`Pedido ${r.numero} criado.`);
       descartarVista('novo');
       // repetir com artes: copia as artes finais do pedido antigo; "Arte do cliente": o teste abre na tela do pedido (filaArteCliente)
       if (rep && rep.comArtes) await copiarArtesRepetidas(r.id, rep.numero, itensTela.map(i => i._orig || null));
@@ -187,7 +187,7 @@ function modalConversao(o, cliente) {
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn escuro" data-s>Criar pedido</button>`,
     aoAbrir: el => {
       const inicial = o.forma_pagamento ? { forma: o.forma_pagamento, obs: o.forma_pagamento_obs, detalhe: o.pagamento_detalhe } : null;
-      coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), () => pixAtivo() ? Number(o.valor_pix || 0) : Number(o.valor_total || 0), () => el.querySelector('#conv-prev').value, inicial);
+      coletar = ligarFormaPagamento(el.querySelector('#conv-pag'), () => pixAtivo() ? Number(o.valor_pix || 0) : Number(o.valor_total || 0), () => el.querySelector('#conv-prev').value, inicial, () => o.cliente_id || cliente?.id);
       el.querySelector('#conv-prev').onchange = () => coletar.atualizar();
       const cx = el.querySelector('#conv-pix');
       if (cx) {
@@ -214,7 +214,7 @@ function modalConversao(o, cliente) {
         data_prevista_entrega: prev, forma_entrega: ent.forma(), endereco_entrega: ent.endereco(), recebimentos: pag.recebimentos,
         forma_pagamento: pag.forma_pagamento, forma_pagamento_obs: pag.forma_pagamento_obs, desconto_pix: pixAtivo(),
         autoriza_sem_pagamento: pag.autoriza_sem_pagamento, condicoes_pagamento: pag.resumo });
-      m.fechar(); await anexarComprovantes(pag, r); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
+      m.fechar(); await finalizarPagamento(pag, r); toast(`Pedido ${r.numero} criado.`); descartarVista('orcamento/' + o.id); location.hash = '#/pedido/' + r.id;
     } finally { bt.disabled = false; }
   };
 }
