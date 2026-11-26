@@ -5,6 +5,7 @@
 const API_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-sistema';
 const API_GAB_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-gabaritos';
 const API_CIELO_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-cielo';   // link de pagamento da Cielo (fluxo [GVH] Cielo)
+const API_INTER_URL = 'https://gvh-n8n.kjb64n.easypanel.host/webhook/gvh-inter';   // leitura do extrato do Inter (fluxo [GVH] Inter)
 // Chave pública (feita para ficar no navegador). Ela só consegue OUVIR o canal de avisos
 // "gvh-mudancas" — não lê nenhuma tabela. Os dados sempre vêm pelo n8n.
 const SUPABASE_URL = 'https://zvcvdfkumjlvwqjdbiiw.supabase.co';
@@ -84,7 +85,7 @@ async function api(acao, dados = {}, silencioso = false, semBarra = false) {
   const barra = semBarra ? 0 : 1;
   setCarregando(barra);
   try {
-    const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : acao === 'cielo_link' ? API_CIELO_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
+    const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : acao === 'cielo_link' ? API_CIELO_URL : acao === 'inter_extrato_atualizar' ? API_INTER_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
                                      body: JSON.stringify({ token: S.token, acao, dados }) });
     let j; try { j = await r.json(); } catch { throw new Error('Resposta inválida do servidor.'); }
     if (Array.isArray(j)) j = j[0];
@@ -95,7 +96,7 @@ async function api(acao, dados = {}, silencioso = false, semBarra = false) {
       if (j && j.codigo) err.codigo = j.codigo;
       throw err;
     }
-    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$|tarefas$|tarefa_salvar$|item_arte_previa$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
+    if (!/^(login|sessao|base|resumo|listar_|obter_|buscar_|artes_pagamentos|arte_arquivo|comprovante_arquivo|calcular_preco|conferir_produto|verificar_documento|ncm_consultar|fornecedor_senha|orc_publico|prova_publica$|prova_publica_imagem|previa_cancelamento|gabaritos$|gabarito_historico$|gabarito_drive$|tarefas$|tarefa_salvar$|item_arte_previa$|banco_movimentos$)/.test(acao) && acao !== 'cadastro_publico' && !(acao === 'feriados' && !dados.salvar && !dados.excluir)) marcarTelasDesatualizadas();
     return j;
   } catch (e) {
     if (!silencioso) toast(e.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : e.message, true);

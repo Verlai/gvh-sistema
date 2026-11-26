@@ -38,13 +38,17 @@ rota('conciliacao', async (_p, el) => {
   if (!pode('edita_financeiro')) throw new Error('Seu perfil não faz a conciliação.');
   definirTopoEm(el, 'Conciliação de pagamentos', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroConc || (S.cache.filtroConc = { filtro: 'pendentes' });
-  const r = await api('listar_conciliacao', { ...f, limite: limLista('conc') });
+  const ext = f.filtro === 'extrato';
+  const r = await api('listar_conciliacao', ext ? { filtro: 'pendentes', limite: 1 } : { ...f, limite: limLista('conc') });
   const lista = r.recebimentos; lista.forEach(x => S.parcelas[x.id] = x);
   const pend = f.filtro === 'pendentes';
-  const abas = [['pendentes', `A conferir (${r.pendentes})`], ['devolvidos', 'Devolvidos · 30 dias'], ['conferidos', 'Conferidos · 30 dias']];
+  const abas = [['pendentes', `A conferir (${r.pendentes})`], ['devolvidos', 'Devolvidos · 30 dias'], ['conferidos', 'Conferidos · 30 dias'], ['extrato', 'Extrato do Inter']];
+  const chips = `<div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-f="${k}">${n}</button>`).join('')}</div>`;
+  const ligarAbas = () => $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; zerarLista('conc'); recarregar(); });
+  if (ext) { await extratoInter(el, chips); ligarAbas(); return; }
   el.innerHTML = `
     <div class="painel filtros">
-      <div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
+      ${chips}
       ${pend ? '<p class="small muted" style="margin:0 0 10px">Pagamentos marcados como pagos pelo vendedor ou no pedido. Confira no extrato/maquininha e confirme; se o dinheiro não entrou, devolva com o motivo (a parcela volta a ficar em aberto e a comissão é estornada).</p>' : ''}
       ${!lista.length ? `<div class="vazio">${pend ? 'Nada para conferir. Tudo em dia.' : 'Nenhum registro nos últimos 30 dias.'}</div>` : `
       <div class="tabela-wrap"><table>
@@ -69,7 +73,7 @@ rota('conciliacao', async (_p, el) => {
       ${rodapeLista('conc', lista.length, r.total, 'pagamento(s)', `Total: ${brl(r.valor_total)}`)}
     </div>`;
   ligarMais(el, 'conc', recarregar);
-  $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; zerarLista('conc'); recarregar(); });
+  ligarAbas();
   if (!pend || !lista.length) return;
   const selecionados = () => $$('.sel-conc:checked').map(c => c.value);
   const atualizar = () => {
@@ -97,6 +101,58 @@ function devolverPagamentos(ids) {
     if (!motivo) return toast('Informe o motivo da devolução.', true);
     const x = await api('conferir_recebimentos', { ids, devolver: true, motivo }); m.fechar(); toast(`${x.quantidade} pagamento(s) devolvido(s).`); recarregar();
   };
+}
+
+/* ---------- EXTRATO DO INTER (aba da Conciliação; lido pelo fluxo [GVH] Inter) ---------- */
+const TIPOS_MOV = { PIX: 'Pix', TRANSFERENCIA: 'Transferência', BOLETO_COBRANCA: 'Boleto', PAGAMENTO: 'Pagamento', INVESTIMENTO: 'Investimento', ESTORNO: 'Estorno', CAMBIO: 'Câmbio', OUTROS: 'Outros' };
+async function extratoInter(el, chips) {
+  const g = S.cache.filtroExt || (S.cache.filtroExt = { operacao: 'C', busca: '', de: '', ate: '' });
+  const r = await api('banco_movimentos', { ...g, limite: limLista('ext') });
+  const u = r.ultima_leitura;
+  const leitura = !u ? '<span class="muted">O extrato ainda não foi lido.</span>'
+    : u.situacao === 'erro' ? `<span style="color:var(--vermelho)">Última leitura com erro (${esc(dataHora(u.concluida_em || u.criada_em))}): ${esc(u.erro || '')}</span>${r.ultima_ok ? ` · <span class="muted">última leitura certa: ${esc(dataHora(r.ultima_ok))}</span>` : ''}`
+    : u.situacao === 'lendo' ? '<span class="muted">Lendo o extrato agora…</span>'
+    : `<span class="muted">Última leitura: ${esc(dataHora(u.concluida_em))}${u.novos ? ` · ${esc(u.novos)} movimento(s) novo(s)` : ''}</span>`;
+  const ops = [['C', 'Entradas'], ['D', 'Saídas'], ['T', 'Todas']];
+  const mov = r.movimentos;
+  el.innerHTML = `
+    <div class="painel filtros">
+      ${chips}
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn prim" id="ext-ler">Atualizar extrato</button><span class="small">${leitura}</span>
+      </div>
+      <div class="chips" style="margin-bottom:12px">${ops.map(([k, n]) => `<button class="chip ${g.operacao === k ? 'ativo' : ''}" data-op="${k}">${n}</button>`).join('')}</div>
+      <div class="linha-form" style="margin-bottom:12px">
+        <label class="campo" style="flex:2">Buscar<input type="search" id="ext-busca" value="${esc(g.busca)}" placeholder="Nome, descrição ou valor (ex.: 150,00)"></label>
+        <label class="campo">De<input type="date" id="ext-de" value="${esc(g.de)}"></label>
+        <label class="campo">Até<input type="date" id="ext-ate" value="${esc(g.ate)}"></label>
+      </div>
+      ${blocoExp('ext-como', 'Como funciona', '<p class="small muted" style="margin:0">O sistema lê o extrato do Inter sozinho de 15 em 15 minutos (das 7h às 20h) e quando alguém clica em "Atualizar extrato". Sem datas, mostra os últimos 30 dias. O CPF de quem pagou aparece só em parte. Cada movimento é guardado uma vez só.</p>', false, 'leve')}
+      ${!mov.length ? '<div class="vazio">Nenhum movimento neste filtro.</div>' : `
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Data</th><th>De / para</th><th>CPF/CNPJ</th><th>Tipo</th><th class="dir">Valor</th></tr></thead>
+        <tbody>${mov.map(m => `<tr>
+          <td class="num">${data(m.data)}</td>
+          <td>${esc(m.nome || m.titulo || '—')}${m.categoria === 'cielo' ? ' ' + badge('Repasse da Cielo', 'b-azul') : m.categoria === 'devolucao' ? ' ' + badge('Devolvido', 'b-cinza') : ''}
+            <div class="small muted">${esc([m.nome ? m.titulo : '', m.descricao_pix || m.descricao, m.instituicao].filter(Boolean).join(' · '))}</div></td>
+          <td class="num small">${esc(m.documento && m.documento.length === 14 ? fmtDoc(m.documento) : (m.documento || '—'))}</td>
+          <td>${esc(TIPOS_MOV[m.tipo] || m.tipo || '—')}</td>
+          <td class="dir num" style="color:var(${m.operacao === 'C' ? '--verde' : '--vermelho'})">${m.operacao === 'D' ? '− ' : ''}${brl(m.valor)}</td>
+        </tr>`).join('')}</tbody></table></div>`}
+      ${rodapeLista('ext', mov.length, r.total, 'movimento(s)', g.operacao === 'T' ? `Entradas − saídas: ${brl(r.saldo_periodo)}` : `Total: ${brl(Math.abs(Number(r.saldo_periodo)))}`)}
+    </div>`;
+  ligarMais(el, 'ext', recarregar);
+  const filtrar = () => { zerarLista('ext'); recarregar(); };
+  $$('[data-op]').forEach(b => b.onclick = () => { g.operacao = b.dataset.op; filtrar(); });
+  let t; $('#ext-busca').oninput = e => { g.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
+  $('#ext-de').onchange = e => { g.de = e.target.value; filtrar(); };
+  $('#ext-ate').onchange = e => { g.ate = e.target.value; filtrar(); };
+  $('#ext-ler').onclick = e => atualizarExtratoInter(e.currentTarget);
+}
+async function atualizarExtratoInter(btn) {
+  let x; try { x = await ocupado(btn, () => api('inter_extrato_atualizar')); } catch { recarregar(); return; }
+  toast(x.recente ? 'O extrato acabou de ser lido. Tente de novo em 1 minuto.' : `Extrato atualizado: ${x.novos || 0} movimento(s) novo(s).`);
+  recarregar();
 }
 
 /* ---------- COMISSÕES ---------- */
