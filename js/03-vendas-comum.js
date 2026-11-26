@@ -280,8 +280,13 @@ async function desfazerBaixa(id) {
   if (!await confirmar('Desfazer este pagamento? A comissão ligada a ele também será estornada.', 'Desfazer', true)) return;
   await api('baixar_recebimento', { id, desfazer: true }); toast('Pagamento desfeito.'); recarregar();
 }
+// link da Cielo ainda ativo: ao excluir o pagamento ele deixa de valer no sistema, mas ainda abre na Cielo até vencer
+const avisoLinkCielo = lista => {
+  const l = (lista || []).filter(r => r.situacao === 'aberto' && r.cielo_situacao === 'ativo');
+  return l.length ? ` Este pagamento tem um link da Cielo, que ainda abre até ${dataHora(l[0].cielo_expira_em)}: avise o cliente para não usar. Se ele pagar mesmo assim, o financeiro recebe uma tarefa.` : '';
+};
 async function excluirParcela(id) {
-  if (!await confirmar('Excluir esta parcela em aberto?', 'Excluir', true)) return;
+  if (!await confirmar('Excluir esta parcela em aberto?' + avisoLinkCielo([S.parcelas[id]]), 'Excluir', true)) return;
   await api('excluir_recebimento', { id }); toast('Parcela excluída.'); recarregar();
 }
 
@@ -522,7 +527,7 @@ function modalParcelas() {
 function modalTrocarForma() {
   const p = S.vistaAtual.dados;
   let coletar;
-  const m = abrirModal({ titulo: 'Trocar forma de pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Forma atual: <b>${esc(FORMAS_COMB[p.forma_pagamento] || '—')}</b>. Os pagamentos em aberto são substituídos pela nova forma, sobre o total de <b>${brl(p.valor_total)}</b>. A troca fica no histórico do pedido.</p>${htmlFormaPagamento()}`,
+  const m = abrirModal({ titulo: 'Trocar forma de pagamento', largo: true, corpo: `<p class="small muted" style="margin:0 0 12px">Forma atual: <b>${esc(FORMAS_COMB[p.forma_pagamento] || '—')}</b>. Os pagamentos em aberto são substituídos pela nova forma, sobre o total de <b>${brl(p.valor_total)}</b>. A troca fica no histórico do pedido.</p>${avisoLinkCielo(p.recebimentos) ? `<p class="small" style="margin:0 0 12px;color:var(--vermelho)">${esc(avisoLinkCielo(p.recebimentos).trim())}</p>` : ''}${htmlFormaPagamento()}`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Trocar forma</button>`,
     aoAbrir: el => { coletar = ligarFormaPagamento(el, () => Number(p.valor_total), () => p.data_prevista_entrega); } });
   m.el.querySelector('[data-v]').onclick = m.fechar;
