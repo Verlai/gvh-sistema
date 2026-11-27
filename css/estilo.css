@@ -406,4 +406,5 @@ body.com-tarefas .barra-acao{margin-right:58px}
 .cp-opcao:has(input:checked){border-color:var(--verde);background:var(--linha-2)}
 .cp-corpo{display:grid;gap:14px}
 .cp-corpo .vazio{padding:16px 10px}
+.cp-sobra{border:1px dashed var(--linha);border-radius:8px;padding:10px 12px;background:var(--linha-2)}
 .cp-corpo .roda{display:inline-block;width:12px;height:12px;vertical-align:-2px;border:2px solid #d8e2de;border-top-color:var(--verde);border-radius:50%;animation:gira .7s linear infinite}

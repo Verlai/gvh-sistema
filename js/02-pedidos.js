@@ -231,6 +231,7 @@ rota('pedido', async (id, el) => {
   $('#form-obs').onsubmit = async e => { e.preventDefault(); await api('adicionar_observacao', { pedido_id: p.id, texto: e.target.texto.value }); toast('Observação adicionada.'); recarregar(); };
   preencherArtesPedido(el, p);
   carregarArquivosPedido(p, el);
+  creditoNoPedido(p, el);   // cliente com crédito: mostra "Usar crédito" nas parcelas em aberto (07-financeiro.js)
 });
 
 /* ---------- AR0: arquivos do pedido no Google Drive ---------- */

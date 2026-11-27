@@ -38,14 +38,15 @@ rota('conciliacao', async (_p, el) => {
   if (!pode('edita_financeiro')) throw new Error('Seu perfil não faz a conciliação.');
   definirTopoEm(el, 'Conciliação de pagamentos', `<button class="btn" onclick="recarregar()">Atualizar</button>`);
   const f = S.cache.filtroConc || (S.cache.filtroConc = { filtro: 'pendentes' });
-  const ext = f.filtro === 'extrato';
-  const r = await api('listar_conciliacao', ext ? { filtro: 'pendentes', limite: 1 } : { ...f, limite: limLista('conc') });
+  const outraAba = ['extrato', 'creditos'].includes(f.filtro);
+  const r = await api('listar_conciliacao', outraAba ? { filtro: 'pendentes', limite: 1 } : { ...f, limite: limLista('conc') });
   const lista = r.recebimentos; lista.forEach(x => S.parcelas[x.id] = x);
   const pend = f.filtro === 'pendentes';
-  const abas = [['pendentes', `A conferir (${r.pendentes})`], ['devolvidos', 'Devolvidos · 30 dias'], ['conferidos', 'Conferidos · 30 dias'], ['extrato', 'Extrato do Inter']];
+  const abas = [['pendentes', `A conferir (${r.pendentes})`], ['devolvidos', 'Devolvidos · 30 dias'], ['conferidos', 'Conferidos · 30 dias'], ['extrato', 'Extrato do Inter'], ['creditos', 'Créditos de clientes']];
   const chips = `<div class="chips" style="margin-bottom:12px">${abas.map(([k, n]) => `<button class="chip ${f.filtro === k ? 'ativo' : ''}" data-f="${k}">${n}</button>`).join('')}</div>`;
   const ligarAbas = () => $$('[data-f]').forEach(b => b.onclick = () => { f.filtro = b.dataset.f; zerarLista('conc'); recarregar(); });
-  if (ext) { await extratoInter(el, chips); ligarAbas(); return; }
+  if (f.filtro === 'extrato') { await extratoInter(el, chips); ligarAbas(); return; }
+  if (f.filtro === 'creditos') { await creditosClientes(el, chips); ligarAbas(); return; }
   el.innerHTML = `
     <div class="painel filtros">
       ${chips}
@@ -154,7 +155,7 @@ async function extratoInter(el, chips) {
 }
 // coluna "Pedido" do extrato: onde a entrada foi usada (e quanto sobra)
 function usoMovimento(m) {
-  const usos = (m.usos || []).map(u => `<a href="#/pedido/${esc(u.pedido_id)}">#${esc(u.numero)}</a>${(m.usos.length > 1 || Number(u.valor) !== Number(m.valor)) ? ` <span class="small muted">${brl(u.valor)}</span>` : ''}${u.origem === 'automatico' ? ' <span class="small muted">(automático)</span>' : ''}`);
+  const usos = (m.usos || []).map(u => `<a href="#/pedido/${esc(u.pedido_id)}">#${esc(u.numero)}</a>${u.credito ? ' <span class="small muted">→ crédito do cliente</span>' : ''}${(m.usos.length > 1 || Number(u.valor) !== Number(m.valor)) ? ` <span class="small muted">${brl(u.valor)}</span>` : ''}${u.origem === 'automatico' ? ' <span class="small muted">(automático)</span>' : ''}`);
   const sobra = m.pode_usar && Number(m.saldo) > 0;
   return usos.join('<br>') + (sobra ? `${usos.length ? `<div class="small muted">sobra ${brl(m.saldo)}</div>` : badge('Sem pedido', 'b-ambar')}` : '') || '—';
 }
@@ -206,7 +207,8 @@ async function janelaExtrato(o) {
   if (!document.body.contains(m.el)) return;   // fechou enquanto lia
   if (!cab.aberta) { corpo.innerHTML = '<div class="vazio">Esta parcela não está mais em aberto. Atualize a tela.</div>'; return; }
 
-  const st = { escolha: 'parcela', valor: Number(cab.parcela), mov: null, entradas: [], manual: false };
+  const st = { escolha: 'parcela', valor: Number(cab.parcela), mov: null, entradas: [], manual: false,
+               sobra: { destino: null, valor: '', numero: '', info: null } };   // pagou a mais: o que fazer com a sobra (D156)
   const opcoes = [['parcela', escolher ? 'Valor' : 'Esta parcela', cab.parcela]];
   if (!escolher && Number(cab.em_aberto) !== Number(cab.parcela)) opcoes.push(['tudo', 'Tudo em aberto', cab.em_aberto]);
   if (!escolher && ![Number(cab.parcela), Number(cab.em_aberto)].includes(Number(cab.metade))) opcoes.push(['metade', 'Metade (sinal)', cab.metade]);
@@ -219,6 +221,7 @@ async function janelaExtrato(o) {
       <label class="campo hidden" id="cp-outro" style="margin-top:8px;max-width:200px">Valor (R$)<input type="number" step="0.01" min="0.01" max="${esc(cab.em_aberto)}"></label></div>
     <div id="cp-lista"></div>
     <div id="cp-nota" class="small muted"></div>
+    <div id="cp-sobra" class="cp-sobra hidden"></div>
     ${blocoExp('cp-manual', 'Não é nenhuma destas? Buscar manualmente', `
       <div class="linha-form" style="flex-wrap:wrap">
         <label class="campo">Valor (R$)<input type="number" step="0.01" min="0.01" data-m="valor"></label>
@@ -230,13 +233,61 @@ async function janelaExtrato(o) {
 
   const lista = $('#cp-lista', m.el), nota = $('#cp-nota', m.el), outro = $('#cp-outro', m.el);
   const valorFinal = () => st.mov ? Math.min(st.valor, Number(st.mov.saldo)) : st.valor;
+  // pagou a mais (D156): a entrada é maior que tudo o que falta pagar e o valor escolhido paga tudo → escolher o destino da sobra
+  const caixaSobra = $('#cp-sobra', m.el), so = st.sobra;
+  const pedidoId = escolher ? null : (S.parcelas[id] && S.parcelas[id].pedido_id) || null;
+  const limite = Number(escolher ? cab.parcela : cab.em_aberto);
+  const cent = x => Math.round(Number(x) * 100);
+  const sobraAtual = () => { if (!st.mov) return 0; const s = cent(st.mov.saldo), v = cent(valorFinal()); return v >= cent(limite) && s > v ? (s - v) / 100 : 0; };
+  const sobraPronta = () => {
+    if (!so.destino) return false;
+    if (so.destino !== 'pedido') return true;
+    const v = cent(so.valor);
+    return !!so.info && !so.info.cancelado && !so.info.mesmo_pedido && v > 0 && v <= cent(sobraAtual()) && v <= cent(so.info.em_aberto);
+  };
+  const desenharSobra = () => {
+    const sob = sobraAtual();
+    caixaSobra.classList.toggle('hidden', !sob);
+    if (!sob) return;
+    if (so.destino === 'pedido' && !so.valor) so.valor = sob.toFixed(2);
+    const i = so.info;
+    const infoPed = !i ? '' : i.cancelado ? '<span style="color:var(--vermelho)">Este pedido está cancelado.</span>'
+      : i.mesmo_pedido ? '<span style="color:var(--vermelho)">Escolha outro pedido.</span>'
+      : `Pedido <b>#${esc(i.numero)}</b> · ${esc(i.cliente || '—')} · vendedor ${esc(i.vendedor || '—')} · falta pagar <b>${brl(i.em_aberto)}</b>${!Number(i.em_aberto) ? ' · <span style="color:var(--vermelho)">nada em aberto</span>' : (!i.mesmo_cliente || !i.mesmo_vendedor) ? ' · <span style="color:var(--vermelho)">outro cliente ou vendedor: vai pedir confirmação</span>' : ''}`;
+    caixaSobra.innerHTML = `<div class="small" style="margin-bottom:6px"><b>O cliente pagou ${brl(sob)} a mais.</b> O que fazer com a sobra?</div>
+      <div class="chips">${[['credito', 'Crédito do cliente'], ['pedido', 'Outro pedido'], ['fatima', 'Deixar para a Fátima']].map(([k, n]) => `<button type="button" class="chip ${so.destino === k ? 'ativo' : ''}" data-sob="${k}">${n}</button>`).join('')}</div>
+      ${so.destino === 'credito' ? `<p class="small muted" style="margin:6px 0 0">${brl(sob)} ficam de crédito para o cliente usar num próximo pedido (em "Outros" ou no botão "Usar crédito").</p>` : ''}
+      ${so.destino === 'fatima' ? '<p class="small muted" style="margin:6px 0 0">A sobra continua no extrato ("Sem pedido") e a Fátima recebe uma tarefa para decidir.</p>' : ''}
+      ${so.destino === 'pedido' ? `<div class="linha-form" style="margin-top:8px">
+          <label class="campo" style="max-width:140px">Nº do pedido<input type="text" data-sobc="numero" value="${esc(so.numero)}" inputmode="numeric"></label>
+          <label class="campo" style="max-width:160px">Valor (R$)<input type="number" step="0.01" min="0.01" max="${sob.toFixed(2)}" data-sobc="valor" value="${esc(so.valor)}"></label>
+          <div style="align-self:flex-end"><button type="button" class="btn peq" data-sob-buscar>Conferir</button></div></div>
+        ${infoPed ? `<p class="small" style="margin:6px 0 0">${infoPed}</p>` : ''}` : ''}`;
+    caixaSobra.querySelectorAll('[data-sob]').forEach(b => b.onclick = () => { so.destino = b.dataset.sob; desenharSobra(); atualizarBotao(); });
+    const num = caixaSobra.querySelector('[data-sobc=numero]');
+    if (!num) return;
+    const conferirPedido = async () => {
+      so.numero = num.value.trim().replace(/^#/, ''); so.info = null;
+      if (so.numero) { try { so.info = await api('buscar_pedido_sobra', { numero: so.numero, pedido_id: pedidoId }, false, true); } catch { /* erro já avisado */ } }
+      desenharSobra(); atualizarBotao();
+    };
+    num.onchange = conferirPedido;
+    num.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); conferirPedido(); } };
+    caixaSobra.querySelector('[data-sob-buscar]').onclick = conferirPedido;
+    caixaSobra.querySelector('[data-sobc=valor]').oninput = e => { so.valor = e.target.value; atualizarBotao(); };
+  };
+  let ultimaSobra = 0;
   const atualizarBotao = () => {
-    const v = valorFinal(), ok = st.mov && v > 0;
-    btnOk.disabled = !ok; btnOk.textContent = escolher ? 'Usar esta entrada' : ok ? `Confirmar ${brl(v)}` : 'Confirmar';
-    if (!ok) { nota.textContent = ''; return; }
+    const v = valorFinal(), tem = st.mov && v > 0, sob = sobraAtual();
+    if (sob !== ultimaSobra) { ultimaSobra = sob; desenharSobra(); }
+    btnOk.disabled = !tem || (sob > 0 && !sobraPronta());
+    btnOk.textContent = escolher ? 'Usar esta entrada' : tem ? `Confirmar ${brl(v)}` : 'Confirmar';
+    if (!tem) { nota.textContent = ''; return; }
     const s = Number(st.mov.saldo), partes = [];
     if (s < st.valor) partes.push(`A entrada é menor: ${escolher ? 'vai confirmar' : 'confirma'} ${brl(s)} e o resto (${brl(st.valor - s)}) continua em aberto.`);
-    if (s > st.valor) partes.push(`Sobram ${brl(s - st.valor)} desta entrada no extrato, para outro pagamento.`);
+    if (s > st.valor && !sob) partes.push(cent(s) > cent(limite)
+      ? `A entrada (${brl(s)}) é maior que tudo o que falta pagar: escolha "Tudo em aberto" para resolver a sobra.`
+      : `Sobram ${brl(s - st.valor)} desta entrada no extrato, para outro pagamento.`);
     if (v > Number(cab.parcela)) partes.push('Paga esta parcela e as próximas em aberto do pedido.');
     nota.textContent = partes.join(' ');
   };
@@ -285,12 +336,109 @@ async function janelaExtrato(o) {
   btnOk.onclick = async () => {
     const v = valorFinal();
     if (!st.mov || !(v > 0)) return;
-    if (escolher) { devolver(st.mov); m.fechar(); return; }
-    try { await ocupado(btnOk, () => api('confirmar_pagamento_extrato', { id, movimento_id: st.mov.id, valor: v.toFixed(2) })); }
+    const sob = sobraAtual(); let sobra = null;
+    if (sob) {
+      if (!sobraPronta()) return;
+      sobra = { destino: so.destino };
+      if (so.destino === 'credito') sobra.valor = sob.toFixed(2);
+      if (so.destino === 'pedido') {
+        sobra.valor = Number(so.valor).toFixed(2); sobra.pedido_numero = so.info.numero;
+        // outro cliente ou outro vendedor (ou pedido ainda sendo criado): segunda confirmação
+        if (escolher || !so.info.mesmo_cliente || !so.info.mesmo_vendedor) {
+          if (!await confirmar(`Mandar ${brl(Number(sobra.valor))} da sobra para o pedido #${so.info.numero} (${so.info.cliente || '—'}, vendedor ${so.info.vendedor || '—'})?`, 'Mandar para este pedido')) return;
+          sobra.confirmado = true;
+        }
+      }
+    }
+    if (escolher) { devolver({ ...st.mov, sobra }); m.fechar(); return; }
+    try { await ocupado(btnOk, () => api('confirmar_pagamento_extrato', { id, movimento_id: st.mov.id, valor: v.toFixed(2), sobra })); }
     catch { buscar(); return; }
-    m.fechar(); toast(`Pagamento de ${brl(v)} confirmado.`); recarregar();
+    m.fechar(); toast(`Pagamento de ${brl(v)} confirmado.${textoSobra(sobra)}`); recarregar();
   };
   buscar();
+}
+const textoSobra = s => !s ? '' : s.destino === 'credito' ? ` A sobra (${brl(Number(s.valor))}) virou crédito do cliente.`
+  : s.destino === 'pedido' ? ` A sobra foi para o pedido #${s.pedido_numero}.` : ' A sobra ficou para a Fátima resolver.';
+
+/* ---------- CRÉDITO DO CLIENTE (Módulo 6, Parte C1; D156) ----------
+   Nasce da sobra de um pagamento; é usado em "Outros" ao criar o pedido ou no botão "Usar crédito" da parcela.
+   O banco confere o saldo; só o financeiro ajusta (com motivo). */
+const TIPOS_CRED = { sobra: 'Sobra de pagamento', uso: 'Usado', uso_desfeito: 'Uso desfeito', ajuste: 'Ajuste' };
+// no pedido: se o cliente tem crédito, mostra "Usar crédito" nas parcelas em aberto
+async function creditoNoPedido(p, el) {
+  if (!pode('ve_financeiro') || p.status === 'cancelado') return;
+  const bts = [...el.querySelectorAll('[data-usar-credito]')]; if (!bts.length) return;
+  let r; try { r = await api('buscar_credito_cliente', { pedido_id: p.id }, true, true); } catch { return; }
+  const saldo = Number(r.saldo) || 0; if (saldo <= 0) return;
+  bts.forEach(b => { b.classList.remove('hidden'); b.textContent = `Usar crédito (${brl(saldo)})`; b.onclick = () => usarCredito(b.dataset.usarCredito, saldo); });
+}
+async function usarCredito(id, saldo) {
+  const r = S.parcelas[id]; if (!r) return;
+  const v = Math.min(Number(r.valor), saldo);
+  const msg = `Usar o crédito do cliente nesta parcela? Saldo: ${brl(saldo)}. Vai pagar ${brl(v)}${v < Number(r.valor) ? ` e o resto (${brl(Number(r.valor) - v)}) continua em aberto` : ''}. Entra pago e conferido.`;
+  if (!await confirmar(msg, 'Usar crédito')) return;
+  const x = await api('usar_credito_cliente', { id }); toast(`Pago com o crédito do cliente: ${brl(x.valor)}.`); recarregar();
+}
+// aba "Créditos de clientes" da Conciliação (só o financeiro)
+async function creditosClientes(el, chips) {
+  const g = S.cache.filtroCred || (S.cache.filtroCred = { busca: '', todos: false });
+  const r = await api('listar_creditos_clientes', { ...g, limite: limLista('cred') });
+  el.innerHTML = `
+    <div class="painel filtros">
+      ${chips}
+      <div class="linha-form" style="margin-bottom:12px;align-items:flex-end">
+        <label class="campo" style="flex:2">Buscar<input type="search" id="cred-busca" value="${esc(g.busca)}" placeholder="Nome do cliente"></label>
+        <label class="check" style="white-space:normal"><input type="checkbox" id="cred-todos" ${g.todos ? 'checked' : ''}> Mostrar também quem já usou tudo</label>
+      </div>
+      ${blocoExp('cred-como', 'Como funciona', '<p class="small muted" style="margin:0">O crédito nasce quando o cliente paga a mais e quem confirma o pagamento escolhe "Crédito do cliente". Ele é usado em "Outros", ao criar o pedido, ou no botão "Usar crédito" da parcela em aberto (entra pago e conferido). Desfazer ou excluir esse pagamento devolve o valor ao crédito. Se o dinheiro for devolvido ao cliente, ou para corrigir um erro, use "Ajustar o saldo" no histórico do cliente: o motivo fica registrado.</p>', false, 'leve')}
+      ${!r.clientes.length ? '<div class="vazio">Nenhum cliente com crédito.</div>' : `
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Cliente</th><th>Último movimento</th><th class="dir">Saldo</th><th></th></tr></thead>
+        <tbody>${r.clientes.map(c => `<tr>
+          <td>${esc(c.nome)}</td>
+          <td class="num">${esc(dataHora(c.ultimo))}</td>
+          <td class="dir num"><b>${brl(c.saldo)}</b></td>
+          <td class="dir"><button class="btn link peq" data-cred="${esc(c.cliente_id)}">Ver histórico</button></td>
+        </tr>`).join('')}</tbody></table></div>`}
+      ${rodapeLista('cred', r.clientes.length, r.total, 'cliente(s)', `Saldo total: ${brl(r.saldo_total)}`)}
+    </div>`;
+  ligarMais(el, 'cred', recarregar);
+  const filtrar = () => { zerarLista('cred'); recarregar(); };
+  let t; $('#cred-busca').oninput = e => { g.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
+  $('#cred-todos').onchange = e => { g.todos = e.target.checked; filtrar(); };
+  $$('[data-cred]').forEach(b => b.onclick = () => historicoCredito(b.dataset.cred, (r.clientes.find(c => c.cliente_id === b.dataset.cred) || {}).nome));
+}
+async function historicoCredito(cliente_id, nome) {
+  const r = await api('listar_creditos_clientes', { cliente_id, todos: true, limite: 1 });
+  const h = r.historico || [];
+  const m = abrirModal({ titulo: 'Crédito de ' + (nome || 'cliente'), largo: true, corpo: `
+    <p style="margin:0 0 12px">Saldo: <b>${brl(r.saldo_cliente)}</b></p>
+    ${!h.length ? '<div class="vazio">Sem movimentos.</div>' : `<div class="tabela-wrap"><table>
+      <thead><tr><th>Data</th><th>O quê</th><th>Pedido</th><th>Por</th><th class="dir">Valor</th></tr></thead>
+      <tbody>${h.map(x => `<tr>
+        <td class="num">${esc(dataHora(x.criado_em))}</td>
+        <td>${esc(TIPOS_CRED[x.tipo] || x.tipo)}${x.observacao ? `<div class="small muted">${esc(x.observacao)}</div>` : ''}</td>
+        <td>${x.pedido_id ? `<a href="#/pedido/${esc(x.pedido_id)}">#${esc(x.pedido_numero)}</a>` : '—'}</td>
+        <td>${esc(x.usuario || 'Sistema')}</td>
+        <td class="dir num" style="color:var(${Number(x.valor) >= 0 ? '--verde' : '--vermelho'})">${Number(x.valor) < 0 ? '− ' : '+ '}${brl(Math.abs(Number(x.valor)))}</td>
+      </tr>`).join('')}</tbody></table></div>`}
+    ${blocoExp('cred-ajuste', 'Ajustar o saldo', `
+      <div class="linha-form" style="flex-wrap:wrap">
+        <label class="campo" style="max-width:190px">O que fazer<select id="aj-sinal"><option value="-1">Tirar do saldo</option><option value="1">Acrescentar ao saldo</option></select></label>
+        <label class="campo" style="max-width:150px">Valor (R$)<input type="number" step="0.01" min="0.01" id="aj-valor"></label>
+        <label class="campo" style="flex:2">Motivo *<input type="text" id="aj-motivo" maxlength="400" placeholder="Ex.: devolvido ao cliente por Pix em 27/11"></label>
+      </div>
+      <button class="btn peq" id="aj-salvar">Salvar ajuste</button>`, false, 'leve')}`,
+    rodape: '<button class="btn" data-v>Fechar</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  $('#aj-salvar', m.el).onclick = async e => {
+    const v = Math.round(Number($('#aj-valor', m.el).value) * 100) / 100, motivo = $('#aj-motivo', m.el).value.trim();
+    if (!(v > 0)) return toast('Informe o valor do ajuste.', true);
+    if (!motivo) return toast('Informe o motivo do ajuste.', true);
+    let x; try { x = await ocupado(e.currentTarget, () => api('ajustar_credito_cliente', { cliente_id, valor: (v * Number($('#aj-sinal', m.el).value)).toFixed(2), motivo })); }
+    catch { return; }
+    m.fechar(); toast(`Ajuste salvo. Saldo: ${brl(x.saldo)}.`); recarregar();
+  };
 }
 
 /* ---------- COMISSÕES ---------- */

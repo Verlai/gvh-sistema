@@ -197,14 +197,16 @@ const unitario = (total, qtd) => Number(qtd) > 0 ? (Number(total || 0) / Number(
 
 /* ---------- PARCELAS ---------- */
 const TIPOS_PARC = { sinal:'Sinal', restante:'Restante', boleto:'Boleto', a_vista:'À vista', parcela:'Parcela' };
-const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro', maquininha:'Maquininha' };
-const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+const FORMAS = { pix:'Pix', dinheiro:'Dinheiro', cartao_credito:'Cartão de crédito', cartao_debito:'Cartão de débito', boleto:'Boleto', transferencia:'Transferência', outro:'Outro', maquininha:'Maquininha', credito_cliente:'Crédito do cliente' };
+// "Crédito do cliente" não entra na baixa manual: só pelo botão "Usar crédito" (o banco confere o saldo)
+const opcoesForma = (sel = '') => `<option value="">—</option>` + Object.entries(FORMAS).filter(([k]) => k !== 'credito_cliente').map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 // pagamento que pode ser confirmado pelo extrato do Inter (Módulo 6, Fase 2 Parte B)
 const TIPO_ENTRADA = { PIX: 'Pix', TRANSFERENCIA: 'Transferência', BOLETO_COBRANCA: 'Boleto' };
 const formaDoExtrato = r => !r.forma_pagamento || ['pix', 'transferencia', 'boleto'].includes(r.forma_pagamento);
 function badgeParcela(r) {
   if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return badge('Pago no cartão em ' + data(r.pago_em) + ' · aguardando repasse', 'b-verde');
   if (r.situacao === 'pago' && r.extrato_origem) return badge('Pago em ' + data(r.pago_em) + ' · confirmado no extrato', 'b-verde');
+  if (r.situacao === 'pago' && r.forma_pagamento === 'credito_cliente') return badge('Pago em ' + data(r.pago_em) + ' · crédito do cliente', 'b-verde');
   if (r.situacao === 'pago') return r.conferencia === 'pendente'
     ? badge('Pago em ' + data(r.pago_em) + ' · a conferir', 'b-ambar')
     : badge('Pago em ' + data(r.pago_em), 'b-verde');
@@ -243,6 +245,7 @@ function tabelaParcelas(lista, comPedido) {
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${coluna ? `<td class="dir" style="white-space:nowrap">
         ${extrato && r.situacao === 'aberto' && formaDoExtrato(r) ? `<button class="btn prim peq" onclick="confirmarPagamentoExtrato('${r.id}')">Confirmar pagamento</button>` : ''}
+        ${extrato && !comPedido && r.situacao === 'aberto' ? `<button class="btn peq hidden" data-usar-credito="${r.id}">Usar crédito</button>` : ''}
         ${acoes && r.situacao === 'aberto' ? `<button class="btn ${extrato && formaDoExtrato(r) ? 'link' : 'prim'} peq" onclick="modalBaixa('${r.id}', ${conferir})"${extrato && formaDoExtrato(r) && !fin ? ' title="Só se o dinheiro não caiu no Inter: vai para a conferência do financeiro"' : ''}>${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
         ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
@@ -319,8 +322,15 @@ async function finalizarPagamento(pag, resp) {
   await anexarComprovantes(pag, resp);
   const ids = (resp && resp.recebimentos_ids) || {};
   for (const e of (pag && pag.extrato) || []) {
-    try { await aguarde('Confirmando o pagamento no extrato…', () => api('confirmar_pagamento_extrato', { id: ids[e.chave], movimento_id: e.movimento_id, valor: e.valor }, true)); }
+    try {
+      await aguarde('Confirmando o pagamento no extrato…', () => api('confirmar_pagamento_extrato', { id: ids[e.chave], movimento_id: e.movimento_id, valor: e.valor, sobra: e.sobra || null }, true));
+      if (e.sobra) toast(textoSobra(e.sobra).trim());
+    }
     catch (err) { toast(`O pagamento não foi confirmado pelo extrato (${err.message}). Confirme depois pelo botão "Confirmar pagamento" no pedido.`, true); }
+  }
+  for (const chave of (pag && pag.creditos) || []) {
+    try { await aguarde('Usando o crédito do cliente…', () => api('usar_credito_cliente', { id: ids[chave] }, true)); }
+    catch (err) { toast(`O crédito do cliente não foi usado (${err.message}). Use depois pelo botão "Usar crédito" no pedido.`, true); }
   }
   for (const chave of (pag && pag.links) || []) {
     try { const r = await aguarde('Criando o link na Cielo…', () => api('cielo_link', { id: ids[chave] }, true)); mostrarLinkCielo(r.url, r.expira_em); }
@@ -344,7 +354,8 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
   const orc = raiz.hasAttribute('data-fp-orc');   // orçamento: só o combinado, sem "já pagou", extrato ou link
   const corpo = raiz.querySelector('[data-fp-corpo]');
   const st = { forma: '', pago: null, mov: null, naoAchou: false, gerarLink: true, qtd: 1, outraQtd: false, parcelas: [], parcManual: false,
-               sinal: '', sinalManual: false, sinalPago: null, movSinal: null, naoAchouSinal: false, restante: 'pix', obs: '', autoriza: null };
+               sinal: '', sinalManual: false, sinalPago: null, movSinal: null, naoAchouSinal: false, restante: 'pix', obs: '', autoriza: null,
+               credito: 0, creditoCli: null, usarCredito: false };   // crédito do cliente em "Outros" (Parte C1)
   const enviados = new Map();
   const t2 = () => Math.round(total() * 100) / 100;
   const brlTxt = v => brl(v).replace(/\s/g, ' ');
@@ -378,8 +389,18 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
     st.parcManual = false;
   };
   const sugerirSinal = () => { if (!st.sinalManual) { const s = Math.round(t2() * 50) / 100; st.sinal = s > 0 ? s.toFixed(2) : ''; } };
+  // saldo de crédito do cliente escolhido (lido uma vez por cliente; o banco confere de novo ao usar)
+  const carregarCredito = () => {
+    const c = clienteId(); if (!c || st.creditoCli === c) return;
+    st.creditoCli = c; st.credito = 0; st.usarCredito = false;
+    api('buscar_credito_cliente', { cliente_id: c }, true, true)
+      .then(r => { if (st.creditoCli !== c) return; st.credito = Number(r.saldo) || 0; if (st.forma === 'outros') render(); })
+      .catch(() => {});
+  };
+  const creditoUsado = () => st.usarCredito && st.credito > 0 ? Math.min(st.credito, t2()) : 0;
   // nada confirmado no extrato na criação: cartão (link depois), "Ainda não" ou "não achei"
   const nadaPago = () => st.forma === 'cartao_credito' ? true
+    : st.forma === 'outros' && st.usarCredito ? creditoUsado() < t2()
     : st.forma === 'sinal_restante' ? (st.sinalPago === false || (st.sinalPago === true && !st.movSinal))
     : (st.pago === false || (st.pago === true && ['pix', 'transferencia'].includes(st.forma) && !st.mov));
   const mostraAut = () => !orc && podeAutorizar && st.forma && !FORMAS_LIBERAM.includes(st.forma) && nadaPago();
@@ -391,6 +412,10 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
     if (f === 'boleto') return st.parcelas.length > 1 ? `Boleto em ${st.parcelas.length}x` : 'Boleto';
     if (f === 'retirada') return 'Paga na retirada';
     if (f === 'sinal_restante') return `Sinal de ${brlTxt(Number(st.sinal || 0))}${st.sinalPago === true && st.movSinal ? ' (pago)' : ''} + restante a combinar`;
+    if (f === 'outros' && !orc && st.usarCredito && creditoUsado() > 0) {
+      const c = creditoUsado();
+      return `Crédito do cliente (${brlTxt(c)})` + (c < t2() ? ` + ${brlTxt(Math.round((t2() - c) * 100) / 100)} a combinar` : '');
+    }
     if (f === 'outros') return 'Outros' + (st.obs ? ': ' + st.obs : '') + pg;
     return '';
   };
@@ -426,8 +451,13 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
       if (st.sinalPago === true) h += extrato('movSinal', 'naoAchouSinal');
       h += '<div class="small muted" style="margin-top:10px">O restante fica "a combinar": no pedido, use "Confirmar pagamento" (Pix) ou "Criar link de pagamento" (cartão).</div>';
     } else if (f === 'outros') {
-      h += campo('Como será o pagamento? *', 'obs', 'text', 'placeholder="Ex.: permuta, crédito do cliente, a combinar"');
-      h += simNao('pago', 'Já foi pago?');
+      carregarCredito();
+      if (st.credito > 0) h += `<label class="check" style="margin-top:12px;white-space:normal"><input type="checkbox" data-cred ${st.usarCredito ? 'checked' : ''}> Usar o crédito do cliente (saldo <b>${brl(st.credito)}</b>)</label>
+        ${st.usarCredito ? `<div class="small muted" style="margin-top:4px">Logo depois de salvar, ${brl(creditoUsado())} entram pagos com o crédito${creditoUsado() < t2() ? `; o resto (${brl(Math.round((t2() - creditoUsado()) * 100) / 100)}) fica "a combinar" no pedido` : ''}.</div>` : ''}`;
+      if (!st.usarCredito) {
+        h += campo('Como será o pagamento? *', 'obs', 'text', 'placeholder="Ex.: permuta, a combinar"');
+        h += simNao('pago', 'Já foi pago?');
+      }
     }
     if (mostraAut()) h += pergunta('Pode ir para a produção antes do pagamento?', chips('autoriza', [['true', 'Sim, autorizo'], ['false', 'Não']], st.autoriza ?? 'false'));
     if (f) h += `<div class="small muted" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--borda, #e5e5e5)" data-fp-resumo>Resumo: <b>${esc(resumo())}</b></div>`;
@@ -449,6 +479,7 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
     }));
     corpo.querySelectorAll('[data-ext]').forEach(b => b.onclick = () => buscarExtrato(b.dataset.ext));
     const lk = corpo.querySelector('[data-link]'); if (lk) lk.onchange = () => { st.gerarLink = lk.checked; render(); };
+    const cr = corpo.querySelector('[data-cred]'); if (cr) cr.onchange = () => { st.usarCredito = cr.checked; st.pago = null; render(); };
     corpo.querySelectorAll('[data-k]').forEach(i => i.oninput = () => {
       st[i.dataset.k] = i.value;
       if (i.dataset.k === 'sinal') st.sinalManual = true;
@@ -506,6 +537,12 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
       // o restante fica "a combinar" (sem forma): no pedido aceita "Confirmar pagamento" ou "Criar link de pagamento"
       rec = [{ tipo: 'sinal', valor: sinal.toFixed(2), vencimento: hoje(), forma_pagamento: 'pix', _mov: st.sinalPago ? st.movSinal : null },
              { tipo: 'restante', valor: (Math.round((t - sinal) * 100) / 100).toFixed(2), vencimento: p || hoje(), forma_pagamento: null }];
+    } else if (st.usarCredito && creditoUsado() > 0) {
+      // crédito do cliente: a parte coberta é paga logo depois de criar ("usar_credito_cliente"); o resto fica a combinar
+      const c = Math.round(creditoUsado() * 100) / 100, resto = Math.round((t - c) * 100) / 100;
+      obs = 'Crédito do cliente';
+      rec = [{ tipo: 'a_vista', valor: c.toFixed(2), vencimento: hoje(), forma_pagamento: 'credito_cliente', _credito: true }];
+      if (resto > 0) rec.push({ tipo: 'restante', valor: resto.toFixed(2), vencimento: p || hoje(), forma_pagamento: null });
     } else {
       obs = st.obs.trim();
       if (!obs) throw new Error('Descreva como será o pagamento em "Outros".');
@@ -513,12 +550,13 @@ function ligarFormaPagamento(el, total, prev, inicial, clienteId = () => null) {
       rec = [{ tipo: 'a_vista', valor: t.toFixed(2), vencimento: hoje(), forma_pagamento: 'outro', observacao: obs, pago: st.pago }];
     }
     // o que fazer depois de criar: confirmar pelo extrato (valor = o menor entre a parcela e o que sobra na entrada) e criar o link
-    const extratoUsar = [], links = [];
+    const extratoUsar = [], links = [], creditos = [];
     rec.forEach((r, k) => { r._chave = 'c' + k;
-      if (r._mov) extratoUsar.push({ chave: r._chave, movimento_id: r._mov.id, valor: Math.min(Number(r.valor), Number(r._mov.saldo)).toFixed(2) });
+      if (r._mov) extratoUsar.push({ chave: r._chave, movimento_id: r._mov.id, valor: Math.min(Number(r.valor), Number(r._mov.saldo)).toFixed(2), sobra: r._mov.sobra || null });
       if (r._link) links.push(r._chave);
-      delete r._mov; delete r._link; });
-    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes: {}, extrato: extratoUsar, links, resumo: resumo(),
+      if (r._credito) creditos.push(r._chave);
+      delete r._mov; delete r._link; delete r._credito; });
+    return { forma_pagamento: f, forma_pagamento_obs: obs, recebimentos: rec, comprovantes: {}, extrato: extratoUsar, links, creditos, resumo: resumo(),
              autoriza_sem_pagamento: !!(mostraAut() && st.autoriza === true) };
   };
   coletar.forma = () => st.forma;
