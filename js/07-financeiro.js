@@ -370,7 +370,7 @@ const textoSobra = s => !s ? '' : s.destino === 'credito' ? ` A sobra (${brl(Num
 /* ---------- CRÉDITO DO CLIENTE (Módulo 6, Parte C1; D156) ----------
    Nasce da sobra de um pagamento; é usado em "Outros" ao criar o pedido ou no botão "Usar crédito" da parcela.
    O banco confere o saldo; só o financeiro ajusta (com motivo). */
-const TIPOS_CRED = { sobra: 'Sobra de pagamento', uso: 'Usado', uso_desfeito: 'Uso desfeito', ajuste: 'Ajuste' };
+const TIPOS_CRED = { sobra: 'Sobra de pagamento', uso: 'Usado', uso_desfeito: 'Uso desfeito', ajuste: 'Ajuste', devolucao: 'Pix devolvido' };
 // no pedido: se o cliente tem crédito, mostra "Usar crédito" nas parcelas em aberto
 async function creditoNoPedido(p, el) {
   if (!pode('ve_financeiro') || p.status === 'cancelado') return;
