@@ -449,6 +449,62 @@ function imprimirResumoPedido() {
 </body></html>`;
   abrirImpressao(html, titulo);
 }
+// C2d: comprovante de estorno no cartão (marca da GVH; dados da venda que o cliente ou o banco usam para achar a devolução)
+async function imprimirEstornoCartao(id) {
+  const x = await api('obter_estorno_cartao', { id });
+  const c = x.cliente || {}, v = x.venda || {}, est = x.estornos || [];
+  const din = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dataBR = iso => iso ? new Date(String(iso).length > 10 ? iso : String(iso) + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+  const nomeCli = c.nome_fantasia || c.nome || '';
+  const doc = c.cpf_cnpj ? `${c.tipo_pessoa === 'PF' ? 'CPF' : 'CNPJ'} ${fmtDoc(c.cpf_cnpj)}` : '';
+  const empresaLinhas = [EMPRESA.cnpj && 'CNPJ ' + EMPRESA.cnpj, EMPRESA.endereco, [EMPRESA.telefone, EMPRESA.email].filter(Boolean).join(' · '), EMPRESA.site].filter(Boolean);
+  const total = Number(x.estornado || 0) >= Number(v.valor || 0) - 0.001;
+  const linha = (rot, val) => val ? `<tr><td class="r">${esc(rot)}</td><td>${esc(val)}</td></tr>` : '';
+  const logo = $('#logo-gvh', document)?.src || '';
+  const titulo = `Estorno - Pedido ${x.pedido.numero} - ${nomeCli}`.replace(/[\\/:*?"<>|]/g, '');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${esc(titulo)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Sora, Arial, sans-serif; color: #1d262d; font-size: 10.5pt; margin: 0; }
+  .topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 14px; border-bottom: 3px solid #00a986; }
+  .topo img { height: 58px; } .emp { text-align: right; font-size: 8.5pt; color: #5a6770; line-height: 1.5; } .emp b { color: #1d262d; font-size: 10pt; }
+  h1 { margin: 20px 0 4px; font-size: 19pt; font-weight: 700; letter-spacing: .5px; } h1 span { color: #00a986; }
+  .sub { color: #5a6770; font-size: 9.5pt; margin-bottom: 16px; }
+  .valor { background: #00a986; color: #fff; border-radius: 8px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .valor b { font-size: 18pt; } .valor span { font-size: 10pt; }
+  .caixa { background: #f6f6f6; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; color: #8a959c; margin-bottom: 6px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; } td { padding: 5px 0; font-size: 10pt; vertical-align: top; } td.r { color: #5a6770; width: 45%; }
+  .hist td { border-bottom: 1px solid #e2e6e8; padding: 7px 0; }
+  .aviso { font-size: 9pt; color: #5a6770; line-height: 1.5; margin-top: 14px; }
+  .rodape { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e2e6e8; font-size: 8pt; color: #8a959c; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="topo">${logo ? `<img src="${logo}" alt="GVH">` : `<b>${esc(EMPRESA.nome)}</b>`}
+    <div class="emp"><b>${esc(EMPRESA.nome)}</b>${empresaLinhas.map(l => `<br>${esc(l)}`).join('')}</div></div>
+  <h1>COMPROVANTE DE <span>ESTORNO</span></h1>
+  <div class="sub">Pedido nº ${esc(x.pedido.numero)} · emitido em ${new Date().toLocaleDateString('pt-BR')}</div>
+  <div class="valor"><span>${total ? 'Valor estornado (total da compra)' : 'Valor estornado'}</span><b>${din(x.estornado)}</b></div>
+  <div class="caixa"><div class="rot">Cliente</div><b>${esc(nomeCli)}</b>${c.nome_fantasia && c.nome ? `<div>${esc(c.nome)}</div>` : ''}${doc ? `<div>${esc(doc)}</div>` : ''}</div>
+  <div class="caixa"><div class="rot">Compra no cartão</div><table>
+    ${linha('Data da compra', dataBR(v.pago_em))}
+    ${linha('Valor da compra', din(v.valor))}
+    ${linha('Bandeira', v.bandeira)}
+    ${linha('Parcelas', v.parcelas ? v.parcelas + 'x' : '')}
+    ${linha('Código de autorização', v.autorizacao)}
+    ${linha('NSU/DOC', v.nsu)}
+    ${linha('TID', v.tid)}
+    ${linha('Pedido na Cielo', v.pedido_cielo)}
+  </table></div>
+  <div class="caixa"><div class="rot">Estorno${est.length > 1 ? 's' : ''}</div><table class="hist">
+    ${est.map(e => `<tr><td class="r">${esc(dataBR(e.em))} · ${e.total ? 'estorno total' : 'estorno parcial'}</td><td style="text-align:right">${din(e.valor)}</td></tr>`).join('')}
+  </table></div>
+  <p class="aviso">O estorno foi processado pela Cielo, a credenciadora do pagamento, na data acima. O valor volta para o cartão usado na compra; o prazo para aparecer na fatura depende do banco emissor do cartão. Para acompanhar, informe ao banco os dados da compra acima (código de autorização, NSU e TID).</p>
+  <div class="rodape"><span>${esc(EMPRESA.nome)}${EMPRESA.site ? ' · ' + esc(EMPRESA.site) : ''}</span><span>Pedido nº ${esc(x.pedido.numero)}</span></div>
+</body></html>`;
+  abrirImpressao(html, titulo);
+}
 function imprimirOrcamento(o) {
   const c = o.cliente;
   const dataBR = iso => iso ? new Date(String(iso).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '';

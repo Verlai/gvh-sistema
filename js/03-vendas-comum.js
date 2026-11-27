@@ -253,6 +253,7 @@ function tabelaParcelas(lista, comPedido) {
         ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')" title="Volta a ficar em aberto; não devolve dinheiro">Desconciliar</button>` : ''}
+        ${extrato && r.cielo_situacao === 'pago' && Number(r.cielo_estornado) > 0 ? `<button class="btn link peq" onclick="imprimirEstornoCartao('${r.id}')">Comprovante de estorno</button>` : ''}
         ${fin && r.situacao === 'pago' && r.cielo_situacao === 'pago' && estornavel(r) > 0 ? `<button class="btn link peq" onclick="estornarCartao('${r.id}')" title="Devolve o dinheiro no cartão do cliente pela Cielo">Estornar no cartão</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
