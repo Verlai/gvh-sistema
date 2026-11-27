@@ -129,13 +129,13 @@ async function extratoInter(el, chips) {
         <label class="campo">De<input type="date" id="ext-de" value="${esc(g.de)}"></label>
         <label class="campo">Até<input type="date" id="ext-ate" value="${esc(g.ate)}"></label>
       </div>
-      ${blocoExp('ext-como', 'Como funciona', '<p class="small muted" style="margin:0">O sistema lê o extrato do Inter sozinho de 15 em 15 minutos (das 7h às 20h) e quando alguém clica em "Atualizar extrato" ou "Confirmar pagamento". Sem datas, mostra os últimos 30 dias. O CPF de quem pagou aparece só em parte. Cada movimento é guardado uma vez só. Boleto pago com o número do pedido no "Seu número" dá baixa sozinho; se algo não bate, vira tarefa do financeiro. "Sem pedido" mostra as entradas que ainda não pagaram nenhuma parcela.</p>', false, 'leve')}
+      ${blocoExp('ext-como', 'Como funciona', '<p class="small muted" style="margin:0">O sistema lê o extrato do Inter sozinho de 15 em 15 minutos (das 7h às 20h) e quando alguém clica em "Atualizar extrato" ou "Confirmar pagamento". Sem datas, mostra os últimos 30 dias. O CPF de quem pagou aparece só em parte. Cada movimento é guardado uma vez só. Boleto pago com o número do pedido no "Seu número" dá baixa sozinho; se algo não bate, vira tarefa do financeiro. "Sem pedido" mostra as entradas que ainda não pagaram nenhuma parcela. Devolução de Pix feita no app do Inter: o sistema acha o Pix que entrou (mesmo CPF/CNPJ, até 90 dias), tira o valor do saldo dele e abre uma tarefa para o financeiro conferir o pedido.</p>', false, 'leve')}
       ${!mov.length ? '<div class="vazio">Nenhum movimento neste filtro.</div>' : `
       <div class="tabela-wrap"><table>
         <thead><tr><th>Data</th><th>De / para</th><th>CPF/CNPJ</th><th>Tipo</th><th>Pedido</th><th class="dir">Valor</th></tr></thead>
         <tbody>${mov.map(m => `<tr>
           <td class="num">${data(m.data)}</td>
-          <td>${esc(m.nome || m.titulo || '—')}${m.categoria === 'cielo' ? ' ' + badge('Repasse da Cielo', 'b-azul') : m.categoria === 'devolucao' ? ' ' + badge('Devolvido', 'b-cinza') : ''}
+          <td>${esc(m.nome || m.titulo || '—')}${m.categoria === 'cielo' ? ' ' + badge('Repasse da Cielo', 'b-azul') : m.categoria === 'devolucao' ? ' ' + badge('Devolvido', 'b-cinza') : m.e_devolucao ? ' ' + badge('Devolução ao cliente', 'b-cinza') : ''}
             <div class="small muted">${esc([m.nome ? m.titulo : '', m.descricao_pix || m.descricao, m.instituicao].filter(Boolean).join(' · '))}</div></td>
           <td class="num small">${esc(m.documento && m.documento.length === 14 ? fmtDoc(m.documento) : (m.documento || '—'))}</td>
           <td>${esc(TIPOS_MOV[m.tipo] || m.tipo || '—')}</td>
@@ -153,11 +153,18 @@ async function extratoInter(el, chips) {
   $('#ext-ate').onchange = e => { g.ate = e.target.value; filtrar(); };
   $('#ext-ler').onclick = e => atualizarExtratoInter(e.currentTarget);
 }
-// coluna "Pedido" do extrato: onde a entrada foi usada (e quanto sobra)
+// coluna "Pedido" do extrato: onde a entrada foi usada (e quanto sobra); na devolução, o Pix que voltou ao cliente
 function usoMovimento(m) {
+  if (m.e_devolucao) {
+    const d = m.devolucao;
+    if (!d) return '<span class="small muted">Pix de origem não achado</span>';
+    const peds = (d.pedidos || []).map(p => `<a href="#/pedido/${esc(p.pedido_id)}">#${esc(p.numero)}</a>`).join(', ');
+    return `<span class="small">Devolve o Pix de ${data(d.data)} (${brl(d.valor)})</span>${peds ? '<br>' + peds : ''}`;
+  }
+  const dev = Number(m.devolvido) > 0 ? `<div class="small" style="color:var(--vermelho)">devolvido ${brl(m.devolvido)}</div>` : '';
   const usos = (m.usos || []).map(u => `<a href="#/pedido/${esc(u.pedido_id)}">#${esc(u.numero)}</a>${u.credito ? ' <span class="small muted">→ crédito do cliente</span>' : ''}${(m.usos.length > 1 || Number(u.valor) !== Number(m.valor)) ? ` <span class="small muted">${brl(u.valor)}</span>` : ''}${u.origem === 'automatico' ? ' <span class="small muted">(automático)</span>' : ''}`);
   const sobra = m.pode_usar && Number(m.saldo) > 0;
-  return usos.join('<br>') + (sobra ? `${usos.length ? `<div class="small muted">sobra ${brl(m.saldo)}</div>` : badge('Sem pedido', 'b-ambar')}` : '') || '—';
+  return usos.join('<br>') + (sobra ? `${usos.length ? `<div class="small muted">sobra ${brl(m.saldo)}</div>` : badge('Sem pedido', 'b-ambar')}` : '') + dev || '—';
 }
 async function atualizarExtratoInter(btn) {
   let x; try { x = await ocupado(btn, () => api('inter_extrato_atualizar')); } catch { recarregar(); return; }
