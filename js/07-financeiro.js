@@ -528,6 +528,70 @@ async function comissoesPorPedido(el, abasVisao) {
   let t; $('#cp-busca').oninput = e => { f.busca = e.target.value; clearTimeout(t); t = setTimeout(filtrar, 450); };
   if ($('#cp-vend')) $('#cp-vend').onchange = e => { f.vendedor_id = e.target.value; filtrar(); };
 }
+/* ---------- Boleto emitido pelo sistema no Inter (Módulo 6, Fase 4A) ----------
+   O banco confere permissão (vendedor do pedido ou financeiro), parcela e cadastro do cliente;
+   o [GVH] Inter emite, guarda o PDF na pasta Financeiro do pedido e registra. */
+function htmlBoleto(r) {
+  if (!r.boleto_id) return '';
+  const s = r.boleto_situacao;
+  if (s === 'emitindo') return `<div>${badge('Boleto sendo emitido…', 'b-ambar')}</div>`;
+  if (s === 'falhou' && r.situacao === 'aberto') return `<div class="small" style="color:var(--vermelho)">Boleto não emitido: ${esc(r.boleto_erro || 'o Inter recusou')}</div>`;
+  if (s === 'cancelado' && r.situacao === 'aberto') return `<div class="small muted">Boleto cancelado${r.boleto_cancelado_no_inter_em ? '' : ' · cancelando no Inter…'}</div>`;
+  if (s !== 'ativo' && s !== 'pago') return '';
+  const pdf = urlSegura(r.boleto_pdf_url);
+  return `<div class="small">${s === 'pago' ? 'Boleto pago' : 'Boleto vence ' + esc(data(r.boleto_vencimento))}
+    ${pdf ? ` · <a href="${esc(pdf)}" target="_blank" rel="noopener">Ver PDF</a>` : (s === 'ativo' ? ' · <span class="muted">PDF chegando…</span>' : '')}
+    ${s === 'ativo' && r.boleto_linha ? `<button class="btn link peq" onclick="copiarBoleto('${r.id}', 'linha')">Copiar linha</button>` : ''}
+    ${s === 'ativo' && r.boleto_pix ? `<button class="btn link peq" onclick="copiarBoleto('${r.id}', 'pix')">Copiar Pix</button>` : ''}</div>`;
+}
+function botoesBoleto(r) {
+  if (r.boleto_situacao === 'ativo' || r.boleto_situacao === 'emitindo')
+    return `<button class="btn link peq" onclick="cancelarBoleto('${r.id}')" title="Cancela o boleto no Inter; o cliente não consegue mais pagar">Cancelar boleto</button>`;
+  return `<button class="btn peq" onclick="emitirBoleto('${r.id}')">Emitir boleto</button>`;
+}
+async function copiarBoleto(id, qual) {
+  const r = S.parcelas[id] || {};
+  const t = qual === 'pix' ? r.boleto_pix : r.boleto_linha;
+  if (t && await copiarTexto(t)) toast(qual === 'pix' ? 'Pix copia e cola copiado.' : 'Linha digitável copiada.');
+}
+function emitirBoleto(id) {
+  const r = S.parcelas[id]; if (!r) return;
+  const venc = r.vencimento && r.vencimento >= hoje() ? r.vencimento : hoje();
+  const m = abrirModal({ titulo: 'Emitir boleto no Inter', corpo: `
+    <p class="small" style="margin:0 0 10px">Boleto de <b>${brl(r.valor)}</b>${r.parcela_num ? ` (parcela ${esc(r.parcela_num)}${r.parcelas_total ? '/' + esc(r.parcelas_total) : ''})` : ''}
+      no nome do cliente do pedido, com o número do pedido. Sai com código de barras e Pix, multa e juros por atraso.</p>
+    <label class="campo" style="max-width:220px">Vencimento<input type="date" data-venc value="${esc(venc)}" min="${esc(hoje())}"></label>
+    <p class="small muted" style="margin:8px 0 0">O PDF fica na pasta Financeiro do pedido. Se o pagamento mudar (valor, vencimento, forma) ou for excluído, o boleto é cancelado no Inter sozinho.</p>`,
+    rodape: `<button class="btn" data-v>Voltar</button><button class="btn prim" data-s>Emitir boleto</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelector('[data-s]').onclick = async () => {
+    const vencimento = m.el.querySelector('[data-venc]').value;
+    if (!vencimento) return toast('Escolha o vencimento.', true);
+    let res;
+    try { res = await aguarde('Emitindo o boleto no Inter… (leva alguns segundos)', () => api('inter_boleto_emitir', { id, vencimento })); }
+    catch { recarregar(); return; }
+    m.fechar(); recarregar();
+    mostrarBoletoEmitido(res);
+  };
+}
+function mostrarBoletoEmitido(res) {
+  if (!res.linha) return toast('Boleto emitido. A linha digitável e o PDF aparecem no pagamento em alguns minutos.');
+  const m = abrirModal({ titulo: 'Boleto emitido', corpo: `
+    <p class="small" style="margin:0 0 10px">Mande ao cliente o PDF (fica na pasta Financeiro do pedido${res.pdf ? '' : '; chega em alguns minutos'}) ou a linha digitável. Quando ele pagar, a baixa é feita pelo extrato do Inter.</p>
+    <label class="campo">Linha digitável<input type="text" readonly value="${esc(res.linha)}" data-lin style="width:100%"></label>
+    ${res.pix ? `<label class="campo" style="margin-top:8px">Pix copia e cola<input type="text" readonly value="${esc(res.pix)}" data-pix style="width:100%"></label>` : ''}`,
+    rodape: `<button class="btn" data-v>Fechar</button>${res.pix ? '<button class="btn" data-cp>Copiar Pix</button>' : ''}<button class="btn prim" data-cl>Copiar linha</button>` });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  m.el.querySelectorAll('input[readonly]').forEach(i => i.onfocus = e => e.target.select());
+  m.el.querySelector('[data-cl]').onclick = async () => { if (await copiarTexto(res.linha)) toast('Linha digitável copiada.'); };
+  const cp = m.el.querySelector('[data-cp]'); if (cp) cp.onclick = async () => { if (await copiarTexto(res.pix)) toast('Pix copia e cola copiado.'); };
+}
+async function cancelarBoleto(id) {
+  if (!await confirmar('Cancelar este boleto? Ele é cancelado no Inter em até 30 minutos e o cliente não consegue mais pagar. O pagamento continua em aberto.', 'Cancelar boleto', true)) return;
+  try { await api('inter_boleto_cancelar', { id }); } catch { return; }
+  toast('Boleto cancelado. Ele sai do Inter em até 30 minutos.'); recarregar();
+}
+
 async function pagarComissao(id, desfazer = false) {
   if (!await confirmar(desfazer ? 'Desfazer o registro deste repasse?' : 'Confirmar que o repasse desta comissão foi feito hoje?', desfazer ? 'Desfazer' : 'Confirmar repasse')) return;
   await api('pagar_comissao', { id, desfazer }); toast(desfazer ? 'Registro desfeito.' : 'Repasse registrado.'); recarregar();

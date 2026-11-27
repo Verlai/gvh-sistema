@@ -242,7 +242,7 @@ function tabelaParcelas(lista, comPedido) {
       <td>${esc(TIPOS_PARC[r.tipo] || r.tipo)}${r.parcela_num ? ` ${r.parcela_num}${r.parcelas_total ? '/' + r.parcelas_total : ''}` : ''}${r.observacao ? `<div class="small muted">${esc(r.observacao)}</div>` : ''}</td>
       <td class="num">${data(r.vencimento)}</td>
       <td class="dir num">${brl(r.valor)}</td>
-      <td>${esc(r.forma_pagamento ? (FORMAS[r.forma_pagamento] || '—') : (r.situacao === 'aberto' ? 'A combinar' : '—'))}${htmlLinkPagamento(r)}
+      <td>${esc(r.forma_pagamento ? (FORMAS[r.forma_pagamento] || '—') : (r.situacao === 'aberto' ? 'A combinar' : '—'))}${htmlLinkPagamento(r)}${htmlBoleto(r)}
         ${r.tem_comprovante ? `<div><button class="btn link peq" onclick="verComprovante('${r.id}')">Ver comprovante</button></div>` : ''}</td>
       <td>${badgeParcela(r)}${detalheParcela(r)}</td>
       ${coluna ? `<td class="dir" style="white-space:nowrap">
@@ -251,6 +251,7 @@ function tabelaParcelas(lista, comPedido) {
         ${acoes && r.situacao === 'aberto' ? `<button class="btn ${extrato && formaDoExtrato(r) ? 'link' : 'prim'} peq" onclick="modalBaixa('${r.id}', ${conferir})"${extrato && formaDoExtrato(r) && !fin ? ' title="Só se o dinheiro não caiu no Inter: vai para a conferência do financeiro"' : ''}>${fin ? 'Dar baixa' : 'Marcar como pago'}</button>
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
         ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
+        ${acoes && r.situacao === 'aberto' && r.forma_pagamento === 'boleto' ? botoesBoleto(r) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')" title="Volta a ficar em aberto; não devolve dinheiro">Desconciliar</button>` : ''}
         ${extrato && r.cielo_situacao === 'pago' && Number(r.cielo_estornado) > 0 ? `<button class="btn link peq" onclick="imprimirEstornoCartao('${r.id}')">Comprovante de estorno</button>` : ''}

@@ -85,7 +85,7 @@ async function api(acao, dados = {}, silencioso = false, semBarra = false) {
   const barra = semBarra ? 0 : 1;
   setCarregando(barra);
   try {
-    const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : (acao === 'cielo_link' || acao === 'cielo_estornar') ? API_CIELO_URL : acao === 'inter_extrato_atualizar' ? API_INTER_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
+    const r = await fetch(acao === 'gabarito_drive' ? API_GAB_URL : (acao === 'cielo_link' || acao === 'cielo_estornar') ? API_CIELO_URL : (acao === 'inter_extrato_atualizar' || acao === 'inter_boleto_emitir') ? API_INTER_URL : API_URL, { method:'POST', headers:{'Content-Type':'application/json'},
                                      body: JSON.stringify({ token: S.token, acao, dados }) });
     let j; try { j = await r.json(); } catch { throw new Error('Resposta inválida do servidor.'); }
     if (Array.isArray(j)) j = j[0];

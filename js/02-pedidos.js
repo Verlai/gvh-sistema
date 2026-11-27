@@ -236,9 +236,9 @@ rota('pedido', async (id, el) => {
 
 /* ---------- AR0: arquivos do pedido no Google Drive ---------- */
 const TIPOS_ARQ = { arte:'Material do cliente', prova:'Prova', producao:'Arte final (produção)', orcamento:'Orçamento aprovado', comprovante:'Comprovante de pagamento',
-  nota_fiscal:'Nota fiscal', entrega:'Entrega', outro:'Outro' };
+  nota_fiscal:'Nota fiscal', boleto:'Boleto (Inter)', entrega:'Entrega', outro:'Outro' };
 const fmtTam = b => !b ? '' : b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
-const GRUPO_ARQ = t => ['arte', 'prova', 'producao'].includes(t) ? 'artes' : ['orcamento', 'comprovante', 'nota_fiscal'].includes(t) ? 'financeiro' : 'outros';
+const GRUPO_ARQ = t => ['arte', 'prova', 'producao'].includes(t) ? 'artes' : ['orcamento', 'comprovante', 'nota_fiscal', 'boleto'].includes(t) ? 'financeiro' : 'outros';
 async function carregarArquivosPedido(p, el) {
   const alvo = el.querySelector('#arquivos-pedido'); if (!alvo) return;
   const docs = el.querySelector('#docs-financeiro');
@@ -249,7 +249,7 @@ async function carregarArquivosPedido(p, el) {
   const pe = r.pode_enviar || {};
   const todos = r.arquivos || [];
   const linhaArq = (a, comTipo = true) => `<tr>${comTipo ? `<td>${esc(TIPOS_ARQ[a.tipo] || a.tipo)}</td>` : ''}
-        <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}copiado do ${esc(a.origem)}` : ''}</div>
+        <td>${a.rotulo ? `<b>${esc(a.rotulo)}</b> · ` : ''}<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nome)}</a><div class="small muted">${fmtTam(a.tamanho)}${a.origem ? `${a.tamanho ? ' · ' : ''}${a.origem === 'inter' ? 'gerado pelo Inter' : 'copiado do ' + esc(a.origem)}` : ''}</div>
           ${a.troca_pendente ? `<div style="margin-top:4px">${badge('Troca pendente · aguardando a pré-impressão', 'b-ambar')}${a.troca_substitui_nome ? ` <span class="small muted">no lugar de ${esc(a.troca_substitui_nome)}</span>` : ''}</div>` : ''}</td>
         <td class="small">${esc(a.criado_por_nome || '')}<div class="muted">${dataHora(a.created_at)}</div></td>
         <td class="dir" style="white-space:nowrap">${acoesArq(a)}</td></tr>`;
