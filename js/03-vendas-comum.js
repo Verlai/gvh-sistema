@@ -250,7 +250,7 @@ function tabelaParcelas(lista, comPedido) {
              ${fin ? `<button class="btn link peq" onclick="excluirParcela('${r.id}')">Excluir</button>` : ''}` : ''}
         ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
-        ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')">Desfazer</button>` : ''}
+        ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')" title="Volta a ficar em aberto; não devolve dinheiro">Desconciliar</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -280,8 +280,8 @@ function modalBaixa(id, conferir) {
   };
 }
 async function desfazerBaixa(id) {
-  if (!await confirmar('Desfazer este pagamento? A comissão ligada a ele também será estornada.', 'Desfazer', true)) return;
-  await api('baixar_recebimento', { id, desfazer: true }); toast('Pagamento desfeito.'); recarregar();
+  if (!await confirmar('Desconciliar este pagamento? Ele volta a ficar em aberto no pedido e deixa de estar ligado ao que foi recebido (extrato, crédito do cliente ou link). Nenhum dinheiro é devolvido ao cliente. A comissão ligada a ele também será estornada.', 'Desconciliar', true)) return;
+  await api('baixar_recebimento', { id, desfazer: true }); toast('Pagamento desconciliado.'); recarregar();
 }
 // link da Cielo ainda ativo: ao excluir o pagamento ele deixa de valer no sistema, mas ainda abre na Cielo até vencer
 const avisoLinkCielo = lista => {

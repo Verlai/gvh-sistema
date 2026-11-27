@@ -70,6 +70,7 @@ input[type=text],input[type=email],input[type=password],input[type=number],input
 textarea{min-height:70px;resize:vertical}
 input:focus,select:focus,textarea:focus{border-color:var(--verde);outline:none}
 .check{display:flex;align-items:center;gap:8px;font-size:13px;white-space:nowrap}
+.check.quebra{white-space:normal;align-items:flex-start}
 .ocultar-status [data-col=status]{display:none}
 .unit-calc{font-size:11px;color:var(--texto-3);margin-top:3px;white-space:nowrap}
 .aviso-forn{font-size:12px;line-height:1.35;color:#7d520d;background:var(--ambar-bg);border-radius:6px;padding:4px 7px;margin-top:4px}
@@ -183,7 +184,7 @@ details.exp.leve>.exp-corpo{padding:4px 0 0}
 .modal{background:#fff;border-radius:var(--raio);width:100%;max-width:640px;box-shadow:0 20px 60px rgba(29,38,45,.25)}
 .modal.largo{max-width:920px}
 .modal-cab{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--linha)}
-.modal-corpo{padding:20px 22px;display:grid;gap:14px}
+.modal-corpo{padding:20px 22px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
 .modal-rodape{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid var(--linha)}
 .fechar{border:0;background:none;font-size:22px;cursor:pointer;color:var(--texto-2);line-height:1}
 #toasts{position:fixed;right:20px;bottom:20px;display:grid;gap:8px;z-index:60}

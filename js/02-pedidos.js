@@ -512,8 +512,8 @@ function htmlDestinoPago(sob, titulo) {
   const decidir = Number(sob.decidir) > 0;
   return `<div class="cp-sobra" style="margin-bottom:12px"><b>${esc(titulo)}</b>
     ${Number(sob.credito) > 0 ? `<p class="small muted" style="margin:6px 0 0">${brl(sob.credito)} foram pagos com crédito do cliente e voltam ao crédito sozinhos.</p>` : ''}
-    ${decidir ? `<label class="check" style="margin-top:8px"><input type="radio" name="dest-pago" value="credito"> <span>Deixar como <b>crédito do cliente</b> <span class="small muted">(ele usa em outro pedido)</span></span></label>
-      <label class="check" style="margin-top:6px"><input type="radio" name="dest-pago" value="devolver"> <span><b>Devolver ao cliente</b> <span class="small muted">(o financeiro recebe uma tarefa: Pix pelo app do Inter, cartão estornado no cartão)</span></span></label>` : ''}
+    ${decidir ? `<label class="check quebra" style="margin-top:8px"><input type="radio" name="dest-pago" value="credito"> <span>Deixar como <b>crédito do cliente</b> <span class="small muted">(ele usa em outro pedido)</span></span></label>
+      <label class="check quebra" style="margin-top:6px"><input type="radio" name="dest-pago" value="devolver"> <span><b>Devolver ao cliente</b> <span class="small muted">(o financeiro recebe uma tarefa: Pix pelo app do Inter, cartão estornado no cartão)</span></span></label>` : ''}
   </div>`;
 }
 const lerDestinoPago = el => (el.querySelector('[name=dest-pago]:checked') || {}).value || null;
@@ -530,7 +530,7 @@ async function cancelarPedido(excluir = false) {
       ? '<p style="margin:0 0 12px">O pedido sai de todas as listas e não pode mais ser reativado. O histórico, os pagamentos e as comissões continuam registrados.</p>'
       : '<p style="margin:0 0 12px">Todos os itens param na hora: saem da arte, da pré-impressão, da produção e da expedição. Parcelas em aberto são canceladas. Se reativar depois, cada item volta para onde estava.</p>'}
     ${avisos.length ? `<div style="margin-bottom:12px"><b>Confirme cada ponto antes de continuar:</b>
-      ${avisos.map(a => `<label class="check" style="align-items:flex-start;margin-top:10px;padding:10px 12px;border:1px solid var(--vermelho);border-radius:8px;background:var(--vermelho-bg)">
+      ${avisos.map(a => `<label class="check quebra" style="margin-top:10px;padding:10px 12px;border:1px solid var(--vermelho);border-radius:8px;background:var(--vermelho-bg)">
         <input type="checkbox" data-conf="${esc(a.codigo)}" style="margin-top:3px">
         <span><b>${esc(a.titulo)}</b><br><span class="small">${esc(a.texto)}</span></span></label>`).join('')}</div>`
       : '<p class="small muted" style="margin:0 0 12px">Nenhum pagamento, produção ou repasse de comissão ligado a este pedido.</p>'}
