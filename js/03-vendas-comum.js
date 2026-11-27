@@ -216,7 +216,9 @@ function badgeParcela(r) {
   return badge('Em aberto', 'b-cinza');
 }
 function detalheParcela(r) {
-  if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return `<div class="small muted">Pelo link da Cielo${r.cielo_bandeira ? ' · ' + esc(r.cielo_bandeira) : ''}${r.cielo_parcelas ? ' · ' + esc(r.cielo_parcelas) + 'x' : ''}</div>`;
+  if (r.situacao === 'pago' && r.cielo_situacao === 'pago') return `<div class="small muted">Pelo link da Cielo${r.cielo_bandeira ? ' · ' + esc(r.cielo_bandeira) : ''}${r.cielo_parcelas ? ' · ' + esc(r.cielo_parcelas) + 'x' : ''}</div>`
+    + (Number(r.cielo_estornado) > 0 ? `<div class="small" style="color:var(--vermelho)">Estornado ${brl(r.cielo_estornado)} no cartão</div>` : '');
+  if (r.situacao === 'cancelado' && r.cielo_situacao === 'pago' && Number(r.cielo_estornado) > 0) return `<div class="small" style="color:var(--vermelho)">Estornado ${brl(r.cielo_estornado)} no cartão</div>`;
   if (r.situacao === 'pago' && r.extrato_origem) return `<div class="small muted">${esc(TIPO_ENTRADA[r.extrato_tipo] || 'Entrada')}${r.extrato_nome ? ' de ' + esc(r.extrato_nome) : ''}
     · ${r.extrato_origem === 'automatico' ? 'baixa automática' : 'confirmado por ' + esc(r.baixado_por_nome || '—')}</div>`;
   if (r.situacao === 'pago' && r.baixado_por_nome) return `<div class="small muted">Marcado por ${esc(r.baixado_por_nome)}${r.conferencia === 'conferido' && r.conferido_por_nome ? ` · conferido por ${esc(r.conferido_por_nome)}` : ''}</div>`;
@@ -251,6 +253,7 @@ function tabelaParcelas(lista, comPedido) {
         ${linkCielo && r.situacao === 'aberto' && (r.forma_pagamento === 'cartao_credito' || !r.forma_pagamento) ? botoesLinkCielo(r, acoes) : ''}
         ${acoes && r.situacao === 'pago' && r.tem_comprovante && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="trocarComprovante('${r.id}')">Trocar comprovante</button>` : ''}
         ${acoes && r.situacao === 'pago' && (fin || r.conferencia === 'pendente') ? `<button class="btn link peq" onclick="desfazerBaixa('${r.id}')" title="Volta a ficar em aberto; não devolve dinheiro">Desconciliar</button>` : ''}
+        ${fin && r.situacao === 'pago' && r.cielo_situacao === 'pago' && estornavel(r) > 0 ? `<button class="btn link peq" onclick="estornarCartao('${r.id}')" title="Devolve o dinheiro no cartão do cliente pela Cielo">Estornar no cartão</button>` : ''}
       </td>` : ''}
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -277,6 +280,31 @@ function modalBaixa(id, conferir) {
       });
     } catch { return; }
     m.fechar(); toast('Pagamento registrado.'); recarregar();
+  };
+}
+/* C2d: estorno no cartão pela Cielo (só o financeiro; o banco confere o valor e o limite) */
+const estornavel = r => Math.max(0, Math.min(Number(r.valor), Number(r.cielo_valor_pago || r.valor) - Number(r.cielo_estornado || 0)));
+function estornarCartao(id) {
+  const r = S.parcelas[id]; const disp = estornavel(r);
+  const m = abrirModal({ titulo: 'Estornar no cartão', corpo: `
+    <p style="margin:0">Pago pelo link da Cielo: <b>${brl(r.cielo_valor_pago || r.valor)}</b>${Number(r.cielo_estornado) > 0 ? ` · já estornado ${brl(r.cielo_estornado)}` : ''}. Dá para estornar até <b>${brl(disp)}</b>.</p>
+    <div class="linha-form">
+      <label class="campo">Valor do estorno (R$) *<input type="text" id="es-valor" inputmode="decimal" value="${esc(disp.toFixed(2).replace('.', ','))}"></label>
+    </div>
+    <label class="campo">Motivo *<input type="text" id="es-motivo" maxlength="300" placeholder="Ex.: pedido cancelado, item cancelado, cobrança em dobro"></label>
+    <p class="small muted" style="margin:0">O dinheiro volta para o cartão do cliente pela Cielo, na hora. Total ou parte. Não dá para desfazer.</p>`,
+    rodape: '<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Estornar</button>' });
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bc = m.el.querySelector('[data-c]');
+  bc.onclick = async () => {
+    const txt = m.el.querySelector('#es-valor').value.trim().replace(/\./g, '').replace(',', '.');
+    const valor = Number(txt); const motivo = m.el.querySelector('#es-motivo').value.trim();
+    if (!(valor > 0) || !/^\d+(\.\d{1,2})?$/.test(txt)) return toast('Informe o valor do estorno (ex.: 5,00).', true);
+    if (valor > disp + 0.001) return toast(`O valor passa do que ainda dá para estornar (${brl(disp)}).`, true);
+    if (motivo.length < 3) return toast('Informe o motivo do estorno.', true);
+    if (!await confirmar(`Estornar ${brl(valor)} no cartão do cliente agora? O dinheiro volta pela Cielo e isso não dá para desfazer.`, 'Estornar', true)) return;
+    await ocupado(bc, () => api('cielo_estornar', { id, valor: txt, motivo }));
+    m.fechar(); toast(`Estorno de ${brl(valor)} feito no cartão.`); recarregar();
   };
 }
 async function desfazerBaixa(id) {
