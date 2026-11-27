@@ -507,10 +507,23 @@ async function moverSelecionados() {
   toast('Itens atualizados.'); recarregar();
 }
 
+/* C2b: valor já pago de pedido/item cancelado → crédito do cliente ou devolução (o banco confere e grava) */
+function htmlDestinoPago(sob, titulo) {
+  const decidir = Number(sob.decidir) > 0;
+  return `<div class="cp-sobra" style="margin-bottom:12px"><b>${esc(titulo)}</b>
+    ${Number(sob.credito) > 0 ? `<p class="small muted" style="margin:6px 0 0">${brl(sob.credito)} foram pagos com crédito do cliente e voltam ao crédito sozinhos.</p>` : ''}
+    ${decidir ? `<label class="check" style="margin-top:8px"><input type="radio" name="dest-pago" value="credito"> <span>Deixar como <b>crédito do cliente</b> <span class="small muted">(ele usa em outro pedido)</span></span></label>
+      <label class="check" style="margin-top:6px"><input type="radio" name="dest-pago" value="devolver"> <span><b>Devolver ao cliente</b> <span class="small muted">(o financeiro recebe uma tarefa: Pix pelo app do Inter, cartão estornado no cartão)</span></span></label>` : ''}
+  </div>`;
+}
+const lerDestinoPago = el => (el.querySelector('[name=dest-pago]:checked') || {}).value || null;
+
 async function cancelarPedido(excluir = false) {
   const p = S.vistaAtual.dados;
   const r = await api('previa_cancelamento', { id: p.id, excluir });
   const avisos = r.avisos || [];
+  const sob = !excluir && r.sobra && Number(r.sobra.valor) > 0 ? r.sobra : null;
+  const decidir = sob && Number(sob.decidir) > 0;
   const acao = excluir ? 'Excluir' : 'Cancelar';
   const m = abrirModal({ titulo: `${acao} pedido ${p.numero}`, corpo: `
     ${excluir
@@ -521,6 +534,7 @@ async function cancelarPedido(excluir = false) {
         <input type="checkbox" data-conf="${esc(a.codigo)}" style="margin-top:3px">
         <span><b>${esc(a.titulo)}</b><br><span class="small">${esc(a.texto)}</span></span></label>`).join('')}</div>`
       : '<p class="small muted" style="margin:0 0 12px">Nenhum pagamento, produção ou repasse de comissão ligado a este pedido.</p>'}
+    ${sob ? htmlDestinoPago(sob, `O cliente já pagou ${brl(sob.valor)}. O que fazer com esse dinheiro?`) : ''}
     <label class="campo">Motivo ${excluir ? 'da exclusão' : 'do cancelamento'} *<textarea id="motivo" required></textarea></label>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>${acao} pedido</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
@@ -529,10 +543,17 @@ async function cancelarPedido(excluir = false) {
     const confirmados = [...m.el.querySelectorAll('[data-conf]:checked')].map(c => c.dataset.conf);
     if (confirmados.length < avisos.length) return toast('Marque todos os avisos para confirmar.', true);
     if (!motivo) return toast(`Informe o motivo ${excluir ? 'da exclusão' : 'do cancelamento'}.`, true);
-    await api(excluir ? 'excluir_pedido' : 'cancelar_pedido', { id: p.id, motivo, confirmados });
+    const destino_pago = decidir ? lerDestinoPago(m.el) : null;
+    if (decidir && !destino_pago) return toast('Escolha o que fazer com o valor que o cliente já pagou.', true);
+    const x = await api(excluir ? 'excluir_pedido' : 'cancelar_pedido', { id: p.id, motivo, confirmados, destino_pago });
     m.fechar();
     if (excluir) { toast('Pedido excluído.'); descartarVista(chaveRota()); location.hash = '#/pedidos'; }
-    else { toast('Pedido cancelado. Os itens foram parados.'); recarregar(); }
+    else {
+      const s = x && x.sobra;
+      toast('Pedido cancelado. Os itens foram parados.' + (s && Number(s.credito) > 0 ? ` ${brl(s.credito)} viraram crédito do cliente.` : '')
+        + (s && Number(s.devolver) > 0 ? ` O financeiro recebeu a tarefa de devolver ${brl(s.devolver)}.` : ''));
+      recarregar();
+    }
   };
 }
 /* V16: cancelar item (em arte: na hora; na pré-impressão/produção: com a confirmação da pré-impressão; depois disso: não cancela) */
@@ -547,14 +568,24 @@ function modalCancelarItem(id) {
     <p class="small muted" style="margin:0 0 12px">${direto
       ? 'O item sai do pedido e o total é recalculado. Tudo fica no histórico.'
       : 'O item já está na pré-impressão/produção: o cancelamento vai para a confirmação da pré-impressão. Até a decisão, o item não avança.'}</p>
-    <label class="campo">Motivo *<input type="text" id="ci-motivo" maxlength="300" placeholder="Ex.: cliente desistiu deste material"></label>`,
+    <label class="campo">Motivo *<input type="text" id="ci-motivo" maxlength="300" placeholder="Ex.: cliente desistiu deste material"></label>
+    <div id="ci-dest"></div>`,
     rodape: `<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>${direto ? 'Cancelar item' : 'Pedir cancelamento'}</button>` });
   m.el.querySelector('[data-v]').onclick = m.fechar;
   const bc = m.el.querySelector('[data-c]');
+  let pede = false;
   bc.onclick = async () => {
     const motivo = m.el.querySelector('#ci-motivo').value.trim(); if (!motivo) return toast('Informe o motivo.', true);
-    const r = await ocupado(bc, () => api('cancelar_item', { id, motivo })); m.fechar(); resultadoCancelItem(r);
+    const destino_pago = pede ? lerDestinoPago(m.el) : null;
+    if (pede && !destino_pago) return toast('Escolha o que fazer com o valor pago a mais.', true);
+    const r = await ocupado(bc, () => api('cancelar_item', { id, motivo, destino_pago }));
+    if (r.precisa_destino) { pede = true; mostrarDestinoItem(m.el.querySelector('#ci-dest'), r); return; }
+    m.fechar(); resultadoCancelItem(r);
   };
+}
+// o cancelamento do item deixaria o cliente com pagamento a mais: pergunta o destino da diferença (nada foi cancelado ainda)
+function mostrarDestinoItem(caixa, r) {
+  caixa.innerHTML = htmlDestinoPago(r, `Sem este item, o novo total do pedido é ${brl(r.novo_total)} e o cliente fica com ${brl(r.valor)} pago a mais. O que fazer com esse dinheiro?`);
 }
 async function excluirItemCancelado(id) {
   const i = S.vistaAtual.dados.itens.find(x => x.id === id);
@@ -565,7 +596,21 @@ async function decidirCancelItem(id, aceitar) {
   let motivo = null;
   if (aceitar) { if (!await confirmar('Confirmar o cancelamento deste item? Ele sai do pedido e o total é recalculado. Se já foi enviado ao fornecedor, avise o fornecedor.', 'Confirmar cancelamento', true)) return; }
   else { motivo = prompt('Por que o cancelamento foi recusado? (o vendedor vê no histórico)'); if (!motivo || !motivo.trim()) return; }
-  resultadoCancelItem(await api('decidir_cancelamento_item', { id, aceitar, motivo: motivo && motivo.trim() }), aceitar);
+  const r = await api('decidir_cancelamento_item', { id, aceitar, motivo: motivo && motivo.trim() });
+  if (!r.precisa_destino) return resultadoCancelItem(r, aceitar);
+  // a diferença paga precisa de destino: pergunta antes de confirmar o cancelamento
+  const m = abrirModal({ titulo: 'Cancelar item: valor pago a mais', corpo: '<div id="dc-dest"></div>',
+    rodape: '<button class="btn" data-v>Voltar</button><button class="btn perigo" data-c>Confirmar cancelamento</button>' });
+  mostrarDestinoItem(m.el.querySelector('#dc-dest'), r);
+  m.el.querySelector('[data-v]').onclick = m.fechar;
+  const bc = m.el.querySelector('[data-c]');
+  bc.onclick = async () => {
+    const destino_pago = lerDestinoPago(m.el);
+    if (!destino_pago) return toast('Escolha o que fazer com o valor pago a mais.', true);
+    const x = await ocupado(bc, () => api('decidir_cancelamento_item', { id, aceitar: true, destino_pago }));
+    if (x.precisa_destino) return toast('O valor pago mudou. Feche e tente de novo.', true);
+    m.fechar(); resultadoCancelItem(x, true);
+  };
 }
 function resultadoCancelItem(r, decidiu = true) {
   if (r.pendente) toast('Pedido de cancelamento enviado para a pré-impressão.');
